@@ -1,0 +1,11 @@
+{
+  "name": "endpointx",
+  "version": "1.0.0",
+  "description": "IAM & Endpoint Management Platform",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev:backend",
+    "dev:backend": "cd backend-api && npx tsx src/index.ts",
+    "dev:frontend": "cd admin-dashboard && npx vite --host"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+backend-api/data/*.db
+admin-dashboard/.env
+endpoint-agent/endpointx-agent.log

@@ -1,0 +1,6 @@
+agent_id: DESKTOP-OSGM0IK
+agent_secret: dev_agent_secret_123
+heartbeat_interval: 60
+log_file: endpointx-agent.log
+log_level: INFO
+server_url: http://192.168.2.39:3001/api

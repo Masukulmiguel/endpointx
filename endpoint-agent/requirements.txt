@@ -1,0 +1,5 @@
+requests>=2.31.0
+psutil>=5.9.0
+pyyaml>=6.0
+pycryptodome>=3.19.0
+schedule>=1.2.0
