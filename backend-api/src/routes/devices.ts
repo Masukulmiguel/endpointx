@@ -7,6 +7,15 @@ import logger from '../utils/logger';
 
 const router = Router();
 
+// Mark devices as offline if no heartbeat in last 2 minutes
+function updateOfflineDevices() {
+  try {
+    query("UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-2 minutes')");
+  } catch (e) {
+    // ignore
+  }
+}
+
 // Agent registration (no auth required, uses agent secret)
 router.post('/register', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -76,6 +85,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
 // List devices
 router.get('/', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    updateOfflineDevices();
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const search = req.query.search as string || '';

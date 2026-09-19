@@ -4,8 +4,16 @@ import { AuthRequest, authenticate } from '../middleware/auth';
 
 const router = Router();
 
+// Mark devices as offline if no heartbeat in last 2 minutes
+function updateOfflineDevices() {
+  try {
+    query("UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-2 minutes')");
+  } catch (e) { /* ignore */ }
+}
+
 router.get('/overview', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    updateOfflineDevices();
     const totalDevices = query('SELECT COUNT(*) as count FROM devices', []);
     const onlineDevices = query("SELECT COUNT(*) as count FROM devices WHERE status = 'online'", []);
     const offlineDevices = query("SELECT COUNT(*) as count FROM devices WHERE status = 'offline'", []);
