@@ -1,4 +1,4 @@
-agent_id: DESKTOP-OSGM0IK
+agent_id: AUTO
 agent_secret: dev_agent_secret_123
 heartbeat_interval: 60
 log_file: endpointx-agent.log

@@ -9,3 +9,4 @@ Thumbs.db
 backend-api/data/*.db
 admin-dashboard/.env
 endpoint-agent/endpointx-agent.log
+node_modules

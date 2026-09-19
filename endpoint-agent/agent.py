@@ -82,6 +82,13 @@ class EndpointAgent:
         self.config.setdefault("log_level", "INFO")
         self.config.setdefault("log_file", "endpointx-agent.log")
 
+        # Auto-detect hostname if agent_id is AUTO or doesn't match current hostname
+        current_hostname = get_hostname()
+        if self.config["agent_id"] in ("AUTO", "", None) or self.config["agent_id"] != current_hostname:
+            logger.info("Auto-detecting hostname: %s (was: %s)", current_hostname, self.config["agent_id"])
+            self.config["agent_id"] = current_hostname
+            self._save_config()
+
     def _save_config(self) -> None:
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
