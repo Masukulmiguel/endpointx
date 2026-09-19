@@ -7,13 +7,13 @@
 ## Pré-Requisitos
 
 ### No PC Servidor (já configurado)
-- Backend a correr em `192.168.2.39:3001`
+- Backend a correr em `http://IP-DO-SERVIDOR:3001`
 - Dashboard a correr em `http://localhost:5173`
 
 ### Nos PCs Remotos (a instalar)
 - Python 3.10+ instalado
 - Git instalado (opcional, mas recomendado)
-- Acesso à rede `192.168.2.x`
+- Acesso à rede ao servidor
 - Firewall não bloqueia a porta 3001
 
 ---
@@ -147,7 +147,9 @@ server_url: http://192.168.2.39:3001/api
 | `agent_id` | `AUTO` | Auto-detecta o hostname do PC |
 | `agent_secret` | `dev_agent_secret_123` | Chave secreta partilhada |
 | `heartbeat_interval` | `60` | Intervalo em segundos |
-| `server_url` | `http://192.168.2.39:3001/api` | IP do servidor |
+| `server_url` | `http://IP-DO-SERVIDOR:3001/api` | IP do servidor desta rede |
+
+> **IMPORTANTE**: O `server_url` deve apontar para o IP do servidor nesta rede. Cada empresa tem o seu próprio servidor.
 
 ---
 
@@ -263,7 +265,7 @@ pause
 
 ### Erro: "Connection failed"
 - Verifica se o servidor está a correr
-- Verifica o IP: `http://192.168.2.39:3001`
+- Verifica o IP no `config.yaml` → `server_url`
 - Verifica o firewall
 
 ### Erro: "Device already registered"
@@ -322,6 +324,50 @@ python agent.py --register
 REM 5. Correr
 python agent.py
 ```
+
+---
+
+## Para Empresas/Clientes (Deploy Externo)
+
+Se vais vender ou deployar o sistema noutra empresa:
+
+### 1. Instalar o Servidor na Empresa Cliente
+
+No servidor da empresa cliente:
+```bash
+git clone https://github.com/Masukulmiguel/endpointx.git
+cd endpointx/backend-api
+npm install
+npm run dev
+```
+
+O servidor vai correr no IP desta rede (ex: `10.0.0.100:3001`)
+
+### 2. Configurar os Agents
+
+Em cada PC da empresa cliente, altera o `config.yaml`:
+
+```yaml
+agent_id: AUTO
+agent_secret: dev_agent_secret_123
+heartbeat_interval: 60
+server_url: http://IP-DO-SERVIDOR-DESTA-REDE:3001/api
+```
+
+### 3. Exemplo por Empresa
+
+| Empresa | Servidor | Agents |
+|---------|----------|--------|
+| Empresa A | `http://10.0.0.100:3001/api` | Todos apontam para 10.0.0.100 |
+| Empresa B | `http://192.168.1.50:3001/api` | Todos apontam para 192.168.1.50 |
+| Empresa C | `http://172.16.0.10:3001/api` | Todos apontam para 172.16.0.10 |
+
+### Cada empresa é independente:
+- ✅ Servidor próprio
+- ✅ Dashboard próprio
+- ✅ Base de dados própria
+- ✅ Agents próprios
+- ✅ Não partilham dados entre si
 
 ---
 
