@@ -12,12 +12,69 @@
 
 ### Nos PCs Remotos (a instalar)
 - Python 3.10+ instalado
+- Git instalado (opcional, mas recomendado)
 - Acesso à rede `192.168.2.x`
 - Firewall não bloqueia a porta 3001
 
 ---
 
-## Passo 1: Instalar Python no PC Remoto
+## Método 1: Instalar via Git (Recomendado)
+
+### Passo 1: Instalar Git
+
+1. Abre o browser no PC remoto
+2. Vai a: **https://git-scm.com/download/win**
+3. Descarrega o **Git for Windows**
+4. Instala com as opções padrão (pode deixar tudo default)
+
+### Passo 2: Instalar Python
+
+1. Vai a: **https://www.python.org/downloads/**
+2. Clica em **"Download Python 3.x.x"**
+3. Ao instalar, **marca esta caixa** (MUITO IMPORTANTE):
+   ```
+   ☑ Add Python to PATH
+   ```
+4. Clica em **"Install Now"**
+5. Fecha e volta a abrir o PowerShell
+
+### Passo 3: Clonar o Repositório
+
+No PowerShell do PC remoto:
+
+```cmd
+cd C:\
+git clone https://github.com/Masukulmiguel/endpointx.git
+```
+
+### Passo 4: Instalar Dependências
+
+```cmd
+cd C:\endpointx\endpoint-agent
+pip install -r requirements.txt
+```
+
+### Passo 5: Registar e Correr
+
+```cmd
+python agent.py --register
+python agent.py
+```
+
+### Para Atualizar o Agent
+
+```cmd
+cd C:\endpointx\endpoint-agent
+git pull
+python agent.py --register
+python agent.py
+```
+
+---
+
+## Método 2: Instalar via Cópia (Sem Git)
+
+### Passo 1: Instalar Python no PC Remoto
 
 1. Abre o browser no PC remoto
 2. Vai a: **https://www.python.org/downloads/**
@@ -31,7 +88,7 @@
 
 ---
 
-## Passo 2: Copiar o Agent
+### Passo 2: Copiar o Agent
 
 Copia a pasta `endpoint-agent` para o PC remoto:
 
@@ -57,7 +114,7 @@ C:\endpoint-agent\
 
 ---
 
-## Passo 3: Instalar Dependências
+### Passo 3: Instalar Dependências
 
 No PowerShell do PC remoto:
 
@@ -73,7 +130,7 @@ pip install psutil requests pyyaml
 
 ---
 
-## Passo 4: Configurar o Agent
+### Passo 4: Configurar o Agent
 
 Edita o ficheiro `config.yaml`:
 
@@ -94,7 +151,7 @@ server_url: http://192.168.2.39:3001/api
 
 ---
 
-## Passo 5: Registar o Agent
+### Passo 5: Registar o Agent
 
 ```cmd
 cd C:\endpoint-agent
@@ -114,7 +171,7 @@ python agent.py --register
 
 ---
 
-## Passo 6: Correr o Agent
+### Passo 6: Correr o Agent
 
 ```cmd
 cd C:\endpoint-agent
@@ -133,7 +190,7 @@ python agent.py
 
 ---
 
-## Passo 7: Verificar no Dashboard
+### Passo 7: Verificar no Dashboard
 
 1. Abre o browser no PC servidor
 2. Vai a: **http://localhost:5173**

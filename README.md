@@ -1,5 +1,9 @@
 # EndpointX
 
+<p align="center">
+  <img src="logotipo.png" alt="EndpointX Logo" width="200"/>
+</p>
+
 **Identity, Access, and Endpoint Management Platform**
 
 EndpointX is a comprehensive IAM + EPM platform designed for managing authorized devices within an enterprise network. It provides real-time device monitoring, command execution, and security event tracking through a centralized admin dashboard.
@@ -75,7 +79,7 @@ EndpointX is a comprehensive IAM + EPM platform designed for managing authorized
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/endpointx.git
+git clone https://github.com/Masukulmiguel/endpointx.git
 cd endpointx
 
 # Create environment file
@@ -123,19 +127,6 @@ open http://localhost
 
 See [Environment Configuration](docs/deployment.md#environment-configuration) for the full list.
 
-### Docker Compose Profiles
-
-```bash
-# Production (with Nginx)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# Development (with hot reload)
-docker compose up -d
-
-# With monitoring
-docker compose --profile monitoring up -d
-```
-
 ## API Documentation
 
 Complete REST API documentation is available at [docs/api.md](docs/api.md).
@@ -154,46 +145,44 @@ Complete REST API documentation is available at [docs/api.md](docs/api.md).
 
 ## Agent Installation
 
-### Download
+### Option 1: Install via Git (Recommended)
 
 ```bash
-curl -O https://releases.endpointx.example.com/agent/endpointx-agent-latest.tar.gz
-tar -xzf endpointx-agent-latest.tar.gz
+# Install Git (if not installed)
+# Download from: https://git-scm.com/download/win
+
+# Clone the repository
+cd C:\
+git clone https://github.com/Masukulmiguel/endpointx.git
+
+# Install dependencies
+cd endpointx\endpoint-agent
+pip install -r requirements.txt
+
+# Register and run
+python agent.py --register
+python agent.py
 ```
 
-### Configure
+### Option 2: Install via Copy
 
-Create `config.json`:
+See [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for step-by-step instructions.
 
-```json
-{
-  "server_url": "https://endpointx.yourcompany.com",
-  "agent_secret": "your-agent-secret",
-  "heartbeat_interval": 60
-}
-```
-
-### Install
+### Update Agent
 
 ```bash
-# Linux / macOS
-sudo ./install.sh
-
-# Windows (PowerShell as Administrator)
-.\install.ps1
+cd C:\endpointx\endpoint-agent
+git pull
+python agent.py --register
+python agent.py
 ```
 
-### Verify
+## Default Credentials
 
-```bash
-# Check agent status
-sudo systemctl status endpointx-agent
-
-# Check logs
-tail -f /var/log/endpointx-agent.log
-```
-
-See [Agent Deployment](docs/deployment.md#agent-deployment) for mass deployment options.
+| Component | Email/Username          | Password      | Role  |
+| --------- | ----------------------- | ------------- | ----- |
+| Dashboard | admin@endpointx.local   | Admin@123!    | admin |
+| Agent     | N/A                     | dev_agent_secret_123 | N/A |
 
 ## Development Setup
 
@@ -207,19 +196,17 @@ See [Agent Deployment](docs/deployment.md#agent-deployment) for mass deployment 
 ### Backend
 
 ```bash
-cd backend
+cd backend-api
 npm install
 cp .env.example .env
 # Edit .env with your database credentials
-npx knex migrate:latest
-npx knex seed:run
 npm run dev
 ```
 
 ### Dashboard
 
 ```bash
-cd dashboard
+cd admin-dashboard
 npm install
 npm run dev
 ```
@@ -227,126 +214,49 @@ npm run dev
 ### Agent
 
 ```bash
-cd agent
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+cd endpoint-agent
 pip install -r requirements.txt
-python -m endpointx_agent
+python agent.py
 ```
 
 ### Project Structure
 
 ```
 endpointx/
-├── backend/                # Node.js API server
+├── backend-api/           # Node.js API server
 │   ├── src/
-│   │   ├── routes/         # Express route handlers
-│   │   ├── middleware/      # Auth, RBAC, validation
-│   │   ├── services/       # Business logic
-│   │   ├── db/             # Migrations, seeds
-│   │   └── utils/          # Helper functions
-│   ├── tests/              # API tests
+│   │   ├── routes/        # Express route handlers
+│   │   ├── middleware/     # Auth, RBAC, validation
+│   │   ├── controllers/   # Business logic
+│   │   └── utils/         # Helper functions
 │   └── package.json
-├── dashboard/              # React frontend
+├── admin-dashboard/       # React frontend
 │   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── pages/          # Route pages
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── services/       # API client
-│   │   └── utils/          # Helper functions
+│   │   ├── components/    # Reusable UI components
+│   │   ├── pages/         # Route pages
+│   │   ├── contexts/      # React contexts
+│   │   ├── services/      # API client
+│   │   └── types/         # TypeScript types
 │   └── package.json
-├── agent/                  # Python endpoint agent
-│   ├── endpointx_agent/
-│   ├── tests/
+├── endpoint-agent/        # Python endpoint agent
+│   ├── agent.py           # Main agent script
+│   ├── system_info.py     # System information collector
+│   ├── config.yaml        # Agent configuration
 │   └── requirements.txt
-├── docs/                   # Documentation
-│   ├── architecture.md
-│   ├── api.md
-│   ├── security.md
-│   └── deployment.md
+├── docs/                  # Documentation
+│   ├── INSTALL-GUIDE.md   # Agent installation guide
+│   ├── api.md             # API documentation
+│   ├── architecture.md    # System design
+│   ├── security.md        # Security mechanisms
+│   └── deployment.md      # Deployment guide
 └── docker-compose.yml
 ```
-
-## Testing
-
-### Backend Tests
-
-```bash
-cd backend
-npm test
-
-# With coverage
-npm run test:coverage
-```
-
-### Dashboard Tests
-
-```bash
-cd dashboard
-npm test
-```
-
-### Agent Tests
-
-```bash
-cd agent
-pytest
-
-# With coverage
-pytest --cov=endpointx_agent
-```
-
-### End-to-End Tests
-
-```bash
-cd tests/e2e
-npm install
-npm test
-```
-
-## Contributing
-
-### Development Workflow
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests and linting
-5. Commit with a descriptive message
-6. Push to your branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-### Code Standards
-
-- Follow existing code style and patterns
-- Write tests for new functionality
-- Update documentation as needed
-- Keep commits focused and well-described
-
-### Commit Convention
-
-```
-type(scope): description
-
-feat(auth): add MFA support
-fix(devices): resolve heartbeat timeout issue
-docs(api): update endpoint documentation
-refactor(commands): simplify command execution flow
-test(alerts): add alert dismissal tests
-```
-
-### Pull Request Requirements
-
-- [ ] Tests pass
-- [ ] Linting passes
-- [ ] Documentation updated (if applicable)
-- [ ] No breaking changes (or clearly documented)
-- [ ] Commit messages follow convention
 
 ## Documentation
 
 | Document          | Description                           |
 | ----------------- | ------------------------------------- |
+| [Installation Guide](docs/INSTALL-GUIDE.md) | Agent installation guide |
 | [Architecture](docs/architecture.md) | System design and components |
 | [API Reference](docs/api.md)         | Complete REST API documentation |
 | [Security](docs/security.md)         | Security mechanisms and policies |
@@ -359,7 +269,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ```
 MIT License
 
-Copyright (c) 2025 EndpointX
+Copyright (c) 2026 EndpointX
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -385,7 +295,6 @@ SOFTWARE.
 If you discover a security vulnerability, please report it responsibly:
 
 - **Email**: security@endpointx.example.com
-- **PGP Key**: Available on our website
 - **Response Time**: Within 48 hours
 
 **Do NOT open public GitHub issues for security vulnerabilities.**
