@@ -12,7 +12,7 @@ export default function InstallPage() {
     setTimeout(() => setCopied(''), 2000);
   };
 
-  const installScript = `iex (Invoke-WebRequest -Uri "${API_URL}/api/devices/public/install.ps1" -UseBasicParsing).Content`;
+  const installScript = `irm ${API_URL}/api/devices/public/install.ps1 | iex`;
 
   return (
     <div className="max-w-4xl mx-auto p-6">
