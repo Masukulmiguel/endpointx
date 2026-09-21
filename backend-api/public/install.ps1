@@ -42,9 +42,11 @@ Write-Host "[5/5] Registrando device..." -ForegroundColor Green
 Set-Location "C:\endpointx\endpoint-agent"
 python agent.py --register
 
-echo Set WshShell = CreateObject("WScript.Shell") > "C:\endpointx\endpoint-agent\start_agent.vbs"
-echo WshShell.CurrentDirectory = "C:\endpointx\endpoint-agent" >> "C:\endpointx\endpoint-agent\start_agent.vbs"
-echo WshShell.Run "pythonw.exe agent.py", 0, False >> "C:\endpointx\endpoint-agent\start_agent.vbs"
+@"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = "C:\endpointx\endpoint-agent"
+WshShell.Run "pythonw.exe agent.py", 0, False
+"@ | Set-Content -Path "C:\endpointx\endpoint-agent\start_agent.vbs" -Encoding ASCII -Force
 
 Copy-Item "C:\endpointx\endpoint-agent\start_agent.vbs" "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\endpointx.vbs" -Force
 
