@@ -13,6 +13,7 @@ import AuditLogsPage from './pages/AuditLogsPage';
 import NetworkPage from './pages/NetworkPage';
 import AgentsPage from './pages/AgentsPage';
 import SettingsPage from './pages/SettingsPage';
+import InstallPage from './pages/InstallPage';
 import LoadingSpinner from './components/LoadingSpinner';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="audit-logs" element={<AuditLogsPage />} />
         <Route path="network" element={<NetworkPage />} />
         <Route path="agents" element={<AgentsPage />} />
+        <Route path="install" element={<InstallPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -475,4 +475,105 @@ router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, r
   }
 });
 
+// PUBLIC - Download installer (no auth required)
+router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const host = req.get('host') || 'endpointx.onrender.com';
+    const protocol = req.protocol === 'https' ? 'https' : 'https';
+    const serverUrl = `${protocol}://${host}`;
+
+    const script = `$ErrorActionPreference = "Stop"
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "  EndpointX Agent Installer" -ForegroundColor Cyan
+Write-Host "  Server: ${serverUrl}" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+try {
+    $python = Get-Command python -ErrorAction Stop
+} catch {
+    Write-Host "ERRO: Python nao encontrado!" -ForegroundColor Red
+    Write-Host "Instale de: https://www.python.org/downloads/" -ForegroundColor Yellow
+    Write-Host "Marque: Add Python to PATH" -ForegroundColor Yellow
+    Read-Host "Press Enter para sair"
+    exit 1
+}
+
+Write-Host "[1/5] Criando pasta..." -ForegroundColor Green
+New-Item -ItemType Directory -Force -Path "C:\endpointx\endpoint-agent" | Out-Null
+
+Write-Host "[2/5] Baixando agent..." -ForegroundColor Green
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -Uri "${serverUrl}/api/download/public/agent.py" -OutFile "C:\endpointx\endpoint-agent\agent.py" -UseBasicParsing
+Invoke-WebRequest -Uri "${serverUrl}/api/download/public/system_info.py" -OutFile "C:\endpointx\endpoint-agent\system_info.py" -UseBasicParsing
+Invoke-WebRequest -Uri "${serverUrl}/api/download/public/requirements.txt" -OutFile "C:\endpointx\endpoint-agent\requirements.txt" -UseBasicParsing
+
+Write-Host "[3/5] Criando config..." -ForegroundColor Green
+@"
+agent_id: AUTO
+agent_secret: dev_agent_secret_123
+heartbeat_interval: 60
+log_file: endpointx-agent.log
+log_level: INFO
+server_url: ${serverUrl}/api
+"@ | Out-File -FilePath "C:\endpointx\endpoint-agent\config.yaml" -Encoding utf8
+
+Write-Host "[4/5] Instalando dependencias..." -ForegroundColor Green
+pip install psutil requests pyyaml 2>$null | Out-Null
+
+Write-Host "[5/5] Registrando device..." -ForegroundColor Green
+Set-Location "C:\endpointx\endpoint-agent"
+python agent.py --register
+
+echo Set WshShell = CreateObject("WScript.Shell") > "C:\endpointx\endpoint-agent\start_agent.vbs"
+echo WshShell.CurrentDirectory = "C:\endpointx\endpoint-agent" >> "C:\endpointx\endpoint-agent\start_agent.vbs"
+echo WshShell.Run "pythonw.exe agent.py", 0, False >> "C:\endpointx\endpoint-agent\start_agent.vbs"
+
+Copy-Item "C:\endpointx\endpoint-agent\start_agent.vbs" "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\endpointx.vbs" -Force
+
+Write-Host ""
+Write-Host "Iniciando agent..." -ForegroundColor Green
+Start-Process -FilePath "wscript.exe" -ArgumentList "C:\endpointx\endpoint-agent\start_agent.vbs"
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "  Instalacao concluida!" -ForegroundColor Green
+Write-Host "  Agent rodando em background." -ForegroundColor Green
+Write-Host "  Inicia automaticamente no login." -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Read-Host "Press Enter para fechar"`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx.ps1"');
+    res.send(script);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUBLIC - Download agent files (no auth required)
+router.get('/download/public/:filename', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { filename } = req.params;
+    const allowedFiles = ['agent.py', 'system_info.py', 'requirements.txt', 'crypto_utils.py'];
+
+    if (!allowedFiles.includes(filename)) {
+      res.status(404).json({ success: false, error: { message: 'File not found' } });
+      return;
+    }
+
+    const filePath = join(__dirname, '..', '..', '..', 'endpoint-agent', filename);
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'File not found on server' } });
+      return;
+    }
+
+    const content = readFileSync(filePath, 'utf-8');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(content);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

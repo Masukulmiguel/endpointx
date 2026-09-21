@@ -17,11 +17,13 @@ import {
   LogOut,
   ChevronDown,
   User,
+  Download,
 } from 'lucide-react';
 
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { label: 'Devices', path: '/devices', icon: Monitor },
+  { label: 'Install Agent', path: '/install', icon: Download },
   { label: 'Users', path: '/users', icon: Users },
   { label: 'Roles & Permissions', path: '/roles', icon: Shield },
   { label: 'Security', path: '/security', icon: Lock },
@@ -35,6 +37,7 @@ const navItems = [
 const routeTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/devices': 'Devices',
+  '/install': 'Install Agent',
   '/users': 'Users',
   '/roles': 'Roles & Permissions',
   '/security': 'Security',
