@@ -23,18 +23,17 @@ python agent.py --register
 
 REM Parar agent antigo se existir
 taskkill /f /im pythonw.exe 2>nul
-taskkill /f /im python.exe /fi "WINDOWTITLE eq *agent*" 2>nul
 
 REM Criar script VBS para rodar invisivelmente em background
 echo Criando script de background...
-echo Set WshShell = CreateObject("WScript.Shell") > C:\endpointx\endpoint-agent\start_agent.vbs
-echo WshShell.CurrentDirectory = "C:\endpointx\endpoint-agent" >> C:\endpointx\endpoint-agent\start_agent.vbs
-echo WshShell.Run "pythonw.exe agent.py", 0, False >> C:\endpointx\endpoint-agent\start_agent.vbs
+echo Set WshShell = CreateObject("WScript.Shell") > "C:\endpointx\endpoint-agent\start_agent.vbs"
+echo WshShell.CurrentDirectory = "C:\endpointx\endpoint-agent" >> "C:\endpointx\endpoint-agent\start_agent.vbs"
+echo WshShell.Run "pythonw.exe agent.py", 0, False >> "C:\endpointx\endpoint-agent\start_agent.vbs"
 
-REM Criar tarefa agendada para iniciar com o Windows
-echo Criando tarefa agendada...
-schtasks /delete /tn "EndpointX Agent" /f 2>nul
-schtasks /create /tn "EndpointX Agent" /tr "wscript.exe \"C:\endpointx\endpoint-agent\start_agent.vbs\"" /sc onstart /ru SYSTEM /f
+REM Copiar VBS para pasta de inicio do Windows (inicia com login)
+echo Configurando auto-start...
+mkdir "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup" 2>nul
+copy /Y "C:\endpointx\endpoint-agent\start_agent.vbs" "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\endpointx.vbs" >nul
 
 REM Iniciar agent agora
 echo Iniciando agent...
@@ -46,6 +45,6 @@ echo.
 echo ========================================
 echo Instalacao concluida!
 echo O agent esta a correr em background.
-echo Vai iniciar automaticamente ao ligar PC.
+echo Vai iniciar automaticamente ao ligar.
 echo ========================================
 pause
