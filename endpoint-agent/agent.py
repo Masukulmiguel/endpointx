@@ -388,7 +388,39 @@ class EndpointAgent:
         if not update_url:
             return {"message": "No update URL provided"}
         logger.info("Agent update requested from %s", update_url)
-        return {"message": "Update not yet implemented"}
+        try:
+            import urllib.request
+            import tempfile
+            import shutil
+
+            base_url = update_url.rstrip("/")
+            agent_dir = os.path.dirname(os.path.abspath(__file__))
+
+            files_to_update = ["agent.py", "system_info.py", "config.yaml"]
+            updated = []
+
+            for fname in files_to_update:
+                url = f"{base_url}/{fname}"
+                try:
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        content = resp.read()
+                        target = os.path.join(agent_dir, fname)
+                        with open(target, "wb") as f:
+                            f.write(content)
+                        updated.append(fname)
+                        logger.info("Updated %s", fname)
+                except Exception as exc:
+                    logger.warning("Failed to update %s: %s", fname, exc)
+
+            if updated:
+                logger.info("Update complete. Restarting agent...")
+                os.execl(sys.executable, sys.executable, *sys.argv)
+                return {"message": f"Updated {len(updated)} files, restarting", "files": updated}
+            return {"message": "No files updated"}
+        except Exception as exc:
+            logger.error("Update failed: %s", exc)
+            return {"message": f"Update failed: {exc}"}
 
     def handle_scan(self, params: dict[str, Any]) -> dict[str, Any]:
         logger.info("Security scan requested")
@@ -521,6 +553,14 @@ class EndpointAgent:
                             self._inventory_sent = True
                         except Exception as exc:
                             logger.error("Inventory send error: %s", exc)
+
+                    # Auto security scan on first heartbeat
+                    if not self._security_sent:
+                        try:
+                            self._send_security_scan()
+                            self._security_sent = True
+                        except Exception as exc:
+                            logger.error("Auto security scan error: %s", exc)
 
                     # Auto security scan every 10 minutes
                     now = time.time()

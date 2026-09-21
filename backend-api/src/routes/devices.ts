@@ -218,9 +218,11 @@ router.post('/:id/update-agent', authenticate, requirePermission('devices.comman
       return;
     }
 
+    const updateUrl = 'https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent';
+    const params = { update_url: updateUrl, ...(req.body || {}) };
     const cmdId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     query('INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES (?, ?, ?, ?, ?, ?)',
-      [cmdId, id, 'update_agent', JSON.stringify(req.body || {}), 'pending', req.user?.id]);
+      [cmdId, id, 'update_agent', JSON.stringify(params), 'pending', req.user?.id]);
 
     query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'agent_update', 'device', id, 'Agent update command sent', req.ip]);
