@@ -100,14 +100,19 @@ class EndpointAgent:
         log_level = getattr(logging, self.config.get("log_level", "INFO").upper(), logging.INFO)
         log_file = self.config.get("log_file", "endpointx-agent.log")
 
-        handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+        handlers: list[logging.Handler] = []
 
-        if log_file:
-            try:
-                file_handler = logging.FileHandler(log_file, encoding="utf-8")
-                handlers.append(file_handler)
-            except OSError as exc:
-                print(f"Warning: Could not open log file {log_file}: {exc}", file=sys.stderr)
+        if sys.stdout is not None:
+            handlers.append(logging.StreamHandler(sys.stdout))
+
+        try:
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            handlers.append(file_handler)
+        except OSError:
+            pass
+
+        if not handlers:
+            handlers.append(logging.NullHandler())
 
         logging.basicConfig(
             level=log_level,
@@ -237,40 +242,39 @@ class EndpointAgent:
 
     def heartbeat(self) -> Optional[dict[str, Any]]:
         """Send a heartbeat with system metrics and receive pending commands."""
-        hostname = get_hostname()
-        cpu_info = get_cpu_info()
-        mem_info = get_memory_info()
-        disk_info = get_disk_info()
-        net_traffic = get_network_traffic()
-        processes = get_running_processes()
+        try:
+            cpu_info = get_cpu_info()
+            mem_info = get_memory_info()
+            disk_info = get_disk_info()
+            net_traffic = get_network_traffic()
+            proc_count = len(psutil.pids())
 
-        payload = {
-            "agent_id": self.config.get("agent_id", hostname),
-            "cpu_usage": cpu_info.get("usage_percent", 0),
-            "ram_usage": mem_info.get("percent", 0),
-            "disk_usage": disk_info.get("percent", 0),
-            "network_in": net_traffic.get("bytes_recv", 0),
-            "network_out": net_traffic.get("bytes_sent", 0),
-            "active_processes": len(processes),
-        }
+            payload = {
+                "agent_id": self.config.get("agent_id", get_hostname()),
+                "cpu_usage": cpu_info.get("usage_percent", 0),
+                "ram_usage": mem_info.get("percent", 0),
+                "disk_usage": disk_info.get("percent", 0),
+                "network_in": net_traffic.get("bytes_recv", 0),
+                "network_out": net_traffic.get("bytes_sent", 0),
+                "active_processes": proc_count,
+            }
 
-        resp = self._make_request("POST", "/devices/heartbeat", payload)
-        if resp is None:
-            return None
-
-        if resp.status_code == 200:
-            try:
-                return resp.json()
-            except json.JSONDecodeError:
-                logger.error("Failed to parse heartbeat response")
+            resp = self._make_request("POST", "/devices/heartbeat", payload)
+            if resp is None:
                 return None
-        elif resp.status_code == 404:
-            logger.warning("Device not registered. Attempting registration...")
-            if self.register():
-                return self.heartbeat()
-            return None
-        else:
-            logger.error("Heartbeat failed with status %d: %s", resp.status_code, resp.text[:200])
+
+            if resp.status_code == 200:
+                return resp.json()
+            elif resp.status_code == 404:
+                logger.warning("Device not registered. Attempting registration...")
+                if self.register():
+                    return self.heartbeat()
+                return None
+            else:
+                logger.error("Heartbeat failed with status %d", resp.status_code)
+                return None
+        except Exception as exc:
+            logger.error("Heartbeat error: %s", exc)
             return None
 
     def report_command_result(self, cmd_id: str, status: str, result: Any = None, error_message: str = None) -> bool:
