@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: endpointx-api
+    name: endpointx
     runtime: node
     plan: free
-    buildCommand: cd backend-api && npm install && npm run build
+    buildCommand: cd backend-api && npm install
     startCommand: cd backend-api && npm start
     envVars:
       - key: NODE_ENV
@@ -11,6 +11,5 @@ services:
       - key: PORT
         value: 3001
       - key: AGENT_SECRET
-        generateValue: false
         value: dev_agent_secret_123
     healthCheckPath: /health
