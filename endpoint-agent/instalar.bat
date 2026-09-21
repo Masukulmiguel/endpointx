@@ -23,20 +23,19 @@ REM Registar agent
 echo Registando device no servidor...
 python agent.py --register
 
-REM Criar script de inicio
+REM Criar script de inicio (vbs para correr em background silencioso)
 echo Criando script de inicio...
-echo @echo off > C:\endpointx\endpoint-agent\iniciar.bat
-echo cd /d C:\endpointx\endpoint-agent >> C:\endpointx\endpoint-agent\iniciar.bat
-echo python agent.py >> C:\endpointx\endpoint-agent\iniciar.bat
+echo Set WshShell = CreateObject("WScript.Shell") > C:\endpointx\endpoint-agent\iniciar.vbs
+echo WshShell.Run "cmd /c cd /d C:\endpointx\endpoint-agent && python agent.py", 0, False >> C:\endpointx\endpoint-agent\iniciar.vbs
 
 REM Criar tarefa agendada para iniciar com o Windows
 echo Criando tarefa agendada...
 schtasks /delete /tn "EndpointX Agent" /f 2>nul
-schtasks /create /tn "EndpointX Agent" /tr "\"C:\endpointx\endpoint-agent\iniciar.bat\"" /sc onstart /ru SYSTEM /f
+schtasks /create /tn "EndpointX Agent" /tr "wscript.exe \"C:\endpointx\endpoint-agent\iniciar.vbs\"" /sc onstart /ru SYSTEM /f
 
-REM Iniciar agent agora
+REM Iniciar agent agora (em background)
 echo Iniciando agent...
-python agent.py
+start /min cmd /c "cd /d C:\endpointx\endpoint-agent && python agent.py"
 
 echo.
 echo ========================================
