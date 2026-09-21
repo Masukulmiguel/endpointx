@@ -502,11 +502,12 @@ try {
 Write-Host "[1/5] Criando pasta..." -ForegroundColor Green
 New-Item -ItemType Directory -Force -Path "C:\endpointx\endpoint-agent" | Out-Null
 
-Write-Host "[2/5] Baixando agent..." -ForegroundColor Green
+Write-Host "[2/5] Baixando agent do GitHub..." -ForegroundColor Green
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Invoke-WebRequest -Uri "${serverUrl}/api/devices/download/public/agent.py" -OutFile "C:\endpointx\endpoint-agent\agent.py" -UseBasicParsing
-Invoke-WebRequest -Uri "${serverUrl}/api/devices/download/public/system_info.py" -OutFile "C:\endpointx\endpoint-agent\system_info.py" -UseBasicParsing
-Invoke-WebRequest -Uri "${serverUrl}/api/devices/download/public/requirements.txt" -OutFile "C:\endpointx\endpoint-agent\requirements.txt" -UseBasicParsing
+$github = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
+Invoke-WebRequest -Uri "$github/agent.py" -OutFile "C:\endpointx\endpoint-agent\agent.py" -UseBasicParsing
+Invoke-WebRequest -Uri "$github/system_info.py" -OutFile "C:\endpointx\endpoint-agent\system_info.py" -UseBasicParsing
+Invoke-WebRequest -Uri "$github/requirements.txt" -OutFile "C:\endpointx\endpoint-agent\requirements.txt" -UseBasicParsing
 
 Write-Host "[3/5] Criando config..." -ForegroundColor Green
 @"
