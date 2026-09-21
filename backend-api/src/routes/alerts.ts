@@ -7,7 +7,8 @@ const router = Router();
 
 router.get('/', authenticate, requirePermission('alerts.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = query('SELECT a.*, d.hostname FROM alerts a LEFT JOIN devices d ON a.device_id = d.id ORDER BY a.created_at DESC LIMIT 100', []);
+    const limit = parseInt(req.query.limit as string) || 100;
+    const result = query('SELECT a.*, d.hostname FROM alerts a LEFT JOIN devices d ON a.device_id = d.id ORDER BY a.created_at DESC LIMIT ?', [limit]);
     res.json({ success: true, data: { alerts: result.rows } });
   } catch (error) { next(error); }
 });
