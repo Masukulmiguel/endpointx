@@ -378,6 +378,148 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
   }
 });
 
+// Agent security scan - receives security data and generates events + alerts
+router.post('/security-scan', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { agent_id, scan_type, firewall, antivirus, high_cpu_processes, suspicious_connections, findings } = req.body;
+
+    if (!agent_id) {
+      res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
+      return;
+    }
+
+    const agentSecret = req.headers['x-agent-secret'];
+    if (agentSecret !== process.env.AGENT_SECRET) {
+      res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
+      return;
+    }
+
+    const deviceResult = query('SELECT id, hostname FROM devices WHERE agent_id = ?', [agent_id]);
+    if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+
+    const device = deviceResult.rows[0];
+    const events: Array<{ event_type: string; severity: string; title: string; description: string }> = [];
+
+    // Check firewall
+    if (firewall && !firewall.enabled) {
+      events.push({
+        event_type: 'firewall_disabled',
+        severity: 'high',
+        title: 'Firewall Disabled',
+        description: `Firewall is disabled on ${device.hostname}`,
+      });
+    }
+
+    // Check antivirus
+    if (antivirus && !antivirus.enabled) {
+      events.push({
+        event_type: 'antivirus_disabled',
+        severity: 'high',
+        title: 'Antivirus Disabled',
+        description: `Antivirus is not running on ${device.hostname}`,
+      });
+    }
+
+    // Check high CPU processes
+    if (high_cpu_processes && high_cpu_processes.length > 0) {
+      const procs = high_cpu_processes.slice(0, 5);
+      events.push({
+        event_type: 'high_cpu_usage',
+        severity: 'medium',
+        title: 'High CPU Usage Detected',
+        description: `${procs.length} processes using high CPU: ${procs.map((p: any) => p.name || p).join(', ')}`,
+      });
+    }
+
+    // Check suspicious connections
+    if (suspicious_connections && suspicious_connections.length > 0) {
+      events.push({
+        event_type: 'suspicious_network',
+        severity: 'critical',
+        title: 'Suspicious Network Activity',
+        description: `${suspicious_connections.length} suspicious connections detected on ${device.hostname}`,
+      });
+    }
+
+    // Custom findings from agent
+    if (findings && Array.isArray(findings)) {
+      for (const f of findings) {
+        events.push({
+          event_type: f.type || 'security_finding',
+          severity: f.severity || 'info',
+          title: f.title || 'Security Finding',
+          description: f.description || '',
+        });
+      }
+    }
+
+    // Insert events and auto-create alerts
+    for (const evt of events) {
+      const eventId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      query('INSERT INTO security_events (id, device_id, event_type, severity, title, description, source) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [eventId, device.id, evt.event_type, evt.severity, evt.title, evt.description, 'agent_scan']);
+
+      // Auto-create alerts for critical and high severity
+      if (evt.severity === 'critical' || evt.severity === 'high') {
+        const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [alertId, device.id, evt.event_type, evt.severity, evt.title, evt.description, JSON.stringify({ device_hostname: device.hostname })]);
+      }
+    }
+
+    logger.info('Security scan received', { agent_id, events: events.length });
+    res.json({ success: true, data: { message: 'Security scan processed', events_created: events.length } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Agent heartbeat report alerts
+router.post('/alerts', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { agent_id, alerts } = req.body;
+
+    if (!agent_id || !alerts || !Array.isArray(alerts)) {
+      res.status(400).json({ success: false, error: { message: 'agent_id and alerts array required' } });
+      return;
+    }
+
+    const agentSecret = req.headers['x-agent-secret'];
+    if (agentSecret !== process.env.AGENT_SECRET) {
+      res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
+      return;
+    }
+
+    const deviceResult = query('SELECT id, hostname FROM devices WHERE agent_id = ?', [agent_id]);
+    if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+
+    const device = deviceResult.rows[0];
+    let created = 0;
+
+    for (const alert of alerts) {
+      // Check if similar alert already exists in last hour
+      const existing = query("SELECT id FROM alerts WHERE device_id = ? AND alert_type = ? AND created_at > datetime('now', '-1 hour') LIMIT 1",
+        [device.id, alert.alert_type || alert.type]);
+      if (existing.rows.length > 0) continue;
+
+      const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [alertId, device.id, alert.alert_type || alert.type, alert.severity || 'medium', alert.title, alert.description || '', JSON.stringify({ device_hostname: device.hostname })]);
+      created++;
+    }
+
+    res.json({ success: true, data: { message: 'Alerts processed', created } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Download agent installer script
 router.get('/download/installer', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

@@ -18,7 +18,10 @@ import {
   ChevronDown,
   User,
   Download,
+  AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
+import api from '../services/api';
 
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -51,9 +54,13 @@ const routeTitles: Record<string, string> = {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const location = useLocation();
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const pageTitle = routeTitles[location.pathname] || 'EndpointX';
 
@@ -62,9 +69,49 @@ export default function Layout() {
   }, [location.pathname]);
 
   useEffect(() => {
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchAlerts = async () => {
+    try {
+      const res = await api.request<any>('/alerts?limit=10');
+      const data = res?.data || res;
+      const alertList = data?.alerts || [];
+      setAlerts(alertList);
+      setUnreadCount(alertList.filter((a: any) => !a.is_dismissed).length);
+    } catch (err) {
+      // silent
+    }
+  };
+
+  const handleDismissAlert = async (id: string) => {
+    try {
+      await api.request<any>(`/alerts/${id}/dismiss`, { method: 'POST' });
+      fetchAlerts();
+    } catch (err) {
+      // silent
+    }
+  };
+
+  const severityColor = (s: string) => {
+    switch (s) {
+      case 'critical': return 'text-red-500 bg-red-100 dark:bg-red-900/30';
+      case 'high': return 'text-red-500 bg-red-50 dark:bg-red-900/20';
+      case 'medium': return 'text-amber-500 bg-amber-100 dark:bg-amber-900/30';
+      case 'low': return 'text-blue-500 bg-blue-100 dark:bg-blue-900/30';
+      default: return 'text-gray-500 bg-gray-100 dark:bg-gray-700';
+    }
+  };
+
+  useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setUserDropdownOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -183,13 +230,66 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
-                5
-              </span>
-            </button>
+            <div ref={notifRef} className="relative">
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <>
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
+                      {unreadCount}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
+                    <button onClick={() => { setNotifOpen(false); navigate('/alerts'); }} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                      View all
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+                    {alerts.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No notifications
+                      </div>
+                    ) : (
+                      alerts.map((alert) => (
+                        <div key={alert.id} className={`px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${alert.is_dismissed ? 'opacity-50' : ''}`}>
+                          <div className="flex items-start gap-3">
+                            <div className={`flex-shrink-0 mt-0.5 p-1.5 rounded-lg ${severityColor(alert.severity)}`}>
+                              {alert.severity === 'critical' ? <ShieldAlert className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{alert.title}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{alert.description}</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                {alert.metadata?.device_hostname || 'Unknown device'} · {new Date(alert.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            {!alert.is_dismissed && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDismissAlert(alert.id); }}
+                                className="flex-shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                title="Dismiss"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div ref={dropdownRef} className="relative">
               <button

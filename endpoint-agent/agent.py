@@ -405,12 +405,68 @@ class EndpointAgent:
         if high_cpu:
             scan_results["findings"].append({
                 "severity": "info",
+                "title": "High CPU Usage",
                 "description": f"{len(high_cpu)} processes with high CPU usage",
+                "type": "high_cpu_usage",
                 "details": [p["name"] for p in high_cpu[:10]],
             })
 
         scan_results["findings_count"] = len(scan_results["findings"])
+
+        # Send scan results to server for event/alert generation
+        try:
+            self._make_request("POST", "/devices/security-scan", {
+                "agent_id": self.config.get("agent_id", get_hostname()),
+                "scan_type": scan_results["scan_type"],
+                "firewall": scan_results["firewall"],
+                "antivirus": scan_results["antivirus"],
+                "high_cpu_processes": high_cpu[:10],
+                "findings": scan_results["findings"],
+            })
+        except Exception as exc:
+            logger.error("Failed to send scan results to server: %s", exc)
+
         return scan_results
+
+    def _send_security_scan(self) -> None:
+        """Send automatic security scan results to server."""
+        logger.info("Running automatic security scan...")
+        firewall = get_firewall_status()
+        antivirus = get_antivirus_status()
+        processes = get_running_processes()
+        high_cpu = [p for p in processes if p.get("cpu_percent", 0) > 80][:10]
+
+        findings = []
+        if not firewall.get("enabled"):
+            findings.append({
+                "severity": "high",
+                "title": "Firewall Disabled",
+                "description": "Firewall is disabled on this device",
+                "type": "firewall_disabled",
+            })
+        if not antivirus.get("enabled"):
+            findings.append({
+                "severity": "high",
+                "title": "Antivirus Not Running",
+                "description": "No active antivirus detected",
+                "type": "antivirus_disabled",
+            })
+        if high_cpu:
+            findings.append({
+                "severity": "medium",
+                "title": "High CPU Usage",
+                "description": f"{len(high_cpu)} processes using high CPU",
+                "type": "high_cpu_usage",
+            })
+
+        self._make_request("POST", "/devices/security-scan", {
+            "agent_id": self.config.get("agent_id", get_hostname()),
+            "scan_type": "auto",
+            "firewall": firewall,
+            "antivirus": antivirus,
+            "high_cpu_processes": high_cpu,
+            "findings": findings,
+        })
 
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         logger.info("Detailed system info requested")
@@ -435,6 +491,8 @@ class EndpointAgent:
 
         self._running = True
         self._inventory_sent = False
+        self._security_sent = False
+        self._last_security_check = 0
 
         if not self.config.get("agent_id"):
             logger.info("No agent_id found, attempting registration...")
@@ -463,6 +521,15 @@ class EndpointAgent:
                             self._inventory_sent = True
                         except Exception as exc:
                             logger.error("Inventory send error: %s", exc)
+
+                    # Auto security scan every 10 minutes
+                    now = time.time()
+                    if now - self._last_security_check >= 600:
+                        try:
+                            self._send_security_scan()
+                            self._last_security_check = now
+                        except Exception as exc:
+                            logger.error("Auto security scan error: %s", exc)
             except Exception as exc:
                 logger.error("Heartbeat cycle error: %s", exc)
 
