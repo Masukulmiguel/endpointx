@@ -1,9 +1,8 @@
 import { Response, NextFunction } from 'express';
-import pool, { query } from '../config/database';
+import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
 import { paginate, sanitizeString } from '../utils/helpers';
-import { io } from '../index';
 
 export const registerDevice = async (
   req: AuthRequest,
@@ -388,27 +387,15 @@ export const deleteDevice = async (
 
     const device = existingDevice.rows[0];
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      await client.query('DELETE FROM device_heartbeats WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM device_software WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM device_services WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM device_processes WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM device_network_interfaces WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM security_events WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM agent_commands WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM alerts WHERE device_id = $1', [id]);
-      await client.query('DELETE FROM devices WHERE id = $1', [id]);
-
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    query('DELETE FROM device_heartbeats WHERE device_id = ?', [id]);
+    query('DELETE FROM device_software WHERE device_id = ?', [id]);
+    query('DELETE FROM device_services WHERE device_id = ?', [id]);
+    query('DELETE FROM device_processes WHERE device_id = ?', [id]);
+    query('DELETE FROM device_network_interfaces WHERE device_id = ?', [id]);
+    query('DELETE FROM security_events WHERE device_id = ?', [id]);
+    query('DELETE FROM agent_commands WHERE device_id = ?', [id]);
+    query('DELETE FROM alerts WHERE device_id = ?', [id]);
+    query('DELETE FROM devices WHERE id = ?', [id]);
 
     await query(
       `INSERT INTO audit_logs (user_id, action, target_type, target_id, details, ip_address)

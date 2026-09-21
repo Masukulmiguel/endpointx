@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import pool, { query } from '../config/database';
+import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
 import { sanitizeString } from '../utils/helpers';
