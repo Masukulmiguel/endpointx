@@ -23,19 +23,18 @@ python agent.py --register
 
 REM Criar script de inicio
 echo Criando script de inicio...
-(
-echo @echo off
-echo cd /d C:\endpointx\endpoint-agent
-echo python agent.py
-) > iniciar.bat
+echo @echo off > C:\endpointx\endpoint-agent\iniciar.bat
+echo cd /d C:\endpointx\endpoint-agent >> C:\endpointx\endpoint-agent\iniciar.bat
+echo python agent.py >> C:\endpointx\endpoint-agent\iniciar.bat
 
-REM Criar tarefa agendada para iniciar com o Windows
+REM Criar tarefa agendada para iniciar com o Windows (nao precisa de login)
 echo Criando tarefa agendada...
-schtasks /create /tn "EndpointX Agent" /tr "C:\endpointx\endpoint-agent\iniciar.bat" /sc onlogon /rl highest /f
+schtasks /create /tn "EndpointX Agent" /tr "\"C:\endpointx\endpoint-agent\iniciar.bat\"" /sc onstart /ru SYSTEM /f
 
 REM Iniciar agent agora
 echo Iniciando agent...
-start "" python agent.py
+cd /d C:\endpointx\endpoint-agent
+start /b python agent.py
 
 echo.
 echo ========================================
