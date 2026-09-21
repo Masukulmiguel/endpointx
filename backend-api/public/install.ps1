@@ -3,13 +3,15 @@ $ErrorActionPreference = "Stop"
 $serverUrl = "##SERVER_URL##"
 
 Write-Host ""
-Write-Host "  ______    _______  __       ______   _______  _______" -ForegroundColor Cyan
-Write-Host " /    _ \\  / ____/ / /      / ____/  / ____/ /__  __/" -ForegroundColor Cyan
-Write-Host " /  /_/ /  / /     / /      / __/    / __/       / /   " -ForegroundColor Cyan
-Write-Host "/    __/  / /___  / /___   / /___   / /___      / /    " -ForegroundColor Cyan
-Write-Host "/_/ |_/   \\____/ /_____/  /_____/  \\____/     /_/     " -ForegroundColor Cyan
+Write-Host "  ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗" -ForegroundColor Cyan
+Write-Host "  ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝" -ForegroundColor Cyan
+Write-Host "  █████╗  █████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║███████╗" -ForegroundColor Cyan
+Write-Host "  ██╔══╝  ██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║╚════██║" -ForegroundColor Cyan
+Write-Host "  ██║     ███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████║" -ForegroundColor Cyan
+Write-Host "  ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Endpoint Management System v1.0" -ForegroundColor Gray
+Write-Host "  Endpoint Management System v1.0.0" -ForegroundColor Gray
+Write-Host "  by Masukulu Miguel" -ForegroundColor DarkGray
 Write-Host "  Server: $serverUrl" -ForegroundColor Gray
 Write-Host ""
 

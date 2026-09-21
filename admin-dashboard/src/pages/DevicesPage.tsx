@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Monitor,
@@ -158,11 +158,6 @@ export default function DevicesPage() {
   const devices = Array.isArray(data?.devices) ? data.devices : [];
   const totalPages = data?.pagination?.totalPages || 1;
   const totalCount = data?.pagination?.total || 0;
-
-  useEffect(() => {
-    const interval = setInterval(() => { refetch(); }, 15000);
-    return () => clearInterval(interval);
-  }, [refetch]);
 
   const tableColumns = [
     {

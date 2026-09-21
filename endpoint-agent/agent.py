@@ -484,7 +484,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.0.0")
+        print("EndpointX Agent v1.0.0 by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:

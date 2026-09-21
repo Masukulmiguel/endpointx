@@ -168,7 +168,10 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-xs text-gray-500">
-            EndpointX Endpoint Management System
+            EndpointX v1.0.0 - Endpoint Management System
+          </p>
+          <p className="mt-1 text-center text-xs text-gray-400">
+            by Masukulu Miguel
           </p>
         </div>
       </div>
