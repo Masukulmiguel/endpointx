@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: endpointx
+    name: endpointx-api
     runtime: docker
     plan: free
     dockerfilePath: ./backend-api/Dockerfile
@@ -12,3 +12,12 @@ services:
       - key: AGENT_SECRET
         value: dev_agent_secret_123
     healthCheckPath: /health
+
+  - type: web
+    name: endpointx-dashboard
+    runtime: docker
+    plan: free
+    dockerfilePath: ./admin-dashboard/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
