@@ -673,4 +673,22 @@ router.get('/download/public/:filename', async (req: AuthRequest, res: Response,
   }
 });
 
+// PUBLIC - Download update script (no auth required)
+router.get('/public/update.ps1', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const filePath = join(__dirname, '..', '..', 'public', 'update.ps1');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'Update script not found' } });
+      return;
+    }
+
+    const script = readFileSync(filePath, 'utf-8');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="update-endpointx.ps1"');
+    res.send(script);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
