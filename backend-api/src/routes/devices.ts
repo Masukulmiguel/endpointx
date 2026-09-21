@@ -461,14 +461,14 @@ router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, r
       return;
     }
 
-    const filePath = join(__dirname, '..', '..', '..', 'endpoint-agent', filename);
+    const filePath = join(__dirname, '..', '..', 'endpoint-agent', filename);
     if (!existsSync(filePath)) {
-      res.status(404).json({ success: false, error: { message: 'File not found' } });
+      res.status(404).json({ success: false, error: { message: 'File not found on server' } });
       return;
     }
 
     const content = readFileSync(filePath, 'utf-8');
-    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.send(content);
   } catch (error) {
     next(error);
@@ -482,7 +482,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
 
-    const filePath = join(__dirname, '..', '..', '..', 'public', 'install.ps1');
+    const filePath = join(__dirname, '..', '..', 'public', 'install.ps1');
     if (!existsSync(filePath)) {
       res.status(404).json({ success: false, error: { message: 'Install script not found' } });
       return;
@@ -510,7 +510,7 @@ router.get('/download/public/:filename', async (req: AuthRequest, res: Response,
       return;
     }
 
-    const filePath = join(__dirname, '..', '..', '..', 'endpoint-agent', filename);
+    const filePath = join(__dirname, '..', '..', 'endpoint-agent', filename);
     if (!existsSync(filePath)) {
       res.status(404).json({ success: false, error: { message: 'File not found on server' } });
       return;
