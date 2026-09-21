@@ -12,7 +12,7 @@ export default function InstallPage() {
     setTimeout(() => setCopied(''), 2000);
   };
 
-  const installScript = `Invoke-RestMethod -Uri "${API_URL}/api/download/installer" -OutFile "$env:TEMP\\install-endpointx.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\\install-endpointx.ps1"`;
+  const installScript = `iex (Invoke-WebRequest -Uri "${API_URL}/api/devices/public/install.ps1" -UseBasicParsing).Content`;
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -34,7 +34,7 @@ export default function InstallPage() {
           Metodo 1: Instalacao Rapida (Recomendado)
         </h2>
         <p className="text-gray-400 text-sm mb-4">
-          No PC remoto, abra o PowerShell e cole este comando:
+          No PC remoto, abra o PowerShell como Administrador e cole este comando:
         </p>
         <div className="bg-gray-900 rounded p-3 flex items-center justify-between">
           <code className="text-green-400 text-xs break-all">{installScript}</code>
@@ -45,6 +45,9 @@ export default function InstallPage() {
             {copied === 'quick' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
           </button>
         </div>
+        <p className="text-gray-500 text-xs mt-2">
+          Requer Python instalado com "Add to PATH" marcado.
+        </p>
       </div>
 
       {/* Method 2: Git install */}
