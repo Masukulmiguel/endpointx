@@ -83,7 +83,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       query("UPDATE agent_commands SET status = 'processing' WHERE id = ?", [cmd.id]);
     }
 
-    res.json({ success: true, data: { device_id: device.id, commands: commands.rows } });
+    res.json({ success: true, data: { device_id: device.id, commands: commands.rows, agent_version: '1.1.0' } });
   } catch (error) {
     next(error);
   }

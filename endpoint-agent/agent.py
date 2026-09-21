@@ -257,6 +257,7 @@ class EndpointAgent:
                 "network_in": net_traffic.get("bytes_recv", 0),
                 "network_out": net_traffic.get("bytes_sent", 0),
                 "active_processes": proc_count,
+                "current_version": "1.0.0",
             }
 
             resp = self._make_request("POST", "/devices/heartbeat", payload)
@@ -264,7 +265,13 @@ class EndpointAgent:
                 return None
 
             if resp.status_code == 200:
-                return resp.json()
+                data = resp.json()
+                server_data = data.get("data", {})
+                server_version = server_data.get("agent_version", "")
+                if server_version and server_version != "1.0.0":
+                    logger.info("New agent version available: %s (current: 1.0.0)", server_version)
+                    self._auto_update()
+                return data
             elif resp.status_code == 404:
                 logger.warning("Device not registered. Attempting registration...")
                 if self.register():
@@ -276,6 +283,35 @@ class EndpointAgent:
         except Exception as exc:
             logger.error("Heartbeat error: %s", exc)
             return None
+
+    def _auto_update(self) -> None:
+        """Download latest agent files from GitHub and restart."""
+        try:
+            import urllib.request
+            base_url = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
+            agent_dir = os.path.dirname(os.path.abspath(__file__))
+            files_to_update = ["agent.py", "system_info.py"]
+            updated = []
+
+            for fname in files_to_update:
+                url = f"{base_url}/{fname}"
+                try:
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        content = resp.read()
+                        target = os.path.join(agent_dir, fname)
+                        with open(target, "wb") as f:
+                            f.write(content)
+                        updated.append(fname)
+                        logger.info("Auto-updated %s", fname)
+                except Exception as exc:
+                    logger.warning("Failed to auto-update %s: %s", fname, exc)
+
+            if updated:
+                logger.info("Auto-update complete. Restarting agent...")
+                os.execl(sys.executable, sys.executable, *sys.argv)
+        except Exception as exc:
+            logger.error("Auto-update failed: %s", exc)
 
     def report_command_result(self, cmd_id: str, status: str, result: Any = None, error_message: str = None) -> bool:
         """Report command execution result back to server."""
