@@ -4,6 +4,8 @@ import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { Response, NextFunction } from 'express';
 import logger from '../utils/logger';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 const router = Router();
 
@@ -366,6 +368,108 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
 
     logger.info('Command result received', { command_id, status: validStatus });
     res.json({ success: true, data: { message: 'Command result recorded' } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Download agent installer script
+router.get('/download/installer', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const serverUrl = `${req.protocol}://${req.get('host')}/api`;
+    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+
+    const script = `$ErrorActionPreference = "SilentlyContinue"
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "  EndpointX Agent Installer" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check Python
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) {
+    Write-Host "ERROR: Python not found!" -ForegroundColor Red
+    Write-Host "Download from: https://www.python.org/downloads/" -ForegroundColor Yellow
+    Write-Host "Check: Add Python to PATH" -ForegroundColor Yellow
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+Write-Host "[1/5] Creating folder..." -ForegroundColor Green
+New-Item -ItemType Directory -Force -Path "C:\\endpointx\\endpoint-agent" | Out-Null
+
+Write-Host "[2/5] Downloading agent files..." -ForegroundColor Green
+$base = "${serverUrl.replace('/api', '')}"
+Invoke-WebRequest -Uri "$base/download/agent/agent.py" -OutFile "C:\\endpointx\\endpoint-agent\\agent.py"
+Invoke-WebRequest -Uri "$base/download/agent/system_info.py" -OutFile "C:\\endpointx\\endpoint-agent\\system_info.py"
+Invoke-WebRequest -Uri "$base/download/agent/requirements.txt" -OutFile "C:\\endpointx\\endpoint-agent\\requirements.txt"
+
+# Create config
+Write-Host "[3/5] Creating config..." -ForegroundColor Green
+@"
+agent_id: AUTO
+agent_secret: ${agentSecret}
+heartbeat_interval: 60
+log_file: endpointx-agent.log
+log_level: INFO
+server_url: ${serverUrl}
+"@ | Out-File -FilePath "C:\\endpointx\\endpoint-agent\\config.yaml" -Encoding utf8
+
+Write-Host "[4/5] Installing dependencies..." -ForegroundColor Green
+pip install psutil requests pyyaml 2>$null
+
+Write-Host "[5/5] Registering device..." -ForegroundColor Green
+cd C:\\endpointx\\endpoint-agent
+python agent.py --register
+
+# Create background launcher
+echo Set WshShell = CreateObject("WScript.Shell") > "C:\\endpointx\\endpoint-agent\\start_agent.vbs"
+echo WshShell.CurrentDirectory = "C:\\endpointx\\endpoint-agent" >> "C:\\endpointx\\endpoint-agent\\start_agent.vbs"
+echo WshShell.Run "pythonw.exe agent.py", 0, False >> "C:\\endpointx\\endpoint-agent\\start_agent.vbs"
+
+# Add to startup
+Copy-Item "C:\\endpointx\\endpoint-agent\\start_agent.vbs" "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\endpointx.vbs" -Force
+
+# Start agent
+Write-Host "[6/6] Starting agent..." -ForegroundColor Green
+Start-Process -FilePath "wscript.exe" -ArgumentList "C:\\endpointx\\endpoint-agent\\start_agent.vbs"
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "  Installation complete!" -ForegroundColor Green
+Write-Host "  Agent is running in background." -ForegroundColor Green
+Write-Host "  Auto-starts on login." -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Read-Host "Press Enter to close"`;
+
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx.ps1"');
+    res.send(script);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Download agent files
+router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { filename } = req.params;
+    const allowedFiles = ['agent.py', 'system_info.py', 'requirements.txt', 'crypto_utils.py'];
+
+    if (!allowedFiles.includes(filename)) {
+      res.status(404).json({ success: false, error: { message: 'File not found' } });
+      return;
+    }
+
+    const filePath = join(__dirname, '..', '..', '..', 'endpoint-agent', filename);
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'File not found' } });
+      return;
+    }
+
+    const content = readFileSync(filePath, 'utf-8');
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(content);
   } catch (error) {
     next(error);
   }
