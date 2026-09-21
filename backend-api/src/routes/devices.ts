@@ -62,8 +62,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       return;
     }
 
-    const deviceResult = query("UPDATE devices SET status = 'online', last_heartbeat = datetime('now'), cpu_usage = ?, ram_usage = ?, disk_usage = ? WHERE agent_id = ? AND is_authorized = 1 RETURNING id",
-      [cpu_usage || 0, ram_usage || 0, disk_usage || 0, agent_id]);
+    const deviceResult = query("SELECT id FROM devices WHERE agent_id = ? AND is_authorized = 1", [agent_id]);
 
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found or not authorized' } });
@@ -71,6 +70,9 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     }
 
     const device = deviceResult.rows[0];
+
+    query("UPDATE devices SET status = 'online', last_heartbeat = datetime('now'), cpu_usage = ?, ram_usage = ?, disk_usage = ? WHERE id = ?",
+      [cpu_usage || 0, ram_usage || 0, disk_usage || 0, device.id]);
     const hbId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [hbId, device.id, cpu_usage || 0, ram_usage || 0, disk_usage || 0, network_in || 0, network_out || 0, active_processes || 0]);

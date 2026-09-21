@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -139,6 +139,11 @@ export default function DeviceDetailPage() {
   const commandMutation = useApiMutation('/commands', 'POST');
 
   const device = deviceData?.device;
+
+  useEffect(() => {
+    const interval = setInterval(() => { refetch(); }, 10000);
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   if (loading) {
     return (
