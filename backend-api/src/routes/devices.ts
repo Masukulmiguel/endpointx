@@ -483,10 +483,23 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     const serverUrl = `${protocol}://${host}`;
 
     const script = `$ErrorActionPreference = "Stop"
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  EndpointX Agent Installer" -ForegroundColor Cyan
-Write-Host "  Server: ${serverUrl}" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
+
+Write-Host ""
+Write-Host "  ╔═══════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "  ║                                           ║" -ForegroundColor Cyan
+Write-Host "  ║        ███████╗███████╗███╗   ██╗        ║" -ForegroundColor Cyan
+Write-Host "  ║        ██╔════╝██╔════╝████╗  ██║        ║" -ForegroundColor Cyan
+Write-Host "  ║        █████╗  █████╗  ██╔██╗ ██║        ║" -ForegroundColor Cyan
+Write-Host "  ║        ██╔══╝  ██╔══╝  ██║╚██╗██║        ║" -ForegroundColor Cyan
+Write-Host "  ║        ██║     ███████╗██║ ╚████║        ║" -ForegroundColor Cyan
+Write-Host "  ║        ╚═╝     ╚══════╝╚═╝  ╚═══╝        ║" -ForegroundColor Cyan
+Write-Host "  ║                                           ║" -ForegroundColor Cyan
+Write-Host "  ║      Endpoint Management System v1.0     ║" -ForegroundColor Gray
+Write-Host "  ║                                           ║" -ForegroundColor Cyan
+Write-Host "  ╚═══════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Server: ${serverUrl}" -ForegroundColor Gray
+Write-Host "  Installer v1.0" -ForegroundColor Gray
 Write-Host ""
 
 try {
