@@ -27,17 +27,16 @@ export default function InstallPage() {
         </p>
       </div>
 
-      {/* Method 1: One-line install */}
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Download className="w-5 h-5 text-green-400" />
-          Metodo 1: Instalacao Rapida (Recomendado)
+          Link de Instalacao
         </h2>
         <p className="text-gray-400 text-sm mb-4">
-          No PC remoto, abra o PowerShell como Administrador e cole este comando:
+          No PC remoto, abra o PowerShell como Administrador e cole:
         </p>
         <div className="bg-gray-900 rounded p-3 flex items-center justify-between">
-          <code className="text-green-400 text-xs break-all">{installScript}</code>
+          <code className="text-cyan-400 text-sm font-mono">{installScript}</code>
           <button
             onClick={() => copyToClipboard(installScript, 'quick')}
             className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"

@@ -485,21 +485,15 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     const script = `$ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "  ╔═══════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║                                           ║" -ForegroundColor Cyan
-Write-Host "  ║        ███████╗███████╗███╗   ██╗        ║" -ForegroundColor Cyan
-Write-Host "  ║        ██╔════╝██╔════╝████╗  ██║        ║" -ForegroundColor Cyan
-Write-Host "  ║        █████╗  █████╗  ██╔██╗ ██║        ║" -ForegroundColor Cyan
-Write-Host "  ║        ██╔══╝  ██╔══╝  ██║╚██╗██║        ║" -ForegroundColor Cyan
-Write-Host "  ║        ██║     ███████╗██║ ╚████║        ║" -ForegroundColor Cyan
-Write-Host "  ║        ╚═╝     ╚══════╝╚═╝  ╚═══╝        ║" -ForegroundColor Cyan
-Write-Host "  ║                                           ║" -ForegroundColor Cyan
-Write-Host "  ║      Endpoint Management System v1.0     ║" -ForegroundColor Gray
-Write-Host "  ║                                           ║" -ForegroundColor Cyan
-Write-Host "  ╚═══════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "  ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗" -ForegroundColor Cyan
+Write-Host "  ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝" -ForegroundColor Cyan
+Write-Host "  █████╗  █████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║███████╗" -ForegroundColor Cyan
+Write-Host "  ██╔══╝  ██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║╚════██║" -ForegroundColor Cyan
+Write-Host "  ██║     ███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████║" -ForegroundColor Cyan
+Write-Host "  ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  Endpoint Management System v1.0" -ForegroundColor Gray
 Write-Host "  Server: ${serverUrl}" -ForegroundColor Gray
-Write-Host "  Installer v1.0" -ForegroundColor Gray
 Write-Host ""
 
 try {
@@ -517,9 +511,9 @@ New-Item -ItemType Directory -Force -Path "C:\endpointx\endpoint-agent" | Out-Nu
 
 Write-Host "[2/5] Baixando agent..." -ForegroundColor Green
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Invoke-WebRequest -Uri "${serverUrl}/api/download/public/agent.py" -OutFile "C:\endpointx\endpoint-agent\agent.py" -UseBasicParsing
-Invoke-WebRequest -Uri "${serverUrl}/api/download/public/system_info.py" -OutFile "C:\endpointx\endpoint-agent\system_info.py" -UseBasicParsing
-Invoke-WebRequest -Uri "${serverUrl}/api/download/public/requirements.txt" -OutFile "C:\endpointx\endpoint-agent\requirements.txt" -UseBasicParsing
+Invoke-WebRequest -Uri "${serverUrl}/api/devices/download/public/agent.py" -OutFile "C:\endpointx\endpoint-agent\agent.py" -UseBasicParsing
+Invoke-WebRequest -Uri "${serverUrl}/api/devices/download/public/system_info.py" -OutFile "C:\endpointx\endpoint-agent\system_info.py" -UseBasicParsing
+Invoke-WebRequest -Uri "${serverUrl}/api/devices/download/public/requirements.txt" -OutFile "C:\endpointx\endpoint-agent\requirements.txt" -UseBasicParsing
 
 Write-Host "[3/5] Criando config..." -ForegroundColor Green
 @"
