@@ -1,10 +1,9 @@
 services:
   - type: web
     name: endpointx
-    runtime: node
+    runtime: docker
     plan: free
-    buildCommand: cd backend-api && npm install
-    startCommand: cd backend-api && npm start
+    dockerfilePath: ./backend-api/Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
