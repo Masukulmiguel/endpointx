@@ -11,9 +11,10 @@ interface AuthUser {
   permissions: string[];
 }
 
-interface AuthRequest extends Request {
+type AuthRequest = Request & {
   user?: AuthUser;
-}
+  [key: string]: any;
+};
 
 interface JwtPayload {
   id: string;
