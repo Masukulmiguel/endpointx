@@ -1,7 +1,17 @@
 $ErrorActionPreference = "Stop"
 
+$serverUrl = "##SERVER_URL##"
+
 Write-Host ""
-Write-Host "  EndpointX - Endpoint Management System" -ForegroundColor Cyan
+Write-Host "  ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗" -ForegroundColor Cyan
+Write-Host "  ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝" -ForegroundColor Cyan
+Write-Host "  █████╗  █████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║███████╗" -ForegroundColor Cyan
+Write-Host "  ██╔══╝  ██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║╚════██║" -ForegroundColor Cyan
+Write-Host "  ██║     ███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████║" -ForegroundColor Cyan
+Write-Host "  ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Endpoint Management System v1.0" -ForegroundColor Gray
+Write-Host "  Server: $serverUrl" -ForegroundColor Gray
 Write-Host ""
 
 try {
@@ -25,7 +35,6 @@ Invoke-WebRequest -Uri "$github/system_info.py" -OutFile "C:\endpointx\endpoint-
 Invoke-WebRequest -Uri "$github/requirements.txt" -OutFile "C:\endpointx\endpoint-agent\requirements.txt" -UseBasicParsing
 
 Write-Host "[3/5] Criando config..." -ForegroundColor Green
-$serverUrl = "##SERVER_URL##"
 @"
 agent_id: AUTO
 agent_secret: dev_agent_secret_123
