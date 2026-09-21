@@ -6,8 +6,6 @@ import { Response, NextFunction } from 'express';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import logger from '../utils/logger';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 
 const router = Router();
 
