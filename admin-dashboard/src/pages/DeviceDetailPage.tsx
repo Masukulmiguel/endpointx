@@ -131,6 +131,11 @@ export default function DeviceDetailPage() {
   const [selectedCommand, setSelectedCommand] = useState('');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const { data: deviceData, loading, error, refetch } = useApi<{ device: DeviceDetail }>(`/devices/${id}`);
   const blockMutation = useApiMutation(`/devices/${id}/block`, 'POST');
   const unblockMutation = useApiMutation(`/devices/${id}/unblock`, 'POST');
@@ -176,24 +181,48 @@ export default function DeviceDetailPage() {
   };
 
   const handleBlock = async () => {
-    await blockMutation.mutate();
-    refetch();
+    if (window.confirm('Block this device? The agent will be blocked.')) {
+      const result = await blockMutation.mutate();
+      if (result) {
+        showToast('success', 'Device blocked successfully');
+      } else {
+        showToast('error', 'Failed to block device');
+      }
+      refetch();
+    }
   };
 
   const handleUnblock = async () => {
-    await unblockMutation.mutate();
+    const result = await unblockMutation.mutate();
+    if (result) {
+      showToast('success', 'Device unblocked successfully');
+    } else {
+      showToast('error', 'Failed to unblock device');
+    }
     refetch();
   };
 
   const handleQuarantine = async () => {
-    await quarantineMutation.mutate();
-    refetch();
+    if (window.confirm('Quarantine this device?')) {
+      const result = await quarantineMutation.mutate();
+      if (result) {
+        showToast('success', 'Device quarantined successfully');
+      } else {
+        showToast('error', 'Failed to quarantine device');
+      }
+      refetch();
+    }
   };
 
   const handleRemove = async () => {
-    if (window.confirm('Are you sure you want to remove this device?')) {
-      await deleteMutation.mutate();
-      navigate('/devices');
+    if (window.confirm('Are you sure you want to remove this device? This cannot be undone.')) {
+      const result = await deleteMutation.mutate();
+      if (result) {
+        showToast('success', 'Device removed successfully');
+        setTimeout(() => navigate('/devices'), 1000);
+      } else {
+        showToast('error', 'Failed to remove device');
+      }
     }
   };
 
