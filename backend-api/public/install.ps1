@@ -3,15 +3,15 @@ $ErrorActionPreference = "Stop"
 $serverUrl = "##SERVER_URL##"
 
 Write-Host ""
-Write-Host "  ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗" -ForegroundColor Cyan
-Write-Host "  ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝" -ForegroundColor Cyan
-Write-Host "  █████╗  █████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║███████╗" -ForegroundColor Cyan
-Write-Host "  ██╔══╝  ██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║╚════██║" -ForegroundColor Cyan
-Write-Host "  ██║     ███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████║" -ForegroundColor Cyan
-Write-Host "  ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝" -ForegroundColor Cyan
+Write-Host "  ╔═══════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "  ║                                       ║" -ForegroundColor Cyan
+Write-Host "  ║        EndpointX  v1.0.0              ║" -ForegroundColor Cyan
+Write-Host "  ║   Endpoint Management System          ║" -ForegroundColor Cyan
+Write-Host "  ║                                       ║" -ForegroundColor Cyan
+Write-Host "  ║   by Masukulu Miguel                  ║" -ForegroundColor DarkGray
+Write-Host "  ║                                       ║" -ForegroundColor Cyan
+Write-Host "  ╚═══════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Endpoint Management System v1.0.0" -ForegroundColor Gray
-Write-Host "  by Masukulu Miguel" -ForegroundColor DarkGray
 Write-Host "  Server: $serverUrl" -ForegroundColor Gray
 Write-Host ""
 

@@ -164,19 +164,21 @@ export default function DeviceDetailPage() {
     );
   }
 
-  const handleSendCommand = async () => {
-    if (!selectedCommand || !id) return;
+  const handleSendCommand = async (cmdType?: string) => {
+    const type = cmdType || selectedCommand;
+    if (!type || !id) return;
+    const cmd = COMMAND_TYPES.find(c => c.value === type);
+    const label = cmd?.label || type;
+    if (!window.confirm(`Send "${label}" command to ${device.hostname}?`)) return;
     try {
-      const result = await commandMutation.mutate({ device_id: id, command_type: selectedCommand });
+      await commandMutation.mutate({ device_id: id, command_type: type });
       setCommandModalOpen(false);
       setSelectedCommand('');
-      setToast({ type: 'success', message: `Command "${selectedCommand}" sent successfully! The agent will execute it on next heartbeat.` });
+      showToast('success', `Command "${label}" sent! Agent will execute on next heartbeat.`);
       setActiveTab('commands');
       refetch();
-      setTimeout(() => setToast(null), 5000);
     } catch (err) {
-      setToast({ type: 'error', message: 'Failed to send command' });
-      setTimeout(() => setToast(null), 5000);
+      showToast('error', 'Failed to send command');
     }
   };
 
@@ -635,12 +637,9 @@ export default function DeviceDetailPage() {
               return (
                 <button
                   key={cmd.value}
-                  onClick={() => setSelectedCommand(cmd.value)}
-                  className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
-                    selectedCommand === cmd.value
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-500'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                  }`}
+                  onClick={() => handleSendCommand(cmd.value)}
+                  disabled={commandMutation.loading}
+                  className="flex items-center gap-3 p-3 rounded-lg border text-left transition-all border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 disabled:opacity-50"
                 >
                   <Icon className={`w-5 h-5 ${cmd.color}`} />
                   <span className="text-sm font-medium text-gray-900 dark:text-white">{cmd.label}</span>
@@ -648,7 +647,7 @@ export default function DeviceDetailPage() {
               );
             })}
           </div>
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex justify-end pt-2">
             <button
               onClick={() => {
                 setCommandModalOpen(false);
@@ -657,18 +656,6 @@ export default function DeviceDetailPage() {
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               Cancel
-            </button>
-            <button
-              onClick={handleSendCommand}
-              disabled={!selectedCommand || commandMutation.loading}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 rounded-lg transition-colors"
-            >
-              {commandMutation.loading ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-              Send
             </button>
           </div>
         </div>

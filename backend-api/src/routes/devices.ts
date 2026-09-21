@@ -77,8 +77,11 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [hbId, device.id, cpu_usage || 0, ram_usage || 0, disk_usage || 0, network_in || 0, network_out || 0, active_processes || 0]);
 
-    // Get pending commands
+    // Get pending commands and mark as processing
     const commands = query("SELECT id, command_type, parameters FROM agent_commands WHERE device_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 10", [device.id]);
+    for (const cmd of commands.rows) {
+      query("UPDATE agent_commands SET status = 'processing' WHERE id = ?", [cmd.id]);
+    }
 
     res.json({ success: true, data: { device_id: device.id, commands: commands.rows } });
   } catch (error) {
