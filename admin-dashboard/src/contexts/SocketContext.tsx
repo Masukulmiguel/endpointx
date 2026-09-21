@@ -71,7 +71,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const token = localStorage.getItem('access_token');
     if (!token) return;
 
-    const newSocket = io(window.location.origin, {
+    const newSocket = io(window.location.hostname === 'localhost' ? window.location.origin : 'https://endpointx.onrender.com', {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
