@@ -485,14 +485,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     const script = `$ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "  ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗" -ForegroundColor Cyan
-Write-Host "  ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝" -ForegroundColor Cyan
-Write-Host "  █████╗  █████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║███████╗" -ForegroundColor Cyan
-Write-Host "  ██╔══╝  ██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║╚════██║" -ForegroundColor Cyan
-Write-Host "  ██║     ███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████║" -ForegroundColor Cyan
-Write-Host "  ╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Endpoint Management System v1.0" -ForegroundColor Gray
+Write-Host "  EndpointX - Endpoint Management System" -ForegroundColor Cyan
 Write-Host "  Server: ${serverUrl}" -ForegroundColor Gray
 Write-Host ""
 
