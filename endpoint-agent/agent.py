@@ -447,12 +447,18 @@ class EndpointAgent:
                     if commands:
                         logger.info("Received %d command(s) from server", len(commands))
                         for cmd in commands:
-                            self.execute_command(cmd)
+                            try:
+                                self.execute_command(cmd)
+                            except Exception as exc:
+                                logger.error("Command execution error: %s", exc)
 
                     # Send inventory on first successful heartbeat
                     if not self._inventory_sent:
-                        self.send_inventory()
-                        self._inventory_sent = True
+                        try:
+                            self.send_inventory()
+                            self._inventory_sent = True
+                        except Exception as exc:
+                            logger.error("Inventory send error: %s", exc)
             except Exception as exc:
                 logger.error("Heartbeat cycle error: %s", exc)
 
@@ -493,4 +499,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        import traceback
+        with open("crash.log", "w") as f:
+            f.write(traceback.format_exc())

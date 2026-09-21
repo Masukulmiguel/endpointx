@@ -9,8 +9,6 @@ REM Verificar se Python esta instalado
 python --version >nul 2>&1
 if errorlevel 1 (
     echo ERRO: Python nao encontrado!
-    echo Por favor, instale Python de: https://www.python.org/downloads/
-    echo Marque: Add Python to PATH
     pause
     exit /b 1
 )
@@ -23,24 +21,31 @@ REM Registar agent
 echo Registando device no servidor...
 python agent.py --register
 
-REM Criar script de inicio (vbs para correr em background silencioso)
-echo Criando script de inicio...
-echo Set WshShell = CreateObject("WScript.Shell") > C:\endpointx\endpoint-agent\iniciar.vbs
-echo WshShell.Run "cmd /c cd /d C:\endpointx\endpoint-agent && python agent.py", 0, False >> C:\endpointx\endpoint-agent\iniciar.vbs
+REM Parar agent antigo se existir
+taskkill /f /im pythonw.exe 2>nul
+taskkill /f /im python.exe /fi "WINDOWTITLE eq *agent*" 2>nul
+
+REM Criar script VBS para rodar invisivelmente em background
+echo Criando script de background...
+echo Set WshShell = CreateObject("WScript.Shell") > C:\endpointx\endpoint-agent\start_agent.vbs
+echo WshShell.CurrentDirectory = "C:\endpointx\endpoint-agent" >> C:\endpointx\endpoint-agent\start_agent.vbs
+echo WshShell.Run "pythonw.exe agent.py", 0, False >> C:\endpointx\endpoint-agent\start_agent.vbs
 
 REM Criar tarefa agendada para iniciar com o Windows
 echo Criando tarefa agendada...
 schtasks /delete /tn "EndpointX Agent" /f 2>nul
-schtasks /create /tn "EndpointX Agent" /tr "wscript.exe \"C:\endpointx\endpoint-agent\iniciar.vbs\"" /sc onstart /ru SYSTEM /f
+schtasks /create /tn "EndpointX Agent" /tr "wscript.exe \"C:\endpointx\endpoint-agent\start_agent.vbs\"" /sc onstart /ru SYSTEM /f
 
-REM Iniciar agent agora (em background)
+REM Iniciar agent agora
 echo Iniciando agent...
-start /min cmd /c "cd /d C:\endpointx\endpoint-agent && python agent.py"
+wscript.exe "C:\endpointx\endpoint-agent\start_agent.vbs"
+
+timeout /t 3 >nul
 
 echo.
 echo ========================================
 echo Instalacao concluida!
-echo O agent vai iniciar automaticamente 
-echo sempre que o PC for ligado.
+echo O agent esta a correr em background.
+echo Vai iniciar automaticamente ao ligar PC.
 echo ========================================
 pause
