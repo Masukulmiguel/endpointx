@@ -262,7 +262,7 @@ class EndpointAgent:
                     "network_in": net_traffic.get("bytes_recv", 0),
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
-                    "current_version": "1.0.0",
+                    "current_version": "1.1.0",
                 }
 
                 resp = self._make_request("POST", "/devices/heartbeat", payload)
@@ -279,8 +279,9 @@ class EndpointAgent:
                     data = resp.json()
                     server_data = data.get("data", {})
                     server_version = server_data.get("agent_version", "")
-                    if server_version and server_version != "1.0.0":
-                        logger.info("New agent version available: %s (current: 1.0.0)", server_version)
+                    if server_version and server_version != "1.1.0" and not getattr(self, '_update_attempted', False):
+                        logger.info("New agent version available: %s (current: 1.1.0)", server_version)
+                        self._update_attempted = True
                         self._auto_update()
                     return data
                 elif resp.status_code == 404:
@@ -643,7 +644,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.0.0 by Masukulu Miguel")
+        print("EndpointX Agent v1.1.0 by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:
@@ -668,5 +669,10 @@ if __name__ == "__main__":
         pass
     except Exception as e:
         import traceback
-        with open("crash.log", "w") as f:
-            f.write(traceback.format_exc())
+        tb = traceback.format_exc()
+        logger.critical("Agent crashed: %s", tb)
+        try:
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write(f"\n--- Crash at {datetime.now()} ---\n{tb}\n")
+        except Exception:
+            pass
