@@ -1,16 +1,16 @@
-FROM node:20-alpine
+FROM node:20
 
 WORKDIR /app
 
-# Copy package files first for better caching
-COPY package.json ./
+# Build context is repo root, so paths are relative to that
+COPY backend-api/package.json ./
 
-# Install ALL dependencies (including dev for tsx)
 RUN npm install
 
-# Copy source
-COPY . .
+COPY backend-api/ ./
+
+RUN ls -la src/index.ts
 
 EXPOSE 3001
 
-CMD ["npx", "tsx", "src/index.ts"]
+CMD ["./node_modules/.bin/tsx", "src/index.ts"]

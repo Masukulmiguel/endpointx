@@ -1,21 +1,19 @@
-FROM node:20-alpine AS build
+FROM node:20 AS build
 
 WORKDIR /app
 
-# Install dependencies
-COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+# Build context is repo root
+COPY admin-dashboard/package.json ./
 
-# Copy source
-COPY . .
+RUN npm install
 
-# Build
+COPY admin-dashboard/ ./
+
 RUN npm run build
 
-# Serve with nginx
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY admin-dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
