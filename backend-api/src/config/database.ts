@@ -63,39 +63,9 @@ export const initDatabase = async (): Promise<void> => {
   logger.info('Database initialized successfully');
 };
 
-// Schema migration
+// Schema migration - always use inline schema (no file dependency)
 const runMigrations = async (): Promise<void> => {
-  const schemaPath = path.join(__dirname, '..', '..', '..', 'database', 'init.sql');
-
-  if (fs.existsSync(schemaPath)) {
-    const schema = fs.readFileSync(schemaPath, 'utf-8');
-    try {
-      // Split by semicolons and execute each statement
-      const statements = schema
-        .split(';')
-        .map(s => s.trim())
-        .filter(s => s.length > 0 && !s.startsWith('--'));
-
-      for (const stmt of statements) {
-        try {
-          await pool.query(stmt);
-        } catch (err) {
-          const msg = (err as Error).message;
-          // Ignore "already exists" errors
-          if (!msg.includes('already exists')) {
-            logger.warn('Schema statement warning', { error: msg, statement: stmt.substring(0, 100) });
-          }
-        }
-      }
-      logger.info('Database schema applied from init.sql');
-    } catch (error) {
-      logger.error('Failed to apply schema', { error: (error as Error).message });
-      throw error;
-    }
-  } else {
-    // Inline schema creation
-    await createInlineSchema();
-  }
+  await createInlineSchema();
 };
 
 // Inline schema for when init.sql is not available
@@ -168,7 +138,7 @@ const createInlineSchema = async (): Promise<void> => {
       os_build VARCHAR(50),
       ip_address INET,
       mac_address VARCHAR(17),
-      user_id UUID REFERENCES users(id) ON SET NULL,
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       status VARCHAR(20) DEFAULT 'offline',
       agent_version VARCHAR(20),
       cpu_model VARCHAR(255),
@@ -290,7 +260,7 @@ const createInlineSchema = async (): Promise<void> => {
 
     CREATE TABLE IF NOT EXISTS audit_logs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-      user_id UUID REFERENCES users(id) ON SET NULL,
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       user_email VARCHAR(255),
       action VARCHAR(50) NOT NULL,
       target_type VARCHAR(50),
