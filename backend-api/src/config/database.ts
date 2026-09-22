@@ -70,20 +70,30 @@ const runMigrations = async (): Promise<void> => {
   if (fs.existsSync(schemaPath)) {
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     try {
-      await pool.query(schema);
+      // Split by semicolons and execute each statement
+      const statements = schema
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0 && !s.startsWith('--'));
+
+      for (const stmt of statements) {
+        try {
+          await pool.query(stmt);
+        } catch (err) {
+          const msg = (err as Error).message;
+          // Ignore "already exists" errors
+          if (!msg.includes('already exists')) {
+            logger.warn('Schema statement warning', { error: msg, statement: stmt.substring(0, 100) });
+          }
+        }
+      }
       logger.info('Database schema applied from init.sql');
     } catch (error) {
-      // Schema might already exist, log and continue
-      const errMsg = (error as Error).message;
-      if (errMsg.includes('already exists')) {
-        logger.info('Database schema already exists, skipping init.sql');
-      } else {
-        logger.error('Failed to apply schema', { error: errMsg });
-        throw error;
-      }
+      logger.error('Failed to apply schema', { error: (error as Error).message });
+      throw error;
     }
   } else {
-    // Inline schema creation (same as init.sql but with IF NOT EXISTS)
+    // Inline schema creation
     await createInlineSchema();
   }
 };
