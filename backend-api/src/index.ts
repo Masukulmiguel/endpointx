@@ -11,6 +11,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import logger from './utils/logger';
 import { initDatabase } from './config/database';
+import { updateOfflineDevices } from './routes/devices';
 
 const app: Express = express();
 const server = http.createServer(app);
@@ -121,6 +122,16 @@ initDatabase().then(() => {
     logger.info(`EndpointX API server started on port ${PORT}`);
     logger.info(`Health check: http://localhost:${PORT}/health`);
     logger.info(`API base URL: http://localhost:${PORT}/api`);
+
+    // Periodically mark devices as offline (every 60 seconds)
+    setInterval(() => {
+      try {
+        updateOfflineDevices();
+      } catch (err) {
+        logger.error('Error in offline device check', { error: (err as Error).message });
+      }
+    }, 60000);
+    logger.info('Offline device check running every 60s');
   });
 }).catch((err) => {
   logger.error('Failed to initialize database', { error: err.message });

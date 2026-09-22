@@ -9,10 +9,13 @@ import logger from '../utils/logger';
 
 const router = Router();
 
-// Mark devices as offline if no heartbeat in last 2 minutes
-function updateOfflineDevices() {
+// Mark devices as offline if no heartbeat within threshold
+// Uses configurable threshold (default 5 minutes) instead of hardcoded 2 minutes
+export function updateOfflineDevices() {
   try {
-    query("UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-2 minutes')");
+    const offlineThresholdSeconds = parseInt(process.env.OFFLINE_THRESHOLD || '300', 10);
+    const thresholdMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
+    query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-${thresholdMinutes} minutes')`);
   } catch (e) {
     // ignore
   }

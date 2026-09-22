@@ -241,48 +241,64 @@ class EndpointAgent:
             return False
 
     def heartbeat(self) -> Optional[dict[str, Any]]:
-        """Send a heartbeat with system metrics and receive pending commands."""
-        try:
-            cpu_info = get_cpu_info()
-            mem_info = get_memory_info()
-            disk_info = get_disk_info()
-            net_traffic = get_network_traffic()
-            proc_count = len(psutil.pids())
+        """Send a heartbeat with system metrics and receive pending commands.
+        
+        Includes retry logic with exponential backoff for transient failures.
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                cpu_info = get_cpu_info()
+                mem_info = get_memory_info()
+                disk_info = get_disk_info()
+                net_traffic = get_network_traffic()
+                proc_count = len(psutil.pids())
 
-            payload = {
-                "agent_id": self.config.get("agent_id", get_hostname()),
-                "cpu_usage": cpu_info.get("usage_percent", 0),
-                "ram_usage": mem_info.get("percent", 0),
-                "disk_usage": disk_info.get("percent", 0),
-                "network_in": net_traffic.get("bytes_recv", 0),
-                "network_out": net_traffic.get("bytes_sent", 0),
-                "active_processes": proc_count,
-                "current_version": "1.0.0",
-            }
+                payload = {
+                    "agent_id": self.config.get("agent_id", get_hostname()),
+                    "cpu_usage": cpu_info.get("usage_percent", 0),
+                    "ram_usage": mem_info.get("percent", 0),
+                    "disk_usage": disk_info.get("percent", 0),
+                    "network_in": net_traffic.get("bytes_recv", 0),
+                    "network_out": net_traffic.get("bytes_sent", 0),
+                    "active_processes": proc_count,
+                    "current_version": "1.0.0",
+                }
 
-            resp = self._make_request("POST", "/devices/heartbeat", payload)
-            if resp is None:
-                return None
+                resp = self._make_request("POST", "/devices/heartbeat", payload)
+                if resp is None:
+                    if attempt < max_retries - 1:
+                        wait = (attempt + 1) * 5
+                        logger.warning("Heartbeat connection failed (attempt %d/%d), retrying in %ds...",
+                                       attempt + 1, max_retries, wait)
+                        time.sleep(wait)
+                        continue
+                    return None
 
-            if resp.status_code == 200:
-                data = resp.json()
-                server_data = data.get("data", {})
-                server_version = server_data.get("agent_version", "")
-                if server_version and server_version != "1.0.0":
-                    logger.info("New agent version available: %s (current: 1.0.0)", server_version)
-                    self._auto_update()
-                return data
-            elif resp.status_code == 404:
-                logger.warning("Device not registered. Attempting registration...")
-                if self.register():
-                    return self.heartbeat()
+                if resp.status_code == 200:
+                    data = resp.json()
+                    server_data = data.get("data", {})
+                    server_version = server_data.get("agent_version", "")
+                    if server_version and server_version != "1.0.0":
+                        logger.info("New agent version available: %s (current: 1.0.0)", server_version)
+                        self._auto_update()
+                    return data
+                elif resp.status_code == 404:
+                    logger.warning("Device not registered. Attempting registration...")
+                    if self.register():
+                        return self.heartbeat()
+                    return None
+                else:
+                    logger.error("Heartbeat failed with status %d", resp.status_code)
+                    return None
+            except Exception as exc:
+                logger.error("Heartbeat error: %s", exc)
+                if attempt < max_retries - 1:
+                    wait = (attempt + 1) * 5
+                    logger.warning("Retrying in %ds... (attempt %d/%d)", wait, attempt + 1, max_retries)
+                    time.sleep(wait)
+                    continue
                 return None
-            else:
-                logger.error("Heartbeat failed with status %d", resp.status_code)
-                return None
-        except Exception as exc:
-            logger.error("Heartbeat error: %s", exc)
-            return None
 
     def _auto_update(self) -> None:
         """Download latest agent files from GitHub and restart."""
