@@ -27,11 +27,10 @@ EndpointX is a comprehensive IAM + EPM platform designed for managing authorized
 
 ### Agent Capabilities
 
-- **Cross-Platform** — Windows, Linux, and macOS support
-- **HMAC-SHA256 Signing** — Cryptographic request verification
+- **Cross-Platform Agent** — Windows Service with auto-restart on crash
 - **Periodic Heartbeats** — Configurable health check intervals
 - **Command Queue** — Offline command queuing with automatic execution
-- **Encrypted Credentials** — Local credential storage with AES-256 encryption
+- **Auto-Update** — Agent can update itself from server
 
 ### Dashboard
 
@@ -48,25 +47,20 @@ EndpointX is a comprehensive IAM + EPM platform designed for managing authorized
 │  (React/Vite)   │     │  (Node.js/Express) │    │     Database    │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                  │
-                          ┌──────┴──────┐
-                          │    Redis    │
-                          │   Cache     │
-                          └─────────────┘
-                                 │
-                    ┌────────────┼────────────┐
-                    │            │            │
-              ┌─────┴─────┐ ┌───┴───┐ ┌─────┴─────┐
-              │  Device 1  │ │  Dev 2 │ │  Device N  │
-              │  (Agent)   │ │ (Agent)│ │  (Agent)   │
-              └───────────┘ └────────┘ └───────────┘
+                     ┌───────────┼───────────┐
+                     │           │           │
+               ┌─────┴─────┐ ┌──┴──┐ ┌─────┴─────┐
+               │  Device 1  │ │Dev 2│ │  Device N  │
+               │  (Agent)   │ │(Agnt)│ │  (Agent)   │
+               └───────────┘ └─────┘ └───────────┘
 ```
 
 | Component    | Technology                              |
 | ------------ | --------------------------------------- |
 | Dashboard    | React 18, TypeScript, Vite, Tailwind   |
 | Backend API  | Node.js, Express, TypeScript, Socket.IO |
-| Database     | PostgreSQL 16, Redis 7                  |
-| Agent        | Python 3.9+, psutil, cryptography       |
+| Database     | PostgreSQL 16                           |
+| Agent        | Python 3.9+, psutil                     |
 
 ## Quick Start
 
@@ -82,32 +76,31 @@ EndpointX is a comprehensive IAM + EPM platform designed for managing authorized
 git clone https://github.com/Masukulmiguel/endpointx.git
 cd endpointx
 
-# Create environment file
-cp .env.example .env
-
-# Generate secrets
-sed -i "s/JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
-sed -i "s/AGENT_SECRET=.*/AGENT_SECRET=$(openssl rand -hex 32)/" .env
-sed -i "s/ENCRYPTION_KEY=.*/ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env
-sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" .env
-sed -i "s/REDIS_PASSWORD=.*/REDIS_PASSWORD=$(openssl rand -hex 16)/" .env
+# Create .env file with strong secrets
+cat > .env << EOF
+NODE_ENV=development
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=endpointx
+DB_USER=endpointx
+DB_PASSWORD=$(openssl rand -hex 16)
+JWT_SECRET=$(openssl rand -hex 32)
+JWT_REFRESH_SECRET=$(openssl rand -hex 32)
+AGENT_SECRET=$(openssl rand -hex 32)
+EOF
 
 # Start services
 docker compose up -d
 
-# Initialize database
-docker compose exec api npx knex migrate:latest
-docker compose exec api npx knex seed:run
-
 # Access the dashboard
-open http://localhost
+open http://localhost:5173
 ```
 
 ### Default Credentials
 
 | Email                 | Password      | Role  |
 | --------------------- | ------------- | ----- |
-| admin@endpointx.local | Admin@123!    | admin |
+| admin@endpointx.local | REDACTED_PASSWORD  | admin |
 
 > **IMPORTANT**: Change the default admin password immediately after first login.
 
@@ -119,11 +112,14 @@ open http://localhost
 | --------------------- | -------- | ----------------------------------- |
 | `NODE_ENV`            | Yes      | Environment mode                    |
 | `PORT`                | No       | API server port (default: 3001)     |
-| `DATABASE_URL`        | Yes      | PostgreSQL connection string        |
-| `REDIS_URL`           | Yes      | Redis connection string             |
+| `DB_HOST`             | Yes      | PostgreSQL host                     |
+| `DB_PORT`             | No       | PostgreSQL port (default: 5432)     |
+| `DB_NAME`             | Yes      | PostgreSQL database name            |
+| `DB_USER`             | Yes      | PostgreSQL user                     |
+| `DB_PASSWORD`         | Yes      | PostgreSQL password                 |
 | `JWT_SECRET`          | Yes      | JWT signing secret (min 32 chars)   |
-| `AGENT_SECRET`        | Yes      | Shared secret for agent auth        |
-| `ENCRYPTION_KEY`      | Yes      | AES-256 encryption key              |
+| `JWT_REFRESH_SECRET`  | Yes      | JWT refresh token secret            |
+| `AGENT_SECRET`        | Yes      | Shared secret for agent auth (min 32 chars) |
 
 See [Environment Configuration](docs/deployment.md#environment-configuration) for the full list.
 
@@ -136,7 +132,7 @@ Complete REST API documentation is available at [docs/api.md](docs/api.md).
 | Method  | Endpoint                    | Description              |
 | ------- | --------------------------- | ------------------------ |
 | POST    | `/api/auth/login`           | Authenticate user        |
-| POST    | `/api/auth/register`        | Register new user        |
+| POST    | `/api/auth/invite`          | Invite new user (admin)  |
 | GET     | `/api/devices`              | List all devices         |
 | POST    | `/api/devices/register`     | Register new device      |
 | POST    | `/api/devices/heartbeat`    | Send device heartbeat    |
@@ -145,44 +141,51 @@ Complete REST API documentation is available at [docs/api.md](docs/api.md).
 
 ## Agent Installation
 
-### Option 1: Install via Git (Recommended)
+### Option 1: Install via PowerShell (Recommended)
 
-```bash
-# Install Git (if not installed)
-# Download from: https://git-scm.com/download/win
+```powershell
+irm https://your-server.com/api/devices/public/install.ps1 | iex
+```
 
-# Clone the repository
-cd C:\
-git clone https://github.com/Masukulmiguel/endpointx.git
+### Option 2: Install as Windows Service (Production)
 
-# Install dependencies
-cd endpointx\endpoint-agent
+```powershell
+# Install agent files
+Set-Location "C:\endpointx\endpoint-agent"
 pip install -r requirements.txt
 
-# Register and run
+# Install as Windows Service (requires admin)
+python service.py install
+
+# Start the service
+python service.py start
+```
+
+### Option 3: Install via Git
+
+```bash
+cd C:\
+git clone https://github.com/Masukulmiguel/endpointx.git
+cd endpointx\endpoint-agent
+pip install -r requirements.txt
 python agent.py --register
 python agent.py
 ```
 
-### Option 2: Install via Copy
-
-See [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for step-by-step instructions.
-
 ### Update Agent
 
-```bash
-cd C:\endpointx\endpoint-agent
-git pull
-python agent.py --register
-python agent.py
+```powershell
+Stop-Process -Name pythonw -Force -ErrorAction SilentlyContinue
+Set-Location "C:\endpointx\endpoint-agent"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent/agent.py" -OutFile "agent.py"
+Start-Process -FilePath "wscript.exe" -ArgumentList "C:\endpointx\endpoint-agent\start_agent.vbs"
 ```
 
 ## Default Credentials
 
 | Component | Email/Username          | Password      | Role  |
 | --------- | ----------------------- | ------------- | ----- |
-| Dashboard | admin@endpointx.local   | Admin@123!    | admin |
-| Agent     | N/A                     | dev_agent_secret_123 | N/A |
+| Dashboard | admin@endpointx.local   | REDACTED_PASSWORD  | admin |
 
 ## Development Setup
 
@@ -190,7 +193,6 @@ python agent.py
 
 - Node.js 20 LTS
 - PostgreSQL 16
-- Redis 7
 - Python 3.9+ (for agent development)
 
 ### Backend

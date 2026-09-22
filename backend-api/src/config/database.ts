@@ -1,398 +1,452 @@
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
-import path from 'path';
+import { Pool, PoolClient, QueryResult } from 'pg';
 import fs from 'fs';
+import path from 'path';
+import logger from '../utils/logger';
 
-let db: SqlJsDatabase;
-const dbPath = path.join(__dirname, '../../data/endpointx.db');
+let pool: Pool;
 
-// Ensure data directory exists
-const dataDir = path.dirname(dbPath);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Load or create database
-const loadDatabase = async (): Promise<SqlJsDatabase> => {
-  const SQL = await initSqlJs();
-
-  if (fs.existsSync(dbPath)) {
-    const buffer = fs.readFileSync(dbPath);
-    return new SQL.Database(buffer);
-  }
-
-  return new SQL.Database();
+// Database configuration
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+  database: process.env.DB_NAME || 'endpointx',
+  user: process.env.DB_USER || 'endpointx',
+  password: process.env.DB_PASSWORD || 'endpointx_secret',
+  max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECT_TIMEOUT || '5000', 10),
 };
 
-// Save database to file
-const saveDatabase = () => {
-  if (db) {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
-  }
-};
-
-// Auto-save periodically
-setInterval(saveDatabase, 5000);
-
-// Wrapper to mimic pg pool.query interface
-export const query = (text: string, params?: any[]): any => {
+// Wrapper that maintains compatibility with existing route code
+export const query = async (text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> => {
   const start = Date.now();
   try {
-    // Convert PostgreSQL-style $1, $2 params to SQLite ? style
-    let sqliteQuery = text.replace(/\$\d+/g, '?');
-
-    // Handle NOW() for SQLite
-    sqliteQuery = sqliteQuery.replace(/NOW\(\)/g, "datetime('now')");
-    // Handle ::int cast
-    sqliteQuery = sqliteQuery.replace(/::int/g, '');
-
-    // Check query type
-    const trimmedUpper = sqliteQuery.trim().toUpperCase();
-    const isSelect = trimmedUpper.startsWith('SELECT');
-    const hasReturning = sqliteQuery.toUpperCase().includes('RETURNING');
-
-    let rows;
-    if (isSelect || hasReturning) {
-      const stmt = db.prepare(sqliteQuery);
-      if (params && params.length > 0) {
-        stmt.bind(params);
-      }
-      rows = [];
-      while (stmt.step()) {
-        rows.push(stmt.getAsObject());
-      }
-      stmt.free();
-    } else {
-      db.run(sqliteQuery, params || []);
-      // Get last insert rowid and changes count
-      const changesResult = db.exec('SELECT changes() as changes, last_insert_rowid() as lastInsertRowid');
-      const changes = changesResult.length > 0 ? changesResult[0].values[0][0] : 0;
-      const lastInsertRowid = changesResult.length > 0 ? changesResult[0].values[0][1] : 0;
-      rows = [{ changes, lastInsertRowid }];
-    }
-
+    const result = await pool.query(text, params);
     const duration = Date.now() - start;
+
     if (duration > 1000) {
-      console.warn(`Slow query (${duration}ms):`, text);
+      logger.warn('Slow query detected', { text: text.substring(0, 200), duration, rowCount: result.rowCount });
     }
 
-    return { rows, rowCount: rows ? rows.length : 0 };
+    return { rows: result.rows, rowCount: result.rowCount ?? 0 };
   } catch (error) {
-    console.error('Query error:', { text, params, error });
+    logger.error('Query error', { text: text.substring(0, 200), params, error: (error as Error).message });
     throw error;
   }
 };
 
+// Get a client from the pool for transactions
+export const getClient = async (): Promise<PoolClient> => {
+  return pool.connect();
+};
+
 // Initialize database schema
-export const initDatabase = async () => {
-  db = await loadDatabase();
+export const initDatabase = async (): Promise<void> => {
+  pool = new Pool(dbConfig);
 
-  db.run('PRAGMA journal_mode = WAL');
-  db.run('PRAGMA foreign_keys = ON');
+  // Test connection
+  try {
+    const client = await pool.connect();
+    logger.info('Connected to PostgreSQL database', { host: dbConfig.host, database: dbConfig.database });
+    client.release();
+  } catch (error) {
+    logger.error('Failed to connect to PostgreSQL', { error: (error as Error).message });
+    throw error;
+  }
 
-  db.run(`
+  // Run schema migration
+  await runMigrations();
+
+  // Seed default data
+  await seedDefaults();
+
+  logger.info('Database initialized successfully');
+};
+
+// Schema migration
+const runMigrations = async (): Promise<void> => {
+  const schemaPath = path.join(__dirname, '..', '..', '..', 'database', 'init.sql');
+
+  if (fs.existsSync(schemaPath)) {
+    const schema = fs.readFileSync(schemaPath, 'utf-8');
+    try {
+      await pool.query(schema);
+      logger.info('Database schema applied from init.sql');
+    } catch (error) {
+      // Schema might already exist, log and continue
+      const errMsg = (error as Error).message;
+      if (errMsg.includes('already exists')) {
+        logger.info('Database schema already exists, skipping init.sql');
+      } else {
+        logger.error('Failed to apply schema', { error: errMsg });
+        throw error;
+      }
+    }
+  } else {
+    // Inline schema creation (same as init.sql but with IF NOT EXISTS)
+    await createInlineSchema();
+  }
+};
+
+// Inline schema for when init.sql is not available
+const createInlineSchema = async (): Promise<void> => {
+  const schema = `
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
     CREATE TABLE IF NOT EXISTS roles (
-      id TEXT PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      display_name TEXT NOT NULL,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) UNIQUE NOT NULL,
+      display_name VARCHAR(150) NOT NULL,
       description TEXT,
-      is_system INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      is_system BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS permissions (
-      id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      code VARCHAR(100) UNIQUE NOT NULL,
+      name VARCHAR(150) NOT NULL,
       description TEXT,
-      category TEXT NOT NULL
+      category VARCHAR(50) NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS role_permissions (
-      role_id TEXT REFERENCES roles(id) ON DELETE CASCADE,
-      permission_id TEXT REFERENCES permissions(id) ON DELETE CASCADE,
+      role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+      permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
       PRIMARY KEY (role_id, permission_id)
     );
 
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      username TEXT UNIQUE NOT NULL,
-      full_name TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      role_id TEXT REFERENCES roles(id),
-      is_active INTEGER DEFAULT 1,
-      mfa_enabled INTEGER DEFAULT 0,
-      mfa_secret TEXT,
-      last_login TEXT,
-      login_attempts INTEGER DEFAULT 0,
-      locked_until TEXT,
-      password_changed_at TEXT DEFAULT (datetime('now')),
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      email VARCHAR(255) UNIQUE NOT NULL,
+      username VARCHAR(100) UNIQUE NOT NULL,
+      full_name VARCHAR(200) NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      role_id UUID REFERENCES roles(id),
+      is_active BOOLEAN DEFAULT TRUE,
+      mfa_enabled BOOLEAN DEFAULT FALSE,
+      mfa_secret VARCHAR(255),
+      mfa_backup_codes TEXT[],
+      last_login TIMESTAMPTZ,
+      failed_login_attempts INTEGER DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      must_change_password BOOLEAN DEFAULT FALSE,
+      password_changed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS user_sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-      token_hash TEXT NOT NULL,
-      ip_address TEXT,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      refresh_token_hash VARCHAR(255) NOT NULL,
+      ip_address INET,
       user_agent TEXT,
-      expires_at TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS devices (
-      id TEXT PRIMARY KEY,
-      agent_id TEXT UNIQUE NOT NULL,
-      hostname TEXT NOT NULL,
-      display_name TEXT,
-      os_type TEXT NOT NULL,
-      os_version TEXT,
-      os_build TEXT,
-      ip_address TEXT,
-      mac_address TEXT,
-      user_id TEXT REFERENCES users(id),
-      status TEXT DEFAULT 'offline',
-      agent_version TEXT,
-      cpu_model TEXT,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      agent_id VARCHAR(255) UNIQUE NOT NULL,
+      hostname VARCHAR(255) NOT NULL,
+      display_name VARCHAR(255),
+      os_type VARCHAR(50) NOT NULL,
+      os_version VARCHAR(100),
+      os_build VARCHAR(50),
+      ip_address INET,
+      mac_address VARCHAR(17),
+      user_id UUID REFERENCES users(id) ON SET NULL,
+      status VARCHAR(20) DEFAULT 'offline',
+      agent_version VARCHAR(20),
+      cpu_model VARCHAR(255),
       cpu_cores INTEGER,
-      cpu_usage REAL,
-      ram_total INTEGER,
-      ram_used INTEGER,
-      ram_usage REAL,
-      disk_total INTEGER,
-      disk_used INTEGER,
-      disk_usage REAL,
-      last_heartbeat TEXT,
-      last_inventory TEXT,
-      registered_at TEXT DEFAULT (datetime('now')),
-      is_authorized INTEGER DEFAULT 1,
+      cpu_usage DECIMAL(5,2),
+      ram_total BIGINT,
+      ram_used BIGINT,
+      ram_usage DECIMAL(5,2),
+      disk_total BIGINT,
+      disk_used BIGINT,
+      disk_usage DECIMAL(5,2),
+      last_heartbeat TIMESTAMPTZ,
+      last_inventory TIMESTAMPTZ,
+      registered_at TIMESTAMPTZ DEFAULT NOW(),
+      is_authorized BOOLEAN DEFAULT TRUE,
       notes TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS device_heartbeats (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
-      cpu_usage REAL,
-      ram_usage REAL,
-      disk_usage REAL,
-      network_in INTEGER DEFAULT 0,
-      network_out INTEGER DEFAULT 0,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      cpu_usage DECIMAL(5,2),
+      ram_usage DECIMAL(5,2),
+      disk_usage DECIMAL(5,2),
+      network_in BIGINT DEFAULT 0,
+      network_out BIGINT DEFAULT 0,
       active_processes INTEGER,
-      ip_address TEXT,
-      recorded_at TEXT DEFAULT (datetime('now'))
+      ip_address INET,
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS device_software (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      version TEXT,
-      publisher TEXT,
-      install_date TEXT,
-      recorded_at TEXT DEFAULT (datetime('now'))
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      version VARCHAR(100),
+      publisher VARCHAR(255),
+      install_date DATE,
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS device_services (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      display_name TEXT,
-      status TEXT,
-      startup_type TEXT,
-      recorded_at TEXT DEFAULT (datetime('now'))
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      display_name VARCHAR(255),
+      status VARCHAR(50),
+      startup_type VARCHAR(50),
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS device_processes (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
       pid INTEGER NOT NULL,
-      name TEXT,
-      cpu_usage REAL,
-      memory_usage INTEGER,
-      user_name TEXT,
-      recorded_at TEXT DEFAULT (datetime('now'))
+      name VARCHAR(255),
+      cpu_usage DECIMAL(5,2),
+      memory_usage BIGINT,
+      user_name VARCHAR(255),
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS device_network_interfaces (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      mac_address TEXT,
-      ipv4_address TEXT,
-      ipv6_address TEXT,
-      is_connected INTEGER DEFAULT 1,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      mac_address VARCHAR(17),
+      ipv4_address INET,
+      ipv6_address INET,
+      is_connected BOOLEAN DEFAULT TRUE,
       speed_mbps INTEGER,
-      recorded_at TEXT DEFAULT (datetime('now'))
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS security_events (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id),
-      event_type TEXT NOT NULL,
-      severity TEXT DEFAULT 'info',
-      title TEXT NOT NULL,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      event_type VARCHAR(100) NOT NULL,
+      severity VARCHAR(20) DEFAULT 'info',
+      title VARCHAR(255) NOT NULL,
       description TEXT,
-      source TEXT,
-      raw_data TEXT,
-      is_resolved INTEGER DEFAULT 0,
-      resolved_by TEXT REFERENCES users(id),
-      resolved_at TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      source VARCHAR(100),
+      raw_data JSONB,
+      is_resolved BOOLEAN DEFAULT FALSE,
+      resolved_by UUID REFERENCES users(id),
+      resolved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS alerts (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id),
-      alert_type TEXT NOT NULL,
-      severity TEXT NOT NULL DEFAULT 'medium',
-      title TEXT NOT NULL,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      alert_type VARCHAR(50) NOT NULL,
+      severity VARCHAR(20) NOT NULL DEFAULT 'medium',
+      title VARCHAR(255) NOT NULL,
       description TEXT,
-      metadata TEXT,
-      is_dismissed INTEGER DEFAULT 0,
-      dismissed_by TEXT REFERENCES users(id),
-      dismissed_at TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      metadata JSONB,
+      is_dismissed BOOLEAN DEFAULT FALSE,
+      dismissed_by UUID REFERENCES users(id),
+      dismissed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS agent_commands (
-      id TEXT PRIMARY KEY,
-      device_id TEXT REFERENCES devices(id) ON DELETE CASCADE,
-      command_type TEXT NOT NULL,
-      parameters TEXT,
-      status TEXT DEFAULT 'pending',
-      issued_by TEXT REFERENCES users(id),
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      command_type VARCHAR(50) NOT NULL,
+      parameters JSONB,
+      status VARCHAR(20) DEFAULT 'pending',
+      issued_by UUID REFERENCES users(id),
       result TEXT,
       error_message TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      executed_at TEXT,
-      completed_at TEXT
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      executed_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ
     );
 
     CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      user_email TEXT,
-      action TEXT NOT NULL,
-      target_type TEXT,
-      target_id TEXT,
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID REFERENCES users(id) ON SET NULL,
+      user_email VARCHAR(255),
+      action VARCHAR(50) NOT NULL,
+      target_type VARCHAR(50),
+      target_id VARCHAR(255),
       description TEXT,
-      ip_address TEXT,
+      ip_address INET,
       user_agent TEXT,
-      metadata TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      metadata JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
+      key VARCHAR(100) PRIMARY KEY,
       value TEXT,
       description TEXT,
-      updated_by TEXT REFERENCES users(id),
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_by UUID REFERENCES users(id),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
-  `);
 
-  // Seed default data
-  seedDefaults();
+    CREATE INDEX IF NOT EXISTS idx_devices_agent_id ON devices(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+    CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
+    CREATE INDEX IF NOT EXISTS idx_devices_last_heartbeat ON devices(last_heartbeat);
+    CREATE INDEX IF NOT EXISTS idx_heartbeats_device_id ON device_heartbeats(device_id);
+    CREATE INDEX IF NOT EXISTS idx_heartbeats_recorded_at ON device_heartbeats(recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_security_events_device_id ON security_events(device_id);
+    CREATE INDEX IF NOT EXISTS idx_security_events_created_at ON security_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_alerts_device_id ON alerts(device_id);
+    CREATE INDEX IF NOT EXISTS idx_alerts_alert_type ON alerts(alert_type);
+    CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
+    CREATE INDEX IF NOT EXISTS idx_alerts_is_dismissed ON alerts(is_dismissed);
+    CREATE INDEX IF NOT EXISTS idx_commands_device_id ON agent_commands(device_id);
+    CREATE INDEX IF NOT EXISTS idx_commands_status ON agent_commands(status);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);
+  `;
 
-  saveDatabase();
+  await pool.query(schema);
+  logger.info('Inline database schema created');
 };
 
-const generateId = (): string => {
-  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-};
-
-const seedDefaults = () => {
-  const result = db.exec('SELECT COUNT(*) as count FROM roles');
-  const count = result.length > 0 ? result[0].values[0][0] : 0;
+// Seed default data
+const seedDefaults = async (): Promise<void> => {
+  const result = await pool.query('SELECT COUNT(*) as count FROM roles');
+  const count = parseInt(result.rows[0]?.count || '0', 10);
   if (count > 0) return;
 
-  // Insert roles
-  const roles = [
-    ['role_admin', 'admin', 'Administrator', 'Full system access', 1],
-    ['role_supervisor', 'supervisor', 'Supervisor', 'Can view and manage devices and users', 1],
-    ['role_technician', 'technician', 'Technician', 'Can view devices and execute commands', 1],
-    ['role_user', 'user', 'User', 'Basic access to own device information', 1],
-  ];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  roles.forEach(r => {
-    db.run('INSERT INTO roles (id, name, display_name, description, is_system) VALUES (?, ?, ?, ?, ?)', r);
-  });
+    // Insert permissions
+    const permissions = [
+      ['devices.view', 'View Devices', 'View device list and details', 'devices'],
+      ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
+      ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
+      ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
+      ['devices.commands', 'Execute Device Commands', 'Send commands to devices', 'devices'],
+      ['users.view', 'View Users', 'View user list and profiles', 'users'],
+      ['users.manage', 'Manage Users', 'Create, edit, and delete users', 'users'],
+      ['roles.view', 'View Roles', 'View roles and permissions', 'roles'],
+      ['roles.manage', 'Manage Roles', 'Create, edit, and delete roles', 'roles'],
+      ['security.view', 'View Security Events', 'View security events and alerts', 'security'],
+      ['security.manage', 'Manage Security', 'Dismiss alerts and manage security', 'security'],
+      ['logs.view', 'View Audit Logs', 'View audit logs', 'logs'],
+      ['logs.export', 'Export Audit Logs', 'Export audit logs', 'logs'],
+      ['settings.view', 'View Settings', 'View application settings', 'settings'],
+      ['settings.manage', 'Manage Settings', 'Change application settings', 'settings'],
+      ['agents.view', 'View Agents', 'View agent information', 'agents'],
+      ['agents.manage', 'Manage Agents', 'Manage agent configurations', 'agents'],
+      ['network.view', 'View Network', 'View network information', 'network'],
+      ['alerts.view', 'View Alerts', 'View alerts', 'alerts'],
+      ['alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
+    ];
 
-  // Insert permissions
-  const permissions = [
-    ['perm_devices_view', 'devices.view', 'View Devices', 'View device list and details', 'devices'],
-    ['perm_devices_manage', 'devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
-    ['perm_devices_block', 'devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
-    ['perm_devices_quarantine', 'devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
-    ['perm_devices_commands', 'devices.commands', 'Execute Device Commands', 'Send commands to devices', 'devices'],
-    ['perm_users_view', 'users.view', 'View Users', 'View user list and profiles', 'users'],
-    ['perm_users_manage', 'users.manage', 'Manage Users', 'Create, edit, and delete users', 'users'],
-    ['perm_roles_view', 'roles.view', 'View Roles', 'View roles and permissions', 'roles'],
-    ['perm_roles_manage', 'roles.manage', 'Manage Roles', 'Create, edit, and delete roles', 'roles'],
-    ['perm_security_view', 'security.view', 'View Security Events', 'View security events and alerts', 'security'],
-    ['perm_security_manage', 'security.manage', 'Manage Security', 'Dismiss alerts and manage security', 'security'],
-    ['perm_logs_view', 'logs.view', 'View Audit Logs', 'View audit logs', 'logs'],
-    ['perm_logs_export', 'logs.export', 'Export Audit Logs', 'Export audit logs', 'logs'],
-    ['perm_settings_view', 'settings.view', 'View Settings', 'View application settings', 'settings'],
-    ['perm_settings_manage', 'settings.manage', 'Manage Settings', 'Change application settings', 'settings'],
-    ['perm_agents_view', 'agents.view', 'View Agents', 'View agent information', 'agents'],
-    ['perm_agents_manage', 'agents.manage', 'Manage Agents', 'Manage agent configurations', 'agents'],
-    ['perm_network_view', 'network.view', 'View Network', 'View network information', 'network'],
-    ['perm_alerts_view', 'alerts.view', 'View Alerts', 'View alerts', 'alerts'],
-    ['perm_alerts_manage', 'alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
-  ];
+    for (const [code, name, desc, category] of permissions) {
+      await client.query(
+        'INSERT INTO permissions (code, name, description, category) VALUES ($1, $2, $3, $4) ON CONFLICT (code) DO NOTHING',
+        [code, name, desc, category]
+      );
+    }
 
-  permissions.forEach(p => {
-    db.run('INSERT INTO permissions (id, code, name, description, category) VALUES (?, ?, ?, ?, ?)', p);
-  });
+    // Insert roles
+    const roles = [
+      ['admin', 'Administrator', 'Full system access', true],
+      ['supervisor', 'Supervisor', 'Can view and manage devices and users', true],
+      ['technician', 'Technician', 'Can view devices and execute commands', true],
+      ['user', 'User', 'Basic access to own device information', true],
+    ];
 
-  // Assign all permissions to admin
-  permissions.forEach(p => {
-    db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', ['role_admin', p[0]]);
-  });
+    for (const [name, displayName, desc, isSystem] of roles) {
+      await client.query(
+        'INSERT INTO roles (name, display_name, description, is_system) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING',
+        [name, displayName, desc, isSystem]
+      );
+    }
 
-  // Supervisor permissions
-  ['perm_devices_view', 'perm_devices_manage', 'perm_devices_block', 'perm_devices_commands', 'perm_users_view', 'perm_security_view', 'perm_security_manage', 'perm_logs_view', 'perm_alerts_view', 'perm_alerts_manage', 'perm_agents_view', 'perm_network_view'].forEach(p => {
-    db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', ['role_supervisor', p]);
-  });
+    // Assign permissions to roles
+    const rolePerms: Record<string, string[]> = {
+      admin: permissions.map(p => p[0]),
+      supervisor: ['devices.view', 'devices.manage', 'devices.block', 'devices.commands', 'users.view', 'security.view', 'security.manage', 'logs.view', 'alerts.view', 'alerts.manage', 'agents.view', 'network.view'],
+      technician: ['devices.view', 'devices.commands', 'security.view', 'agents.view', 'network.view', 'alerts.view'],
+      user: ['devices.view', 'alerts.view'],
+    };
 
-  // Technician permissions
-  ['perm_devices_view', 'perm_devices_commands', 'perm_security_view', 'perm_agents_view', 'perm_network_view', 'perm_alerts_view'].forEach(p => {
-    db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', ['role_technician', p]);
-  });
+    for (const [roleName, permCodes] of Object.entries(rolePerms)) {
+      const roleResult = await client.query('SELECT id FROM roles WHERE name = $1', [roleName]);
+      if (roleResult.rows.length === 0) continue;
+      const roleId = roleResult.rows[0].id;
 
-  // User permissions
-  ['perm_devices_view', 'perm_alerts_view'].forEach(p => {
-    db.run('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', ['role_user', p]);
-  });
+      for (const permCode of permCodes) {
+        await client.query(
+          'INSERT INTO role_permissions (role_id, permission_id) SELECT $1, id FROM permissions WHERE code = $2 ON CONFLICT DO NOTHING',
+          [roleId, permCode]
+        );
+      }
+    }
 
-  // Default admin user (password: REDACTED_PASSWORD)
-  const bcrypt = require('bcryptjs');
-  const hash = bcrypt.hashSync('REDACTED_PASSWORD', 10);
-  db.run('INSERT INTO users (id, email, username, full_name, password_hash, role_id) VALUES (?, ?, ?, ?, ?, ?)',
-    ['user_admin', 'admin@endpointx.local', 'admin', 'System Administrator', hash, 'role_admin']);
+    // Default admin user (password: REDACTED_PASSWORD)
+    const bcrypt = require('bcryptjs');
+    const hash = bcrypt.hashSync('REDACTED_PASSWORD', 12);
+    await client.query(
+      `INSERT INTO users (email, username, full_name, password_hash, role_id)
+       SELECT 'admin@endpointx.local', 'admin', 'System Administrator', $1, id FROM roles WHERE name = 'admin'
+       ON CONFLICT (email) DO NOTHING`,
+      [hash]
+    );
 
-  // Default settings
-  const settings = [
-    ['heartbeat_interval', '60', 'Agent heartbeat interval in seconds'],
-    ['offline_threshold', '300', 'Time in seconds before device is marked offline'],
-    ['max_login_attempts', '5', 'Maximum failed login attempts before lockout'],
-    ['lockout_duration', '900', 'Account lockout duration in seconds'],
-    ['session_timeout', '900', 'Session timeout in seconds'],
-    ['mfa_required', 'false', 'Require MFA for all users'],
-    ['agent_min_version', '1.0.0', 'Minimum required agent version'],
-  ];
+    // Default settings
+    const settings = [
+      ['heartbeat_interval', '60', 'Agent heartbeat interval in seconds'],
+      ['offline_threshold', '300', 'Time in seconds before device is marked offline'],
+      ['max_login_attempts', '5', 'Maximum failed login attempts before lockout'],
+      ['lockout_duration', '900', 'Account lockout duration in seconds'],
+      ['session_timeout', '900', 'Session timeout in seconds'],
+      ['mfa_required', 'false', 'Require MFA for all users'],
+      ['agent_min_version', '1.0.0', 'Minimum required agent version'],
+    ];
 
-  settings.forEach(s => {
-    db.run('INSERT INTO app_settings (key, value, description) VALUES (?, ?, ?)', s);
-  });
+    for (const [key, value, desc] of settings) {
+      await client.query(
+        'INSERT INTO app_settings (key, value, description) VALUES ($1, $2, $3) ON CONFLICT (key) DO NOTHING',
+        [key, value, desc]
+      );
+    }
+
+    await client.query('COMMIT');
+    logger.info('Default data seeded successfully');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('Failed to seed default data', { error: (error as Error).message });
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
-export { db, saveDatabase };
-export default { query, initDatabase };
+// Graceful shutdown
+export const closeDatabase = async (): Promise<void> => {
+  if (pool) {
+    await pool.end();
+    logger.info('Database pool closed');
+  }
+};
+
+export default { query, initDatabase, closeDatabase, getClient };

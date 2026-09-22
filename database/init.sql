@@ -86,6 +86,7 @@ CREATE TABLE users (
     last_login TIMESTAMPTZ,
     failed_login_attempts INTEGER DEFAULT 0,
     locked_until TIMESTAMPTZ,
+    must_change_password BOOLEAN DEFAULT FALSE,
     password_changed_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

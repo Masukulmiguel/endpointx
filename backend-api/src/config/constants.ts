@@ -98,19 +98,49 @@ export const ROLE_PERMISSIONS: Record<number, string[]> = {
 };
 
 export const JWT = {
-  ACCESS_SECRET: process.env.JWT_SECRET || 'access-secret-change-me',
-  REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'refresh-secret-change-me',
+  ACCESS_SECRET: process.env.JWT_SECRET || '',
+  REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || '',
   ACCESS_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '1h',
   REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   ISSUER: 'endpointx',
   AUDIENCE: 'endpointx-api',
 } as const;
 
+// Validate critical secrets at startup
+export const validateSecrets = (): void => {
+  const weakSecrets = [
+    'change_me', 'change-this', 'secret', 'password', 'dev_secret',
+    'access-secret-change-me', 'refresh-secret-change-me',
+    'dev_jwt_secret_change_in_production_32chars!',
+    'dev_refresh_secret_change_in_production_32chars!',
+  ];
+
+  if (!JWT.ACCESS_SECRET || weakSecrets.some(s => JWT.ACCESS_SECRET.includes(s))) {
+    throw new Error(
+      'JWT_SECRET is missing or too weak. Set a strong JWT_SECRET environment variable.\n' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
+    );
+  }
+
+  if (!JWT.REFRESH_SECRET || weakSecrets.some(s => JWT.REFRESH_SECRET.includes(s))) {
+    throw new Error(
+      'JWT_REFRESH_SECRET is missing or too weak. Set a strong JWT_REFRESH_SECRET environment variable.\n' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
+    );
+  }
+
+  if (!process.env.AGENT_SECRET || process.env.AGENT_SECRET.length < 32) {
+    throw new Error(
+      'AGENT_SECRET is missing or too short (minimum 32 characters). Set a strong AGENT_SECRET environment variable.'
+    );
+  }
+};
+
 export const RATE_LIMIT = {
   WINDOW_MS: 15 * 60 * 1000,
-  MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX || '1000', 10),
-  AUTH_MAX_REQUESTS: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '1000', 10),
-  SKIP成功的: false,
+  MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX || '500', 10),
+  AUTH_MAX_REQUESTS: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '20', 10),
+  SKIP_SUCCESSFUL: false,
   STANDARD_HEADERS: true,
   LEGACY_HEADERS: false,
 } as const;

@@ -10,8 +10,17 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import logger from './utils/logger';
-import { initDatabase } from './config/database';
+import { initDatabase, closeDatabase } from './config/database';
+import { validateSecrets } from './config/constants';
 import { updateOfflineDevices } from './routes/devices';
+
+// Validate secrets before starting
+try {
+  validateSecrets();
+} catch (error) {
+  logger.error('Configuration error:', { message: (error as Error).message });
+  process.exit(1);
+}
 
 const app: Express = express();
 const server = http.createServer(app);
@@ -140,3 +149,22 @@ initDatabase().then(() => {
 
 export { app, server };
 export default server;
+
+// Graceful shutdown
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`${signal} received. Starting graceful shutdown...`);
+  server.close(async () => {
+    await closeDatabase();
+    logger.info('Server shut down gracefully');
+    process.exit(0);
+  });
+
+  // Force shutdown after 30 seconds
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 30000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

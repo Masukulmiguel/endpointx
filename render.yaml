@@ -10,7 +10,31 @@ services:
       - key: PORT
         value: 3001
       - key: AGENT_SECRET
-        value: dev_agent_secret_123
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: DB_HOST
+        fromDatabase:
+          name: endpointx-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: endpointx-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: endpointx-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: endpointx-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: endpointx-db
+          property: password
     healthCheckPath: /health
 
   - type: web
@@ -21,3 +45,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+
+  - type: postgres
+    name: endpointx-db
+    plan: free
+    databaseName: endpointx

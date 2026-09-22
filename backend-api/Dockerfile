@@ -1,8 +1,17 @@
-FROM node:20-alpine
+FROM node:20-alpine AS base
+
 WORKDIR /app
-COPY backend-api/package*.json ./
-RUN npm install
-COPY backend-api/ .
-COPY endpoint-agent/ ./endpoint-agent/
+
+# Install dependencies only
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production
+
+# Copy source
+COPY . .
+
+# Build (if needed)
+RUN npm run build 2>/dev/null || true
+
 EXPOSE 3001
-CMD ["npx", "tsx", "src/index.ts"]
+
+CMD ["npm", "start"]
