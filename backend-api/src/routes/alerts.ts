@@ -15,9 +15,29 @@ router.get('/', authenticate, requirePermission('alerts.view'), async (req: Auth
 
 router.get('/stats', authenticate, requirePermission('alerts.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const totalResult = query('SELECT COUNT(*) as count FROM alerts', []);
     const bySeverity = query('SELECT severity, COUNT(*) as count FROM alerts GROUP BY severity', []);
     const byType = query('SELECT alert_type, COUNT(*) as count FROM alerts GROUP BY alert_type', []);
-    res.json({ success: true, data: { by_severity: bySeverity.rows, by_type: byType.rows } });
+    const unresolvedResult = query("SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = 0", []);
+
+    const sevMap: Record<string, number> = {};
+    for (const row of bySeverity.rows) {
+      sevMap[row.severity] = row.count;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        total: totalResult.rows[0]?.count || 0,
+        critical: sevMap['critical'] || 0,
+        high: sevMap['high'] || 0,
+        medium: sevMap['medium'] || 0,
+        low: sevMap['low'] || 0,
+        unresolved: unresolvedResult.rows[0]?.count || 0,
+        by_severity: bySeverity.rows,
+        by_type: byType.rows,
+      },
+    });
   } catch (error) { next(error); }
 });
 

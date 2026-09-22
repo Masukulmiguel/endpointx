@@ -4,10 +4,12 @@ import { AuthRequest, authenticate } from '../middleware/auth';
 
 const router = Router();
 
-// Mark devices as offline if no heartbeat in last 2 minutes
+// Mark devices as offline if no heartbeat within threshold
 function updateOfflineDevices() {
   try {
-    query("UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-2 minutes')");
+    const offlineThresholdSeconds = parseInt(process.env.OFFLINE_THRESHOLD || '300', 10);
+    const thresholdMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
+    query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-${thresholdMinutes} minutes')`);
   } catch (e) { /* ignore */ }
 }
 
@@ -19,6 +21,8 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
     const offlineDevices = query("SELECT COUNT(*) as count FROM devices WHERE status = 'offline'", []);
     const alertDevices = query("SELECT COUNT(*) as count FROM devices WHERE status = 'alert'", []);
     const blockedDevices = query("SELECT COUNT(*) as count FROM devices WHERE status = 'blocked'", []);
+    const totalAlerts = query('SELECT COUNT(*) as count FROM alerts', []);
+    const unresolvedAlerts = query("SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = 0", []);
     const quarantineDevices = query("SELECT COUNT(*) as count FROM devices WHERE status = 'quarantine'", []);
     const totalUsers = query('SELECT COUNT(*) as count FROM users', []);
     const activeUsers = query("SELECT COUNT(*) as count FROM users WHERE is_active = 1", []);
@@ -59,6 +63,8 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
         offline_devices: offlineDevices.rows[0]?.count || 0,
         alert_devices: alertDevices.rows[0]?.count || 0,
         blocked_devices: blockedDevices.rows[0]?.count || 0,
+        total_alerts: totalAlerts.rows[0]?.count || 0,
+        unresolved_alerts: unresolvedAlerts.rows[0]?.count || 0,
         quarantine_devices: quarantineDevices.rows[0]?.count || 0,
         total_users: totalUsers.rows[0]?.count || 0,
         active_users: activeUsers.rows[0]?.count || 0,

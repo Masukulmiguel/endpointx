@@ -190,6 +190,8 @@ export interface DashboardOverview {
   quarantine_devices: number;
   total_users: number;
   active_users: number;
+  total_alerts: number;
+  unresolved_alerts: number;
   recent_events: SecurityEvent[];
   critical_alerts: Alert[];
   device_status_distribution: { status: string; count: number }[];

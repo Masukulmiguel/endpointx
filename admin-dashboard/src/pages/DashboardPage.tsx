@@ -99,7 +99,7 @@ export default function DashboardPage() {
         { title: 'Total Devices', value: overview.total_devices, change: 0, icon: Monitor, color: 'primary' as const },
         { title: 'Online', value: overview.online_devices, change: 0, icon: Wifi, color: 'success' as const },
         { title: 'Offline', value: overview.offline_devices, change: 0, icon: WifiOff, color: 'warning' as const },
-        { title: 'Alerts', value: overview.alert_devices, change: 0, icon: AlertTriangle, color: 'danger' as const },
+        { title: 'Alerts', value: overview.total_alerts || overview.alert_devices, change: 0, icon: AlertTriangle, color: 'danger' as const },
         { title: 'Blocked', value: overview.blocked_devices, change: 0, icon: ShieldOff, color: 'danger' as const },
         { title: 'Active Users', value: overview.active_users, change: 0, icon: Users, color: 'info' as const },
       ]
