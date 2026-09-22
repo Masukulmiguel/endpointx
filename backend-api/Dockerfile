@@ -2,13 +2,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies
-COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+# Copy package files first for better caching
+COPY package.json ./
+
+# Install ALL dependencies (including dev for tsx)
+RUN npm install
 
 # Copy source
 COPY . .
 
 EXPOSE 3001
 
-CMD ["npm", "start"]
+CMD ["npx", "tsx", "src/index.ts"]
