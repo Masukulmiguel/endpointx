@@ -114,7 +114,7 @@ CREATE TABLE devices (
     os_build VARCHAR(50),
     ip_address INET,
     mac_address VARCHAR(17),
-    user_id UUID REFERENCES users(id) ON SET NULL,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     status device_status DEFAULT 'offline',
     agent_version VARCHAR(20),
     cpu_model VARCHAR(255),
@@ -245,7 +245,7 @@ CREATE TABLE agent_commands (
 -- Audit logs (immutable)
 CREATE TABLE audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES users(id) ON SET NULL,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     user_email VARCHAR(255),
     action log_action NOT NULL,
     target_type VARCHAR(50),
