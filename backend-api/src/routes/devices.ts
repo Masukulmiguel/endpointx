@@ -633,6 +633,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
+    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
 
     const filePath = join(__dirname, '..', '..', 'public', 'install.ps1');
     if (!existsSync(filePath)) {
@@ -642,6 +643,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
 
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace('##SERVER_URL##', serverUrl);
+    script = script.replace('##AGENT_SECRET##', agentSecret);
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx.ps1"');

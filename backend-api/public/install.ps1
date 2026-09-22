@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $serverUrl = "##SERVER_URL##"
+$agentSecret = "##AGENT_SECRET##"
 $agentDir = "C:\endpointx\endpoint-agent"
 $github = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
 
@@ -51,7 +52,7 @@ if ($isUpdate) {
     Write-Host "[3/4] Atualizando config..." -ForegroundColor Green
     $configContent = @"
 agent_id: AUTO
-agent_secret: dev_agent_secret_123
+agent_secret: ${agentSecret}
 heartbeat_interval: 60
 log_file: endpointx-agent.log
 log_level: INFO
@@ -81,7 +82,7 @@ server_url: ${serverUrl}/api
     Write-Host "[3/5] Criando config..." -ForegroundColor Green
     @"
 agent_id: AUTO
-agent_secret: dev_agent_secret_123
+agent_secret: ${agentSecret}
 heartbeat_interval: 60
 log_file: endpointx-agent.log
 log_level: INFO
