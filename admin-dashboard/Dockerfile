@@ -1,10 +1,10 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
 # Install dependencies
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # Copy source
 COPY . .
@@ -14,7 +14,7 @@ RUN npm run build
 
 # Serve with nginx
 FROM nginx:alpine
-COPY --from=base /app/dist /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

@@ -1,16 +1,13 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies only
+# Install dependencies
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
 # Copy source
 COPY . .
-
-# Build (if needed)
-RUN npm run build 2>/dev/null || true
 
 EXPOSE 3001
 
