@@ -90,6 +90,10 @@ import dashboardRoutes from './routes/dashboard';
 import settingsRoutes from './routes/settings';
 import networkRoutes from './routes/network';
 import agentsRoutes from './routes/agents';
+import groupsRoutes from './routes/groups';
+import policiesRoutes from './routes/policies';
+import softwareRoutes from './routes/software';
+import notificationsRoutes from './routes/notifications';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -103,6 +107,10 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/network', networkRoutes);
+app.use('/api/groups', groupsRoutes);
+app.use('/api/policies', policiesRoutes);
+app.use('/api/software', softwareRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

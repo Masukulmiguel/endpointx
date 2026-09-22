@@ -9,9 +9,9 @@ const router = Router();
 // Network stats
 router.get('/stats', authenticate, requirePermission('network.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const totalResult = query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = 1');
-    const onlineResult = query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = 1 AND status = 'online'");
-    const latencyResult = query("SELECT AVG(ram_usage) as avg_ram FROM device_heartbeats WHERE recorded_at > datetime('now', '-5 minutes')");
+    const totalResult = await query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = 1');
+    const onlineResult = await query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = 1 AND status = 'online'");
+    const latencyResult = await query("SELECT AVG(ram_usage) as avg_ram FROM device_heartbeats WHERE recorded_at > datetime('now', '-5 minutes')");
 
     const total = totalResult.rows[0]?.total || 0;
     const online = onlineResult.rows[0]?.online || 0;
@@ -50,7 +50,7 @@ router.get('/bandwidth', authenticate, requirePermission('network.view'), async 
 
     sql += ' ORDER BY h.recorded_at DESC LIMIT 100';
 
-    const result = query(sql, params);
+    const result = await query(sql, params);
 
     res.json({
       success: true,
@@ -81,7 +81,7 @@ router.get('/interfaces', authenticate, requirePermission('network.view'), async
 
     sql += ' ORDER BY d.hostname, ni.name';
 
-    const result = query(sql, params);
+    const result = await query(sql, params);
 
     const interfaces = result.rows.map((row: any) => ({
       id: row.id,

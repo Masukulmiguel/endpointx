@@ -22,10 +22,10 @@ router.get('/', authenticate, requirePermission('users.view'), async (req: AuthR
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    const countResult = query(`SELECT COUNT(*) as total FROM users u ${whereClause}`, params);
+    const countResult = await query(`SELECT COUNT(*) as total FROM users u ${whereClause}`, params);
     const total = countResult.rows[0]?.total || 0;
 
-    const result = query(`SELECT u.id, u.email, u.username, u.full_name, u.is_active, u.mfa_enabled, u.last_login, u.created_at, r.name as role_name
+    const result = await query(`SELECT u.id, u.email, u.username, u.full_name, u.is_active, u.mfa_enabled, u.last_login, u.created_at, r.name as role_name
       FROM users u LEFT JOIN roles r ON u.role_id = r.id ${whereClause} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]);
 
@@ -39,7 +39,7 @@ router.get('/', authenticate, requirePermission('users.view'), async (req: AuthR
 router.get('/:id', authenticate, requirePermission('users.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const result = query('SELECT u.id, u.email, u.username, u.full_name, u.is_active, u.mfa_enabled, u.last_login, u.created_at, r.name as role_name FROM users u LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = ?', [id]);
+    const result = await query('SELECT u.id, u.email, u.username, u.full_name, u.is_active, u.mfa_enabled, u.last_login, u.created_at, r.name as role_name FROM users u LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = ?', [id]);
     if (result.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'User not found' } });
       return;
@@ -59,7 +59,7 @@ router.post('/', authenticate, requirePermission('users.manage'), async (req: Au
       return;
     }
 
-    const existing = query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username]);
+    const existing = await query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username]);
     if (existing.rows.length > 0) {
       res.status(409).json({ success: false, error: { message: 'User already exists' } });
       return;
@@ -68,10 +68,10 @@ router.post('/', authenticate, requirePermission('users.manage'), async (req: Au
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     const passwordHash = await hashPassword(password);
 
-    query('INSERT INTO users (id, email, username, full_name, password_hash, role_id) VALUES (?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO users (id, email, username, full_name, password_hash, role_id) VALUES (?, ?, ?, ?, ?, ?)',
       [id, email, username, full_name, passwordHash, role_id || 'role_user']);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'user_create', 'user', id, 'User created', req.ip]);
 
     res.status(201).json({ success: true, data: { id, email, username, full_name } });
@@ -86,7 +86,7 @@ router.put('/:id', authenticate, requirePermission('users.manage'), async (req: 
     const { id } = req.params;
     const { email, full_name, is_active, role_id } = req.body;
 
-    query('UPDATE users SET email = COALESCE(?, email), full_name = COALESCE(?, full_name), is_active = COALESCE(?, is_active) WHERE id = ?',
+    await query('UPDATE users SET email = COALESCE(?, email), full_name = COALESCE(?, full_name), is_active = COALESCE(?, is_active) WHERE id = ?',
       [email ?? null, full_name ?? null, is_active ?? null, id]);
 
     res.json({ success: true, data: { message: 'User updated' } });
@@ -103,7 +103,7 @@ router.delete('/:id', authenticate, requirePermission('users.manage'), async (re
       res.status(400).json({ success: false, error: { message: 'Cannot delete yourself' } });
       return;
     }
-    query('DELETE FROM users WHERE id = ?', [id]);
+    await query('DELETE FROM users WHERE id = ?', [id]);
     res.json({ success: true, data: { message: 'User deleted' } });
   } catch (error) {
     next(error);
@@ -114,7 +114,7 @@ router.delete('/:id', authenticate, requirePermission('users.manage'), async (re
 router.get('/:id/permissions', authenticate, requirePermission('users.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const result = query('SELECT p.code, p.name FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id JOIN users u ON rp.role_id = u.role_id WHERE u.id = ?', [id]);
+    const result = await query('SELECT p.code, p.name FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id JOIN users u ON rp.role_id = u.role_id WHERE u.id = ?', [id]);
     res.json({ success: true, data: { permissions: result.rows } });
   } catch (error) {
     next(error);

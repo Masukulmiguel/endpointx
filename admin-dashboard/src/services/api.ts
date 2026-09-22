@@ -284,6 +284,209 @@ class ApiClient {
       body: JSON.stringify({ value }),
     });
   }
+
+  // Groups
+  async getGroups(params?: Record<string, any>) {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return this.request(`/groups${query}`);
+  }
+
+  async createGroup(data: any) {
+    return this.request('/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateGroup(id: string, data: any) {
+    return this.request(`/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGroup(id: string) {
+    return this.request(`/groups/${id}`, { method: 'DELETE' });
+  }
+
+  async assignDevicesToGroup(groupId: string, deviceIds: string[]) {
+    return this.request(`/groups/${groupId}/devices`, {
+      method: 'POST',
+      body: JSON.stringify({ device_ids: deviceIds }),
+    });
+  }
+
+  async removeDeviceFromGroup(groupId: string, deviceId: string) {
+    return this.request(`/groups/${groupId}/devices/${deviceId}`, { method: 'DELETE' });
+  }
+
+  // Compliance Policies
+  async getPolicies(params?: Record<string, any>) {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return this.request(`/compliance/policies${query}`);
+  }
+
+  async createPolicy(data: any) {
+    return this.request('/compliance/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePolicy(id: string, data: any) {
+    return this.request(`/compliance/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deletePolicy(id: string) {
+    return this.request(`/compliance/policies/${id}`, { method: 'DELETE' });
+  }
+
+  async checkCompliance(policyId: string) {
+    return this.request(`/compliance/policies/${policyId}/check`, { method: 'POST' });
+  }
+
+  async getComplianceResults(policyId: string) {
+    return this.request(`/compliance/policies/${policyId}/results`);
+  }
+
+  // Software
+  async getSoftwarePackages(params?: Record<string, any>) {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return this.request(`/software/packages${query}`);
+  }
+
+  async createSoftwarePackage(data: any) {
+    return this.request('/software/packages', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSoftwarePackage(id: string, data: any) {
+    return this.request(`/software/packages/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSoftwarePackage(id: string) {
+    return this.request(`/software/packages/${id}`, { method: 'DELETE' });
+  }
+
+  async deploySoftware(data: any) {
+    return this.request('/software/deploy', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSoftwareDeployments(params?: Record<string, any>) {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return this.request(`/software/deployments${query}`);
+  }
+
+  // Reports
+  async getReportsSummary() {
+    return this.request('/reports/summary');
+  }
+
+  async exportDevicesCsv() {
+    const response = await fetch(`${API_BASE}/reports/devices?format=csv`, {
+      headers: { 'Authorization': `Bearer ${this.accessToken}` },
+    });
+    return response.blob();
+  }
+
+  async exportDevicesPdf() {
+    const response = await fetch(`${API_BASE}/reports/devices?format=pdf`, {
+      headers: { 'Authorization': `Bearer ${this.accessToken}` },
+    });
+    return response.blob();
+  }
+
+  async exportAlertsCsv() {
+    const response = await fetch(`${API_BASE}/reports/alerts?format=csv`, {
+      headers: { 'Authorization': `Bearer ${this.accessToken}` },
+    });
+    return response.blob();
+  }
+
+  async exportComplianceCsv() {
+    const response = await fetch(`${API_BASE}/reports/compliance?format=csv`, {
+      headers: { 'Authorization': `Bearer ${this.accessToken}` },
+    });
+    return response.blob();
+  }
+
+  // MFA
+  async getMfaStatus() {
+    return this.request('/auth/mfa/status');
+  }
+
+  async setupMfa() {
+    return this.request('/auth/mfa/setup', { method: 'POST' });
+  }
+
+  async verifyMfa(code: string) {
+    return this.request('/auth/mfa/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async disableMfa(password: string, code: string) {
+    return this.request('/auth/mfa/disable', {
+      method: 'POST',
+      body: JSON.stringify({ password, code }),
+    });
+  }
+
+  async getBackupCodes() {
+    return this.request('/auth/mfa/backup-codes');
+  }
+
+  // SSO
+  async getSsoProviders() {
+    return this.request('/auth/sso/providers');
+  }
+
+  async createSsoProvider(data: any) {
+    return this.request('/auth/sso/providers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSsoProvider(id: string) {
+    return this.request(`/auth/sso/providers/${id}`, { method: 'DELETE' });
+  }
+
+  // Notifications
+  async getNotifications(params?: Record<string, any>) {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return this.request(`/notifications${query}`);
+  }
+
+  async getNotificationSettings() {
+    return this.request('/notifications/settings');
+  }
+
+  async updateNotificationSettings(data: any) {
+    return this.request('/notifications/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendTestEmail(email: string) {
+    return this.request('/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
 }
 
 export const api = new ApiClient();

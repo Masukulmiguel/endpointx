@@ -14,6 +14,12 @@ import NetworkPage from './pages/NetworkPage';
 import AgentsPage from './pages/AgentsPage';
 import SettingsPage from './pages/SettingsPage';
 import InstallPage from './pages/InstallPage';
+import GroupsPage from './pages/GroupsPage';
+import PoliciesPage from './pages/PoliciesPage';
+import SoftwarePage from './pages/SoftwarePage';
+import MfaPage from './pages/MfaPage';
+import ReportsPage from './pages/ReportsPage';
+import NotificationsPage from './pages/NotificationsPage';
 import LoadingSpinner from './components/LoadingSpinner';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -52,6 +58,12 @@ export default function App() {
         <Route path="network" element={<NetworkPage />} />
         <Route path="agents" element={<AgentsPage />} />
         <Route path="install" element={<InstallPage />} />
+        <Route path="groups" element={<GroupsPage />} />
+        <Route path="policies" element={<PoliciesPage />} />
+        <Route path="software" element={<SoftwarePage />} />
+        <Route path="security/mfa" element={<MfaPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

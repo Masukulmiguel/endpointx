@@ -11,11 +11,11 @@ const router = Router();
 
 // Mark devices as offline if no heartbeat within threshold
 // Uses configurable threshold (default 5 minutes) instead of hardcoded 2 minutes
-export function updateOfflineDevices() {
+export async function updateOfflineDevices() {
   try {
     const offlineThresholdSeconds = parseInt(process.env.OFFLINE_THRESHOLD || '300', 10);
     const thresholdMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
-    query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-${thresholdMinutes} minutes')`);
+    await query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-${thresholdMinutes} minutes')`);
   } catch (e) {
     // ignore
   }
@@ -37,15 +37,15 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
       return;
     }
 
-    const existing = query('SELECT id, status FROM devices WHERE agent_id = ?', [agent_id]);
+    const existing = await query('SELECT id, status FROM devices WHERE agent_id = ?', [agent_id]);
     if (existing.rows.length > 0) {
-      query("UPDATE devices SET status = 'online', last_heartbeat = datetime('now') WHERE id = ?", [existing.rows[0].id]);
+      await query("UPDATE devices SET status = 'online', last_heartbeat = datetime('now') WHERE id = ?", [existing.rows[0].id]);
       res.json({ success: true, data: { id: existing.rows[0].id, agent_id, status: 'online', is_new: false } });
       return;
     }
 
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    query('INSERT INTO devices (id, agent_id, hostname, os_type, os_version, os_build, mac_address, ip_address, status, last_heartbeat, is_authorized) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO devices (id, agent_id, hostname, os_type, os_version, os_build, mac_address, ip_address, status, last_heartbeat, is_authorized) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, agent_id, hostname || '', os_type || 'unknown', os_version || '', os_build || '', mac_address || '', ip_address || '', 'online', new Date().toISOString(), 1]);
 
     logger.info('New device registered', { deviceId: id, agent_id });
@@ -58,14 +58,14 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
 // Agent heartbeat
 router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes } = req.body;
+    const { agent_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes, agent_hash } = req.body;
 
     if (!agent_id) {
       res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
       return;
     }
 
-    const deviceResult = query("SELECT id FROM devices WHERE agent_id = ? AND is_authorized = 1", [agent_id]);
+    const deviceResult = await query("SELECT id, last_agent_hash FROM devices WHERE agent_id = ? AND is_authorized = 1", [agent_id]);
 
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found or not authorized' } });
@@ -74,19 +74,43 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
 
     const device = deviceResult.rows[0];
 
-    query("UPDATE devices SET status = 'online', last_heartbeat = datetime('now'), cpu_usage = ?, ram_usage = ?, disk_usage = ? WHERE id = ?",
+    await query("UPDATE devices SET status = 'online', last_heartbeat = datetime('now'), cpu_usage = ?, ram_usage = ?, disk_usage = ? WHERE id = ?",
       [cpu_usage || 0, ram_usage || 0, disk_usage || 0, device.id]);
+
+    // Store agent hash if provided; detect tamper if it changes
+    if (agent_hash) {
+      if (device.last_agent_hash && device.last_agent_hash !== agent_hash) {
+        // Hash mismatch — create a tamper alert
+        const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        const hostname = (await query('SELECT hostname FROM devices WHERE id = ?', [device.id])).rows[0]?.hostname || device.id;
+        await query(
+          'INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [
+            alertId,
+            device.id,
+            'tamper_detected',
+            'critical',
+            'Agent Integrity Check Failed',
+            `Agent file hash changed on ${hostname}. Expected: ${device.last_agent_hash}, Got: ${agent_hash}`,
+            JSON.stringify({ device_hostname: hostname, expected_hash: device.last_agent_hash, current_hash: agent_hash }),
+          ]
+        );
+        logger.warn('Agent tamper detected via heartbeat', { agent_id, expected: device.last_agent_hash, actual: agent_hash });
+      }
+      await query('UPDATE devices SET last_agent_hash = ? WHERE id = ?', [agent_hash, device.id]);
+    }
+
     const hbId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [hbId, device.id, cpu_usage || 0, ram_usage || 0, disk_usage || 0, network_in || 0, network_out || 0, active_processes || 0]);
 
     // Get pending commands and mark as processing
-    const commands = query("SELECT id, command_type, parameters FROM agent_commands WHERE device_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 10", [device.id]);
+    const commands = await query("SELECT id, command_type, parameters FROM agent_commands WHERE device_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 10", [device.id]);
     for (const cmd of commands.rows) {
-      query("UPDATE agent_commands SET status = 'processing' WHERE id = ?", [cmd.id]);
+      await query("UPDATE agent_commands SET status = 'processing' WHERE id = ?", [cmd.id]);
     }
 
-    res.json({ success: true, data: { device_id: device.id, commands: commands.rows, agent_version: '1.1.0' } });
+    res.json({ success: true, data: { device_id: device.id, commands: commands.rows, agent_version: '1.2.0' } });
   } catch (error) {
     next(error);
   }
@@ -114,10 +138,10 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
       params.push(status);
     }
 
-    const countResult = query(`SELECT COUNT(*) as total FROM devices ${whereClause}`, params);
+    const countResult = await query(`SELECT COUNT(*) as total FROM devices ${whereClause}`, params);
     const total = countResult.rows[0]?.total || 0;
 
-    const result = query(`SELECT * FROM devices ${whereClause} ORDER BY last_heartbeat DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    const result = await query(`SELECT * FROM devices ${whereClause} ORDER BY last_heartbeat DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
 
     res.json({ success: true, data: { devices: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
   } catch (error) {
@@ -129,19 +153,19 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
 router.get('/:id', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const deviceResult = query('SELECT * FROM devices WHERE id = ?', [id]);
+    const deviceResult = await query('SELECT * FROM devices WHERE id = ?', [id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
 
-    const heartbeats = query('SELECT * FROM device_heartbeats WHERE device_id = ? ORDER BY recorded_at DESC LIMIT 24', [id]);
-    const events = query('SELECT * FROM security_events WHERE device_id = ? ORDER BY created_at DESC LIMIT 10', [id]);
-    const software = query('SELECT * FROM device_software WHERE device_id = ? ORDER BY name ASC', [id]);
-    const services = query('SELECT * FROM device_services WHERE device_id = ? ORDER BY name ASC', [id]);
-    const processes = query('SELECT * FROM device_processes WHERE device_id = ? ORDER BY cpu_usage DESC LIMIT 100', [id]);
-    const networkInterfaces = query('SELECT * FROM device_network_interfaces WHERE device_id = ?', [id]);
-    const commands = query('SELECT * FROM agent_commands WHERE device_id = ? ORDER BY created_at DESC LIMIT 50', [id]);
+    const heartbeats = await query('SELECT * FROM device_heartbeats WHERE device_id = ? ORDER BY recorded_at DESC LIMIT 24', [id]);
+    const events = await query('SELECT * FROM security_events WHERE device_id = ? ORDER BY created_at DESC LIMIT 10', [id]);
+    const software = await query('SELECT * FROM device_software WHERE device_id = ? ORDER BY name ASC', [id]);
+    const services = await query('SELECT * FROM device_services WHERE device_id = ? ORDER BY name ASC', [id]);
+    const processes = await query('SELECT * FROM device_processes WHERE device_id = ? ORDER BY cpu_usage DESC LIMIT 100', [id]);
+    const networkInterfaces = await query('SELECT * FROM device_network_interfaces WHERE device_id = ?', [id]);
+    const commands = await query('SELECT * FROM agent_commands WHERE device_id = ? ORDER BY created_at DESC LIMIT 50', [id]);
 
     res.json({
       success: true,
@@ -169,10 +193,10 @@ router.put('/:id', authenticate, requirePermission('devices.manage'), async (req
     const { id } = req.params;
     const { display_name, user_id, notes, is_authorized } = req.body;
 
-    query('UPDATE devices SET display_name = COALESCE(?, display_name), user_id = COALESCE(?, user_id), notes = COALESCE(?, notes), is_authorized = COALESCE(?, is_authorized) WHERE id = ?',
+    await query('UPDATE devices SET display_name = COALESCE(?, display_name), user_id = COALESCE(?, user_id), notes = COALESCE(?, notes), is_authorized = COALESCE(?, is_authorized) WHERE id = ?',
       [display_name ?? null, user_id ?? null, notes ?? null, is_authorized ?? null, id]);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_update', 'device', id, 'Device updated', req.ip]);
 
     res.json({ success: true, data: { message: 'Device updated' } });
@@ -185,9 +209,9 @@ router.put('/:id', authenticate, requirePermission('devices.manage'), async (req
 router.delete('/:id', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    query('DELETE FROM devices WHERE id = ?', [id]);
+    await query('DELETE FROM devices WHERE id = ?', [id]);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_delete', 'device', id, 'Device deleted', req.ip]);
 
     res.json({ success: true, data: { message: 'Device deleted' } });
@@ -200,9 +224,9 @@ router.delete('/:id', authenticate, requirePermission('devices.manage'), async (
 router.post('/:id/block', authenticate, requirePermission('devices.block'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    query("UPDATE devices SET status = 'blocked' WHERE id = ?", [id]);
+    await query("UPDATE devices SET status = 'blocked' WHERE id = ?", [id]);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_block', 'device', id, 'Device blocked', req.ip]);
 
     res.json({ success: true, data: { message: 'Device blocked' } });
@@ -215,7 +239,7 @@ router.post('/:id/block', authenticate, requirePermission('devices.block'), asyn
 router.post('/:id/update-agent', authenticate, requirePermission('devices.commands'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const deviceResult = query('SELECT agent_id FROM devices WHERE id = ?', [id]);
+    const deviceResult = await query('SELECT agent_id FROM devices WHERE id = ?', [id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -224,10 +248,10 @@ router.post('/:id/update-agent', authenticate, requirePermission('devices.comman
     const updateUrl = 'https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent';
     const params = { update_url: updateUrl, ...(req.body || {}) };
     const cmdId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    query('INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES (?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES (?, ?, ?, ?, ?, ?)',
       [cmdId, id, 'update_agent', JSON.stringify(params), 'pending', req.user?.id]);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'agent_update', 'device', id, 'Agent update command sent', req.ip]);
 
     res.json({ success: true, data: { message: 'Agent update command sent', command_id: cmdId } });
@@ -240,9 +264,9 @@ router.post('/:id/update-agent', authenticate, requirePermission('devices.comman
 router.post('/:id/unblock', authenticate, requirePermission('devices.block'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    query("UPDATE devices SET status = 'online' WHERE id = ?", [id]);
+    await query("UPDATE devices SET status = 'online' WHERE id = ?", [id]);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_unblock', 'device', id, 'Device unblocked', req.ip]);
 
     res.json({ success: true, data: { message: 'Device unblocked' } });
@@ -255,9 +279,9 @@ router.post('/:id/unblock', authenticate, requirePermission('devices.block'), as
 router.post('/:id/quarantine', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    query("UPDATE devices SET status = 'quarantine' WHERE id = ?", [id]);
+    await query("UPDATE devices SET status = 'quarantine' WHERE id = ?", [id]);
 
-    query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_quarantine', 'device', id, 'Device quarantined', req.ip]);
 
     res.json({ success: true, data: { message: 'Device quarantined' } });
@@ -270,7 +294,7 @@ router.post('/:id/quarantine', authenticate, requirePermission('devices.quaranti
 router.get('/:id/history', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const heartbeats = query('SELECT * FROM device_heartbeats WHERE device_id = ? ORDER BY recorded_at DESC LIMIT 100', [id]);
+    const heartbeats = await query('SELECT * FROM device_heartbeats WHERE device_id = ? ORDER BY recorded_at DESC LIMIT 100', [id]);
     res.json({ success: true, data: { heartbeats: heartbeats.rows } });
   } catch (error) {
     next(error);
@@ -293,7 +317,7 @@ router.post('/inventory', async (req: AuthRequest, res: Response, next: NextFunc
       return;
     }
 
-    const deviceResult = query('SELECT id FROM devices WHERE agent_id = ?', [agent_id]);
+    const deviceResult = await query('SELECT id FROM devices WHERE agent_id = ?', [agent_id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -302,43 +326,43 @@ router.post('/inventory', async (req: AuthRequest, res: Response, next: NextFunc
     const deviceId = deviceResult.rows[0].id;
 
     // Clear old data and insert new
-    query('DELETE FROM device_software WHERE device_id = ?', [deviceId]);
+    await query('DELETE FROM device_software WHERE device_id = ?', [deviceId]);
     if (Array.isArray(software)) {
       for (const sw of software) {
         const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        query('INSERT INTO device_software (id, device_id, name, version, publisher, install_date) VALUES (?, ?, ?, ?, ?, ?)',
+        await query('INSERT INTO device_software (id, device_id, name, version, publisher, install_date) VALUES (?, ?, ?, ?, ?, ?)',
           [id, deviceId, sw.name || '', sw.version || '', sw.publisher || '', sw.install_date || '']);
       }
     }
 
-    query('DELETE FROM device_services WHERE device_id = ?', [deviceId]);
+    await query('DELETE FROM device_services WHERE device_id = ?', [deviceId]);
     if (Array.isArray(services)) {
       for (const svc of services) {
         const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        query('INSERT INTO device_services (id, device_id, name, display_name, status, startup_type) VALUES (?, ?, ?, ?, ?, ?)',
+        await query('INSERT INTO device_services (id, device_id, name, display_name, status, startup_type) VALUES (?, ?, ?, ?, ?, ?)',
           [id, deviceId, svc.name || '', svc.display_name || svc.name || '', svc.status || '', svc.startup_type || '']);
       }
     }
 
-    query('DELETE FROM device_processes WHERE device_id = ?', [deviceId]);
+    await query('DELETE FROM device_processes WHERE device_id = ?', [deviceId]);
     if (Array.isArray(processes)) {
       for (const proc of processes) {
         const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        query('INSERT INTO device_processes (id, device_id, pid, name, cpu_usage, memory_usage, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        await query('INSERT INTO device_processes (id, device_id, pid, name, cpu_usage, memory_usage, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [id, deviceId, proc.pid || 0, proc.name || '', proc.cpu_percent || proc.cpu_usage || 0, proc.memory_bytes || proc.memory_usage || 0, proc.user || proc.user_name || '']);
       }
     }
 
-    query('DELETE FROM device_network_interfaces WHERE device_id = ?', [deviceId]);
+    await query('DELETE FROM device_network_interfaces WHERE device_id = ?', [deviceId]);
     if (Array.isArray(network_interfaces)) {
       for (const iface of network_interfaces) {
         const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        query('INSERT INTO device_network_interfaces (id, device_id, name, mac_address, ipv4_address, ipv6_address, is_connected, speed_mbps) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        await query('INSERT INTO device_network_interfaces (id, device_id, name, mac_address, ipv4_address, ipv6_address, is_connected, speed_mbps) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           [id, deviceId, iface.name || '', iface.mac || iface.mac_address || '', iface.ipv4 || iface.ipv4_address || '', iface.ipv6 || iface.ipv6_address || '', iface.is_connected ? 1 : 0, iface.speed || iface.speed_mbps || 0]);
       }
     }
 
-    query("UPDATE devices SET last_inventory = datetime('now') WHERE id = ?", [deviceId]);
+    await query("UPDATE devices SET last_inventory = datetime('now') WHERE id = ?", [deviceId]);
 
     logger.info('Inventory updated', { deviceId, agent_id });
     res.json({ success: true, data: { message: 'Inventory updated' } });
@@ -363,7 +387,7 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
       return;
     }
 
-    const deviceResult = query('SELECT id FROM devices WHERE agent_id = ?', [agent_id]);
+    const deviceResult = await query('SELECT id FROM devices WHERE agent_id = ?', [agent_id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -373,7 +397,7 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
     const resultStr = result ? (typeof result === 'string' ? result : JSON.stringify(result)) : null;
     const errorStr = error_message || null;
 
-    query("UPDATE agent_commands SET status = ?, result = ?, error_message = ?, executed_at = datetime('now'), completed_at = datetime('now') WHERE id = ? AND device_id = ?",
+    await query("UPDATE agent_commands SET status = ?, result = ?, error_message = ?, executed_at = datetime('now'), completed_at = datetime('now') WHERE id = ? AND device_id = ?",
       [validStatus, resultStr, errorStr, command_id, deviceResult.rows[0].id]);
 
     logger.info('Command result received', { command_id, status: validStatus });
@@ -399,7 +423,7 @@ router.post('/security-scan', async (req: AuthRequest, res: Response, next: Next
       return;
     }
 
-    const deviceResult = query('SELECT id, hostname FROM devices WHERE agent_id = ?', [agent_id]);
+    const deviceResult = await query('SELECT id, hostname FROM devices WHERE agent_id = ?', [agent_id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -464,13 +488,13 @@ router.post('/security-scan', async (req: AuthRequest, res: Response, next: Next
     // Insert events and auto-create alerts
     for (const evt of events) {
       const eventId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      query('INSERT INTO security_events (id, device_id, event_type, severity, title, description, source) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      await query('INSERT INTO security_events (id, device_id, event_type, severity, title, description, source) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [eventId, device.id, evt.event_type, evt.severity, evt.title, evt.description, 'agent_scan']);
 
       // Auto-create alerts for critical and high severity
       if (evt.severity === 'critical' || evt.severity === 'high') {
         const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        await query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [alertId, device.id, evt.event_type, evt.severity, evt.title, evt.description, JSON.stringify({ device_hostname: device.hostname })]);
       }
     }
@@ -498,7 +522,7 @@ router.post('/alerts', async (req: AuthRequest, res: Response, next: NextFunctio
       return;
     }
 
-    const deviceResult = query('SELECT id, hostname FROM devices WHERE agent_id = ?', [agent_id]);
+    const deviceResult = await query('SELECT id, hostname FROM devices WHERE agent_id = ?', [agent_id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -509,12 +533,12 @@ router.post('/alerts', async (req: AuthRequest, res: Response, next: NextFunctio
 
     for (const alert of alerts) {
       // Check if similar alert already exists in last hour
-      const existing = query("SELECT id FROM alerts WHERE device_id = ? AND alert_type = ? AND created_at > datetime('now', '-1 hour') LIMIT 1",
+      const existing = await query("SELECT id FROM alerts WHERE device_id = ? AND alert_type = ? AND created_at > datetime('now', '-1 hour') LIMIT 1",
         [device.id, alert.alert_type || alert.type]);
       if (existing.rows.length > 0) continue;
 
       const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      await query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [alertId, device.id, alert.alert_type || alert.type, alert.severity || 'medium', alert.title, alert.description || '', JSON.stringify({ device_hostname: device.hostname })]);
       created++;
     }
@@ -530,7 +554,39 @@ router.get('/download/installer', authenticate, async (req: AuthRequest, res: Re
   try {
     const serverUrl = `${req.protocol}://${req.get('host')}/api`;
     const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+    const platform = (req.query.platform as string) || 'windows';
 
+    if (platform === 'linux') {
+      const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-linux.sh');
+      if (!existsSync(filePath)) {
+        res.status(404).json({ success: false, error: { message: 'Linux install script not found' } });
+        return;
+      }
+      let script = readFileSync(filePath, 'utf-8');
+      script = script.replace(/##SERVER_URL##/g, serverUrl.replace('/api', ''));
+      script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-linux.sh"');
+      res.send(script);
+      return;
+    }
+
+    if (platform === 'macos') {
+      const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-macos.sh');
+      if (!existsSync(filePath)) {
+        res.status(404).json({ success: false, error: { message: 'macOS install script not found' } });
+        return;
+      }
+      let script = readFileSync(filePath, 'utf-8');
+      script = script.replace(/##SERVER_URL##/g, serverUrl.replace('/api', ''));
+      script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-macos.sh"');
+      res.send(script);
+      return;
+    }
+
+    // Default: Windows PowerShell
     const script = `$ErrorActionPreference = "SilentlyContinue"
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  EndpointX Agent Installer" -ForegroundColor Cyan
@@ -647,6 +703,58 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx.ps1"');
+    res.send(script);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUBLIC - Download Linux install script (no auth required)
+router.get('/public/install-linux.sh', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const host = req.get('host') || 'endpointx.onrender.com';
+    const protocol = req.protocol === 'https' ? 'https' : 'https';
+    const serverUrl = `${protocol}://${host}`;
+    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+
+    const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-linux.sh');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'Linux install script not found' } });
+      return;
+    }
+
+    let script = readFileSync(filePath, 'utf-8');
+    script = script.replace(/##SERVER_URL##/g, serverUrl);
+    script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-linux.sh"');
+    res.send(script);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUBLIC - Download macOS install script (no auth required)
+router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const host = req.get('host') || 'endpointx.onrender.com';
+    const protocol = req.protocol === 'https' ? 'https' : 'https';
+    const serverUrl = `${protocol}://${host}`;
+    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+
+    const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-macos.sh');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'macOS install script not found' } });
+      return;
+    }
+
+    let script = readFileSync(filePath, 'utf-8');
+    script = script.replace(/##SERVER_URL##/g, serverUrl);
+    script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-macos.sh"');
     res.send(script);
   } catch (error) {
     next(error);

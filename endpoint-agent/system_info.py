@@ -437,6 +437,8 @@ def get_running_services() -> list[dict[str, Any]]:
         services.extend(_get_services_windows())
     elif system == "Linux":
         services.extend(_get_services_linux())
+    elif system == "Darwin":
+        services.extend(_get_services_macos())
 
     return services
 
@@ -492,6 +494,34 @@ def _get_services_linux() -> list[dict[str, Any]]:
                     "name": name,
                     "display_name": display_name,
                     "status": status,
+                    "startup_type": "",
+                })
+    except Exception:
+        pass
+
+    return services
+
+
+def _get_services_macos() -> list[dict[str, Any]]:
+    """Query macOS launchd services."""
+    services: list[dict[str, Any]] = []
+    try:
+        result = subprocess.run(
+            ["launchctl", "list"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        for line in result.stdout.strip().split("\n")[1:]:  # skip header
+            parts = line.split(None, 2)
+            if len(parts) >= 2:
+                pid = parts[0] if parts[0] != "-" else ""
+                name = parts[1] if len(parts) > 1 else ""
+                label = parts[2] if len(parts) > 2 else name
+                services.append({
+                    "name": label,
+                    "display_name": name,
+                    "status": "running" if pid else "stopped",
                     "startup_type": "",
                 })
     except Exception:

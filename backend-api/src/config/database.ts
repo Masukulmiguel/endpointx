@@ -152,6 +152,7 @@ const createInlineSchema = async (): Promise<void> => {
       disk_usage DECIMAL(5,2),
       last_heartbeat TIMESTAMPTZ,
       last_inventory TIMESTAMPTZ,
+      last_agent_hash VARCHAR(64),
       registered_at TIMESTAMPTZ DEFAULT NOW(),
       is_authorized BOOLEAN DEFAULT TRUE,
       notes TEXT,
@@ -280,6 +281,99 @@ const createInlineSchema = async (): Promise<void> => {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS device_groups (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) UNIQUE NOT NULL,
+      description TEXT,
+      color VARCHAR(7) DEFAULT '#6366f1',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS device_group_members (
+      group_id UUID REFERENCES device_groups(id) ON DELETE CASCADE,
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      PRIMARY KEY (group_id, device_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS compliance_policies (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      rules JSONB NOT NULL DEFAULT '{}',
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS policy_assignments (
+      policy_id UUID REFERENCES compliance_policies(id) ON DELETE CASCADE,
+      group_id UUID REFERENCES device_groups(id) ON DELETE CASCADE,
+      PRIMARY KEY (policy_id, group_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS compliance_results (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      policy_id UUID REFERENCES compliance_policies(id) ON DELETE CASCADE,
+      is_compliant BOOLEAN NOT NULL,
+      violations JSONB DEFAULT '[]',
+      checked_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS software_packages (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) NOT NULL,
+      version VARCHAR(50),
+      installer_url TEXT NOT NULL,
+      installer_type VARCHAR(10) NOT NULL,
+      silent_args TEXT DEFAULT '/quiet /norestart',
+      uninstall_args TEXT DEFAULT '/quiet',
+      file_size BIGINT DEFAULT 0,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS software_deployments (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      package_id UUID REFERENCES software_packages(id) ON DELETE CASCADE,
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      status VARCHAR(20) DEFAULT 'pending',
+      installed_at TIMESTAMPTZ,
+      error_message TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_log (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      recipient_email VARCHAR(255) NOT NULL,
+      subject VARCHAR(255) NOT NULL,
+      body TEXT,
+      status VARCHAR(20) DEFAULT 'pending',
+      sent_at TIMESTAMPTZ,
+      error_message TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS device_commands_extended (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      command_id UUID REFERENCES agent_commands(id) ON DELETE CASCADE,
+      action VARCHAR(50) NOT NULL,
+      package_id UUID REFERENCES software_packages(id) ON DELETE SET NULL,
+      parameters JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS user_mfa (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      mfa_secret TEXT,
+      enabled BOOLEAN DEFAULT FALSE,
+      method VARCHAR(10) DEFAULT 'totp',
+      backup_codes TEXT DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_devices_agent_id ON devices(agent_id);
     CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
     CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
@@ -299,6 +393,34 @@ const createInlineSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_device_groups_name ON device_groups(name);
+    CREATE INDEX IF NOT EXISTS idx_device_group_members_device_id ON device_group_members(device_id);
+    CREATE INDEX IF NOT EXISTS idx_compliance_policies_is_active ON compliance_policies(is_active);
+    CREATE INDEX IF NOT EXISTS idx_compliance_results_device_id ON compliance_results(device_id);
+    CREATE INDEX IF NOT EXISTS idx_compliance_results_policy_id ON compliance_results(policy_id);
+    CREATE INDEX IF NOT EXISTS idx_compliance_results_checked_at ON compliance_results(checked_at);
+    CREATE INDEX IF NOT EXISTS idx_software_packages_name ON software_packages(name);
+    CREATE INDEX IF NOT EXISTS idx_software_deployments_device_id ON software_deployments(device_id);
+    CREATE INDEX IF NOT EXISTS idx_software_deployments_package_id ON software_deployments(package_id);
+    CREATE INDEX IF NOT EXISTS idx_software_deployments_status ON software_deployments(status);
+    CREATE INDEX IF NOT EXISTS idx_notification_log_status ON notification_log(status);
+    CREATE INDEX IF NOT EXISTS idx_notification_log_recipient ON notification_log(recipient_email);
+    CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);
+
+    DO $$ BEGIN
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider_id VARCHAR(100);
+    EXCEPTION WHEN duplicate_column THEN null;
+    END $$;
+
+    DO $$ BEGIN
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_subject VARCHAR(255);
+    EXCEPTION WHEN duplicate_column THEN null;
+    END $$;
+
+    DO $$ BEGIN
+      ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_agent_hash VARCHAR(64);
+    EXCEPTION WHEN duplicate_column THEN null;
+    END $$;
   `;
 
   await pool.query(schema);
@@ -337,6 +459,14 @@ const seedDefaults = async (): Promise<void> => {
       ['network.view', 'View Network', 'View network information', 'network'],
       ['alerts.view', 'View Alerts', 'View alerts', 'alerts'],
       ['alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
+      ['groups.view', 'View Groups', 'View device groups', 'groups'],
+      ['groups.manage', 'Manage Groups', 'Create, edit, and delete device groups', 'groups'],
+      ['policies.view', 'View Policies', 'View compliance policies', 'policies'],
+      ['policies.manage', 'Manage Policies', 'Create, edit, and delete compliance policies', 'policies'],
+      ['software.view', 'View Software', 'View software packages and deployments', 'software'],
+      ['software.manage', 'Manage Software', 'Create and manage software packages', 'software'],
+      ['software.deploy', 'Deploy Software', 'Deploy software to devices', 'software'],
+      ['compliance.view', 'View Compliance', 'View compliance results and status', 'compliance'],
     ];
 
     for (const [code, name, desc, category] of permissions) {

@@ -5,6 +5,8 @@ import logger from '../utils/logger';
 import { hashPassword, comparePassword, generateToken, generateRefreshToken, hashToken } from '../utils/helpers';
 import { JWT, AUTH } from '../config/constants';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { sendWelcomeEmail } from '../services/emailService';
 
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -38,6 +40,28 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       await query('UPDATE users SET failed_login_attempts = $1, locked_until = $2 WHERE id = $3',
         [attempts, lockout ? new Date(Date.now() + AUTH.LOCKOUT_DURATION_MS).toISOString() : null, user.id]);
       res.status(401).json({ success: false, error: { message: 'Invalid email or password.' } });
+      return;
+    }
+
+    // Check if MFA is enabled for this user
+    const mfaResult = await query('SELECT enabled FROM user_mfa WHERE user_id = $1 AND enabled = true', [user.id]);
+    if (mfaResult.rows.length > 0) {
+      const tempToken = generateToken(
+        { id: user.id, type: 'mfa_temp' },
+        JWT.ACCESS_SECRET,
+        '5m'
+      );
+
+      await query("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1", [user.id]);
+
+      res.json({
+        success: true,
+        data: {
+          requiresMfa: true,
+          tempToken,
+          message: 'MFA verification required.',
+        },
+      });
       return;
     }
 
@@ -129,6 +153,11 @@ export const inviteUser = async (req: AuthRequest, res: Response, next: NextFunc
 
     logger.info('User invited', { invitedBy: req.user?.id, email });
 
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(email, full_name || email.split('@')[0], tempPassword).catch((err) =>
+      logger.error('Failed to send welcome email', { email, error: err.message })
+    );
+
     res.status(201).json({
       success: true,
       data: {
@@ -209,6 +238,16 @@ export const changePassword = async (req: AuthRequest, res: Response, next: Next
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) { res.status(400).json({ success: false, error: { message: 'Current and new passwords required' } }); return; }
 
+    // Password complexity check
+    if (newPassword.length < 12 ||
+        !/[A-Z]/.test(newPassword) ||
+        !/[a-z]/.test(newPassword) ||
+        !/[0-9]/.test(newPassword) ||
+        !/[^A-Za-z0-9]/.test(newPassword)) {
+      res.status(400).json({ success: false, error: { message: 'Password must be at least 12 characters with uppercase, lowercase, number, and special character' } });
+      return;
+    }
+
     const userResult = await query('SELECT password_hash FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'User not found' } }); return; }
 
@@ -248,4 +287,133 @@ export const updateProfile = async (req: AuthRequest, res: Response, next: NextF
 
     res.json({ success: true, data: { message: 'Profile updated' } });
   } catch (error) { next(error); }
+};
+
+export const mfaVerify = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { tempToken, token } = req.body;
+    if (!tempToken || !token) {
+      res.status(400).json({ success: false, error: { message: 'tempToken and token are required' } });
+      return;
+    }
+
+    let decoded: { id: string; type: string };
+    try {
+      decoded = jwt.verify(tempToken, JWT.ACCESS_SECRET, {
+        issuer: JWT.ISSUER,
+        audience: JWT.AUDIENCE,
+      }) as { id: string; type: string };
+    } catch {
+      res.status(401).json({ success: false, error: { message: 'Invalid or expired temp token.' } });
+      return;
+    }
+
+    if (decoded.type !== 'mfa_temp') {
+      res.status(401).json({ success: false, error: { message: 'Invalid temp token type.' } });
+      return;
+    }
+
+    const userId = decoded.id;
+
+    const mfaResult = await query('SELECT mfa_secret, enabled, backup_codes FROM user_mfa WHERE user_id = $1', [userId]);
+    if (mfaResult.rows.length === 0 || !mfaResult.rows[0].enabled) {
+      res.status(400).json({ success: false, error: { message: 'MFA is not enabled for this user.' } });
+      return;
+    }
+
+    const speakeasy = require('speakeasy');
+    const bcrypt = require('bcryptjs');
+
+    const mfa = mfaResult.rows[0];
+    const decryptedSecret = Buffer.from(mfa.mfa_secret, 'hex').toString('utf8');
+
+    const verified = speakeasy.totp.verify({
+      secret: decryptedSecret,
+      encoding: 'base32',
+      token,
+      window: 1,
+    });
+
+    if (!verified && mfa.backup_codes) {
+      const backupCodes: string[] = JSON.parse(mfa.backup_codes);
+      let backupUsed = false;
+      for (let i = 0; i < backupCodes.length; i++) {
+        if (bcrypt.compareSync(token, backupCodes[i])) {
+          backupCodes.splice(i, 1);
+          await query(
+            'UPDATE user_mfa SET backup_codes = $1, updated_at = NOW() WHERE user_id = $2',
+            [JSON.stringify(backupCodes), userId]
+          );
+          backupUsed = true;
+          break;
+        }
+      }
+      if (!backupUsed) {
+        res.status(401).json({ success: false, error: { message: 'Invalid token.' } });
+        return;
+      }
+    } else if (!verified) {
+      res.status(401).json({ success: false, error: { message: 'Invalid token.' } });
+      return;
+    }
+
+    const userResult = await query(
+      `SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1 AND u.is_active = true`,
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      res.status(401).json({ success: false, error: { message: 'User not found or inactive.' } });
+      return;
+    }
+
+    const user = userResult.rows[0];
+
+    const permissionsResult = await query(
+      'SELECT p.code FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id WHERE rp.role_id = $1',
+      [user.role_id]
+    );
+    const permissions = permissionsResult.rows.map((r: any) => r.code);
+
+    const accessToken = generateToken(
+      { id: user.id, email: user.email, role_id: user.role_id, role_name: user.role_name, permissions },
+      JWT.ACCESS_SECRET,
+      JWT.ACCESS_EXPIRES_IN
+    );
+
+    const refreshTokenStr = generateRefreshToken();
+    const refreshTokenHash = hashToken(refreshTokenStr);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await query('INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)',
+      [user.id, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]);
+
+    await query("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1", [user.id]);
+
+    await query('INSERT INTO audit_logs (user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [user.id, user.email, 'login_mfa', 'user', user.id, 'MFA login verified', req.ip]);
+
+    logger.info('User logged in via MFA', { userId: user.id, email: user.email });
+
+    res.json({
+      success: true,
+      data: {
+        accessToken,
+        refreshToken: refreshTokenStr,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          full_name: user.full_name,
+          role_id: user.role_id,
+          role_name: user.role_name,
+          permissions,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error('MFA verify login error', { error: (error as Error).message });
+    next(error);
+  }
 };

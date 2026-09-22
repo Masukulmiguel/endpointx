@@ -5,6 +5,8 @@ authorized commands. Runs on Windows, Linux, and macOS.
 """
 
 import argparse
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -46,6 +48,307 @@ CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 _SHUTDOWN_REQUESTED = False
 
+SYSTEM = platform.system()
+
+
+def _get_platform_paths() -> dict[str, Path]:
+    """Return platform-specific paths for lock, backup, and hash files."""
+    if SYSTEM == "Windows":
+        base = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "EndpointX"
+    elif SYSTEM == "Darwin":
+        base = Path.home() / "endpointx-agent"
+    else:
+        base = Path("/opt/endpointx-agent")
+    return {
+        "base": base,
+        "lock": base / "agent.lock",
+        "backup": base / "agent.py.bak",
+        "hash": base / "agent.sha256",
+    }
+
+
+class TamperProtection:
+    """Tamper protection for the EndpointX agent.
+
+    Prevents unauthorized stopping, modifying, or uninstalling by:
+    - Lock file to prevent multiple instances
+    - SHA256 integrity checking with periodic verification
+    - Backup/restore of agent files
+    - Tamper alert reporting to the server
+    """
+
+    def __init__(self, server_url: str, agent_id: str, agent_secret: str) -> None:
+        self.server_url = server_url
+        self.agent_id = agent_id
+        self.agent_secret = agent_secret
+        self._paths = _get_platform_paths()
+        self._agent_path = Path(os.path.abspath(__file__))
+        self._initial_hash: Optional[str] = None
+        self._lock_fd: Any = None
+        self._integrity_check_interval = 300  # seconds
+        self._last_integrity_check = 0.0
+        self.session = requests.Session()
+
+        try:
+            self._paths["base"].mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning("Failed to create tamper protection base dir %s: %s", self._paths["base"], exc)
+
+    def create_lock(self) -> bool:
+        """Create a lock file containing the current PID. Returns False if another instance is running."""
+        try:
+            lock_path = self._paths["lock"]
+            if lock_path.exists():
+                try:
+                    existing_pid = int(lock_path.read_text().strip())
+                    if self._is_process_running(existing_pid):
+                        logger.error(
+                            "Another agent instance is already running (PID %d). "
+                            "Lock file: %s",
+                            existing_pid,
+                            lock_path,
+                        )
+                        return False
+                    else:
+                        logger.warning(
+                            "Stale lock file found for PID %d, removing", existing_pid
+                        )
+                        lock_path.unlink(missing_ok=True)
+                except (ValueError, OSError):
+                    logger.warning("Corrupt lock file, removing")
+                    lock_path.unlink(missing_ok=True)
+
+            lock_path.write_text(str(os.getpid()), encoding="utf-8")
+            self._lock_fd = lock_path
+            logger.info("Lock file created at %s (PID %d)", lock_path, os.getpid())
+            return True
+        except OSError as exc:
+            logger.error("Failed to create lock file: %s", exc)
+            return True  # Allow startup if lock file creation fails
+
+    def check_lock(self) -> bool:
+        """Check if another instance is already running via lock file."""
+        try:
+            lock_path = self._paths["lock"]
+            if not lock_path.exists():
+                return False
+            existing_pid = int(lock_path.read_text().strip())
+            if existing_pid == os.getpid():
+                return False
+            if self._is_process_running(existing_pid):
+                return True
+            return False
+        except (ValueError, OSError):
+            return False
+
+    def compute_hash(self) -> Optional[str]:
+        """Compute SHA256 hash of agent.py."""
+        try:
+            with open(self._agent_path, "rb") as f:
+                file_bytes = f.read()
+            return hashlib.sha256(file_bytes).hexdigest()
+        except OSError as exc:
+            logger.error("Failed to compute agent hash: %s", exc)
+            return None
+
+    def verify_integrity(self) -> bool:
+        """Verify agent integrity by comparing current hash with stored hash."""
+        current_hash = self.compute_hash()
+        if current_hash is None:
+            return True  # Cannot verify, allow
+
+        if self._initial_hash is None:
+            self._initial_hash = self._load_stored_hash()
+            if self._initial_hash is None:
+                logger.info("No stored hash found, storing current hash: %s", current_hash)
+                self._store_hash(current_hash)
+                self._initial_hash = current_hash
+                self.backup_agent()
+                return True
+
+        if current_hash != self._initial_hash:
+            logger.critical(
+                "AGENT TAMPER DETECTED! Hash mismatch. Expected %s, got %s",
+                self._initial_hash,
+                current_hash,
+            )
+            self.report_tamper(
+                "tamper_detected",
+                {
+                    "expected_hash": self._initial_hash,
+                    "current_hash": current_hash,
+                    "message": "Agent file integrity check failed - agent.py has been modified",
+                },
+            )
+            return False
+
+        return True
+
+    def backup_agent(self) -> bool:
+        """Create a backup copy of agent.py for restoration purposes."""
+        try:
+            backup_path = self._paths["backup"]
+            import shutil
+            shutil.copy2(self._agent_path, backup_path)
+            logger.info("Agent backup created at %s", backup_path)
+            return True
+        except (OSError, shutil.Error) as exc:
+            logger.error("Failed to backup agent: %s", exc)
+            return False
+
+    def restore_agent(self) -> bool:
+        """Restore agent.py from backup copy."""
+        try:
+            backup_path = self._paths["backup"]
+            if not backup_path.exists():
+                logger.error("No backup found at %s", backup_path)
+                return False
+            import shutil
+            shutil.copy2(backup_path, self._agent_path)
+            logger.info("Agent restored from backup %s", backup_path)
+            self._initial_hash = self.compute_hash()
+            if self._initial_hash:
+                self._store_hash(self._initial_hash)
+            return True
+        except (OSError, shutil.Error) as exc:
+            logger.error("Failed to restore agent from backup: %s", exc)
+            return False
+
+    def report_tamper(self, tamper_type: str, details: Optional[dict] = None) -> None:
+        """Send a tamper alert to the server."""
+        try:
+            payload = {
+                "agent_id": self.agent_id,
+                "alerts": [
+                    {
+                        "type": "tamper_detected",
+                        "alert_type": "tamper_detected",
+                        "severity": "critical",
+                        "title": f"Tamper Alert: {tamper_type}",
+                        "description": details.get("message", f"Tamper event: {tamper_type}")
+                        if details
+                        else f"Tamper event: {tamper_type}",
+                    }
+                ],
+            }
+            url = f"{self.server_url}/devices/alerts"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Agent-Secret": self.agent_secret,
+            }
+            resp = self.session.post(url, json=payload, headers=headers, timeout=10)
+            if resp.status_code in (200, 201):
+                logger.info("Tamper alert reported to server: %s", tamper_type)
+            else:
+                logger.warning("Tamper alert report failed with status %d", resp.status_code)
+        except requests.exceptions.RequestException as exc:
+            logger.error("Failed to report tamper alert: %s", exc)
+
+    def periodic_integrity_check(self) -> None:
+        """Run integrity check on a periodic schedule (call from heartbeat loop)."""
+        now = time.time()
+        if now - self._last_integrity_check < self._integrity_check_interval:
+            return
+        self._last_integrity_check = now
+        if not self.verify_integrity():
+            logger.warning("Periodic integrity check failed, attempting restore...")
+            self.restore_agent()
+
+    def get_hash_for_heartbeat(self) -> Optional[str]:
+        """Return the current agent hash to include in heartbeat responses."""
+        return self.compute_hash()
+
+    def cleanup(self) -> None:
+        """Remove lock file on agent exit."""
+        try:
+            lock_path = self._paths["lock"]
+            if lock_path.exists():
+                lock_path.unlink(missing_ok=True)
+                logger.info("Lock file removed: %s", lock_path)
+        except OSError as exc:
+            logger.warning("Failed to remove lock file: %s", exc)
+
+    def verify_uninstall_command(self, command: dict[str, Any]) -> bool:
+        """Verify that an uninstall command is properly signed with HMAC-SHA256."""
+        try:
+            signature = command.get("signature", "")
+            if not signature:
+                logger.error("Uninstall command missing signature")
+                return False
+
+            # Build the message to verify: agent_id + command_type
+            cmd_type = command.get("command_type", command.get("type", ""))
+            message = f"{self.agent_id}:{cmd_type}"
+            expected_sig = hmac.new(
+                self.agent_secret.encode("utf-8"),
+                message.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+
+            if not hmac.compare_digest(signature, expected_sig):
+                logger.critical(
+                    "Uninstall command signature verification FAILED! "
+                    "Expected %s, got %s",
+                    expected_sig,
+                    signature,
+                )
+                return False
+
+            return True
+        except Exception as exc:
+            logger.error("Uninstall verification error: %s", exc)
+            return False
+
+    def execute_uninstall(self) -> None:
+        """Gracefully stop and remove the agent after verified uninstall command."""
+        logger.critical("Authorized uninstall initiated. Logging event and shutting down.")
+        self.report_tamper(
+            "uninstall_authorized",
+            {"message": "Agent uninstall authorized by server"},
+        )
+        self.cleanup()
+        logger.info("Agent stopped for uninstall. Files remain for manual cleanup.")
+        global _SHUTDOWN_REQUESTED
+        _SHUTDOWN_REQUESTED = True
+
+    # -- Private helpers --
+
+    @staticmethod
+    def _is_process_running(pid: int) -> bool:
+        """Check if a process with the given PID is still alive."""
+        try:
+            if SYSTEM == "Windows":
+                import ctypes
+                kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+                handle = kernel32.OpenProcess(0x100000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return True
+                return False
+            else:
+                os.kill(pid, 0)
+                return True
+        except (OSError, PermissionError, AttributeError):
+            return False
+
+    def _load_stored_hash(self) -> Optional[str]:
+        """Load the stored hash from disk."""
+        try:
+            hash_path = self._paths["hash"]
+            if hash_path.exists():
+                return hash_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            logger.warning("Failed to load stored hash: %s", exc)
+        return None
+
+    def _store_hash(self, hash_value: str) -> None:
+        """Persist the agent hash to disk."""
+        try:
+            hash_path = self._paths["hash"]
+            hash_path.write_text(hash_value, encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Failed to store hash: %s", exc)
+
 
 class EndpointAgent:
     """Main agent class that manages registration, heartbeat, and command execution."""
@@ -55,9 +358,11 @@ class EndpointAgent:
         self.config: dict[str, Any] = {}
         self.session = requests.Session()
         self._running = False
+        self._tamper: Optional[TamperProtection] = None
         self._load_config()
         self._setup_logging()
         self._setup_signals()
+        self._init_tamper_protection()
 
     def _load_config(self) -> None:
         if not self.config_path.exists():
@@ -134,6 +439,22 @@ class EndpointAgent:
                 signal.signal(signal.SIGBREAK, _handle_signal)
             except (OSError, AttributeError):
                 pass
+
+    def _init_tamper_protection(self) -> None:
+        """Initialize tamper protection subsystem."""
+        try:
+            self._tamper = TamperProtection(
+                server_url=self.config.get("server_url", "http://localhost:3001/api"),
+                agent_id=self.config.get("agent_id", get_hostname()),
+                agent_secret=self.config.get("agent_secret", ""),
+            )
+            if not self._tamper.create_lock():
+                logger.critical("Cannot start: another agent instance is already running.")
+                sys.exit(1)
+            if not self._tamper.check_lock():
+                self._tamper.verify_integrity()
+        except Exception as exc:
+            logger.warning("Tamper protection init failed (non-fatal): %s", exc)
 
     def _make_request(
         self,
@@ -262,8 +583,13 @@ class EndpointAgent:
                     "network_in": net_traffic.get("bytes_recv", 0),
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
-                    "current_version": "1.1.0",
+                    "current_version": "1.2.0",
                 }
+
+                if self._tamper:
+                    agent_hash = self._tamper.get_hash_for_heartbeat()
+                    if agent_hash:
+                        payload["agent_hash"] = agent_hash
 
                 resp = self._make_request("POST", "/devices/heartbeat", payload)
                 if resp is None:
@@ -279,8 +605,8 @@ class EndpointAgent:
                     data = resp.json()
                     server_data = data.get("data", {})
                     server_version = server_data.get("agent_version", "")
-                    if server_version and server_version != "1.1.0" and not getattr(self, '_update_attempted', False):
-                        logger.info("New agent version available: %s (current: 1.1.0)", server_version)
+                    if server_version and server_version != "1.2.0" and not getattr(self, '_update_attempted', False):
+                        logger.info("New agent version available: %s (current: 1.2.0)", server_version)
                         self._update_attempted = True
                         self._auto_update()
                     return data
@@ -371,6 +697,7 @@ class EndpointAgent:
             "update_agent": self.handle_update_agent,
             "scan": self.handle_scan,
             "get_info": self.handle_get_info,
+            "uninstall_agent": self.handle_uninstall_agent,
         }
 
         handler = handlers.get(cmd_type)
@@ -390,11 +717,14 @@ class EndpointAgent:
     def handle_reboot(self, params: dict[str, Any]) -> dict[str, Any]:
         delay = params.get("delay", 5)
         logger.warning("Reboot command received, delay=%ds", delay)
+        system = platform.system()
 
         def _do_reboot() -> None:
             time.sleep(delay)
-            if platform.system() == "Windows":
+            if system == "Windows":
                 subprocess.run(["shutdown", "/r", "/t", "0"], check=False)
+            elif system == "Darwin":
+                subprocess.run(["sudo", "shutdown", "-r", "now"], check=False)
             else:
                 subprocess.run(["sudo", "reboot"], check=False)
 
@@ -406,11 +736,14 @@ class EndpointAgent:
     def handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         delay = params.get("delay", 5)
         logger.warning("Shutdown command received, delay=%ds", delay)
+        system = platform.system()
 
         def _do_shutdown() -> None:
             time.sleep(delay)
-            if platform.system() == "Windows":
+            if system == "Windows":
                 subprocess.run(["shutdown", "/s", "/t", "0"], check=False)
+            elif system == "Darwin":
+                subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
             else:
                 subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
 
@@ -421,10 +754,22 @@ class EndpointAgent:
 
     def handle_lock(self, params: dict[str, Any]) -> dict[str, Any]:
         logger.warning("Lock screen command received")
-        if platform.system() == "Windows":
+        system = platform.system()
+        if system == "Windows":
             subprocess.run(["rundll32.exe", "user32.dll,LockWorkStation"], check=False)
+        elif system == "Darwin":
+            subprocess.run(
+                ["/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", "-suspend"],
+                check=False,
+            )
         else:
-            subprocess.run(["xdg-screensaver", "lock"], check=False)
+            # Try loginctl first (systemd), fall back to xdg-screensaver
+            try:
+                result = subprocess.run(["loginctl", "lock-session"], capture_output=True, timeout=5)
+                if result.returncode != 0:
+                    subprocess.run(["xdg-screensaver", "lock"], check=False)
+            except FileNotFoundError:
+                subprocess.run(["xdg-screensaver", "lock"], check=False)
         return {"message": "Screen locked"}
 
     def handle_unlock(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -567,10 +912,65 @@ class EndpointAgent:
             "collected_at": datetime.now(timezone.utc).isoformat(),
         }
 
+    def handle_uninstall_agent(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle a verified uninstall command from the server.
+
+        The command must carry an HMAC-SHA256 signature computed from
+        agent_id:command_type using the shared AGENT_SECRET.  If the
+        signature is missing or invalid the agent logs a tamper alert
+        and refuses to proceed.
+        """
+        logger.warning("Uninstall command received")
+
+        # Report unauthorized attempt if no tamper protection or no signature
+        if self._tamper is None:
+            logger.critical("Uninstall blocked: tamper protection not initialized")
+            return {"message": "Uninstall blocked: tamper protection unavailable"}
+
+        # Verify HMAC signature
+        signature = params.get("signature", "")
+        if not signature:
+            logger.critical("Uninstall command has no signature - unauthorized attempt!")
+            self._tamper.report_tamper(
+                "uninstall_unauthorized",
+                {"message": "Uninstall command received without valid signature"},
+            )
+            return {"message": "Uninstall rejected: missing signature"}
+
+        cmd_type = "uninstall_agent"
+        message = f"{self.config.get('agent_id', '')}:{cmd_type}"
+        expected_sig = hmac.new(
+            self.config.get("agent_secret", "").encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_sig):
+            logger.critical(
+                "Uninstall command signature verification FAILED! "
+                "This is an unauthorized uninstall attempt."
+            )
+            self._tamper.report_tamper(
+                "uninstall_unauthorized",
+                {
+                    "message": "Uninstall command signature verification failed",
+                    "expected_prefix": expected_sig[:8] + "...",
+                },
+            )
+            return {"message": "Uninstall rejected: invalid signature"}
+
+        logger.info("Uninstall command signature verified. Proceeding with uninstall.")
+        import threading
+        timer = threading.Thread(target=self._tamper.execute_uninstall, daemon=True)
+        timer.start()
+        return {"message": "Uninstall authorized - agent will shut down"}
+
     def run(self) -> None:
         global _SHUTDOWN_REQUESTED
 
         logger.info("EndpointX agent starting...")
+        logger.info("Platform: %s (%s)", platform.system(), platform.platform())
+        logger.info("Python: %s", platform.python_version())
         logger.info("Server: %s", self.config["server_url"])
         logger.info("Heartbeat interval: %ds", self.config["heartbeat_interval"])
 
@@ -585,54 +985,65 @@ class EndpointAgent:
                 logger.error("Initial registration failed. Will retry on heartbeat.")
 
         logger.info("Entering heartbeat loop...")
-        while self._running and not _SHUTDOWN_REQUESTED:
-            try:
-                response = self.heartbeat()
-                if response:
-                    data = response.get("data", {})
-                    commands = data.get("commands", [])
-                    if commands:
-                        logger.info("Received %d command(s) from server", len(commands))
-                        for cmd in commands:
+        try:
+            while self._running and not _SHUTDOWN_REQUESTED:
+                try:
+                    response = self.heartbeat()
+                    if response:
+                        data = response.get("data", {})
+                        commands = data.get("commands", [])
+                        if commands:
+                            logger.info("Received %d command(s) from server", len(commands))
+                            for cmd in commands:
+                                try:
+                                    self.execute_command(cmd)
+                                except Exception as exc:
+                                    logger.error("Command execution error: %s", exc)
+
+                        # Send inventory on first successful heartbeat
+                        if not self._inventory_sent:
                             try:
-                                self.execute_command(cmd)
+                                self.send_inventory()
+                                self._inventory_sent = True
                             except Exception as exc:
-                                logger.error("Command execution error: %s", exc)
+                                logger.error("Inventory send error: %s", exc)
 
-                    # Send inventory on first successful heartbeat
-                    if not self._inventory_sent:
+                        # Auto security scan on first heartbeat
+                        if not self._security_sent:
+                            try:
+                                self._send_security_scan()
+                                self._security_sent = True
+                            except Exception as exc:
+                                logger.error("Auto security scan error: %s", exc)
+
+                        # Auto security scan every 10 minutes
+                        now = time.time()
+                        if now - self._last_security_check >= 600:
+                            try:
+                                self._send_security_scan()
+                                self._last_security_check = now
+                            except Exception as exc:
+                                logger.error("Auto security scan error: %s", exc)
+
+                    # Periodic integrity check via tamper protection
+                    if self._tamper:
                         try:
-                            self.send_inventory()
-                            self._inventory_sent = True
+                            self._tamper.periodic_integrity_check()
                         except Exception as exc:
-                            logger.error("Inventory send error: %s", exc)
+                            logger.error("Integrity check error: %s", exc)
 
-                    # Auto security scan on first heartbeat
-                    if not self._security_sent:
-                        try:
-                            self._send_security_scan()
-                            self._security_sent = True
-                        except Exception as exc:
-                            logger.error("Auto security scan error: %s", exc)
+                except Exception as exc:
+                    logger.error("Heartbeat cycle error: %s", exc)
 
-                    # Auto security scan every 10 minutes
-                    now = time.time()
-                    if now - self._last_security_check >= 600:
-                        try:
-                            self._send_security_scan()
-                            self._last_security_check = now
-                        except Exception as exc:
-                            logger.error("Auto security scan error: %s", exc)
-            except Exception as exc:
-                logger.error("Heartbeat cycle error: %s", exc)
-
-            interval = self.config.get("heartbeat_interval", 60)
-            for _ in range(interval):
-                if _SHUTDOWN_REQUESTED or not self._running:
-                    break
-                time.sleep(1)
-
-        logger.info("EndpointX agent stopped")
+                interval = self.config.get("heartbeat_interval", 60)
+                for _ in range(interval):
+                    if _SHUTDOWN_REQUESTED or not self._running:
+                        break
+                    time.sleep(1)
+        finally:
+            if self._tamper:
+                self._tamper.cleanup()
+            logger.info("EndpointX agent stopped")
 
 
 def main() -> None:
@@ -644,7 +1055,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.1.0 by Masukulu Miguel")
+        print("EndpointX Agent v1.2.0 by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:

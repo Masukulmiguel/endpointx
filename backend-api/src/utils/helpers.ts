@@ -19,8 +19,8 @@ export const generateToken = (
   secret: string,
   expiresIn: string | number = '15m'
 ): string => {
-  return jwt.sign(payload, secret, {
-    expiresIn,
+  return jwt.sign(payload, secret as string, {
+    expiresIn: expiresIn as any,
     issuer: 'endpointx',
     audience: 'endpointx-api',
   });

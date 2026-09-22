@@ -10,6 +10,13 @@ import auditRoutes from './audit';
 import dashboardRoutes from './dashboard';
 import settingsRoutes from './settings';
 import networkRoutes from './network';
+import groupsRoutes from './groups';
+import policiesRoutes from './policies';
+import softwareRoutes from './software';
+import notificationsRoutes from './notifications';
+import mfaRoutes from './mfa';
+import reportsRoutes from './reports';
+import ssoRoutes from './sso';
 
 const router = Router();
 
@@ -24,5 +31,12 @@ router.use('/audit', auditRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/network', networkRoutes);
+router.use('/groups', groupsRoutes);
+router.use('/policies', policiesRoutes);
+router.use('/software', softwareRoutes);
+router.use('/notifications', notificationsRoutes);
+router.use('/mfa', mfaRoutes);
+router.use('/reports', reportsRoutes);
+router.use('/sso', ssoRoutes);
 
 export default router;

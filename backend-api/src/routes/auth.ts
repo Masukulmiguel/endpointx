@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { login, inviteUser, logout, refreshToken, changePassword, getProfile, updateProfile } from '../controllers/authController';
+import { login, inviteUser, logout, refreshToken, changePassword, getProfile, updateProfile, mfaVerify } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { authLimiter } from '../middleware/rateLimiter';
@@ -9,6 +9,7 @@ import { LoginSchema } from '../utils/validators';
 const router = Router();
 
 router.post('/login', authLimiter, validate(LoginSchema), login);
+router.post('/mfa-verify', authLimiter, mfaVerify);
 router.post('/invite', authenticate, requirePermission('users.manage'), inviteUser);
 router.post('/logout', authenticate, logout);
 router.post('/refresh', refreshToken);

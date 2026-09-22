@@ -216,3 +216,75 @@ export interface ApiResponse<T> {
     code?: string;
   };
 }
+
+export interface DeviceGroup {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  device_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompliancePolicy {
+  id: string;
+  name: string;
+  description: string;
+  rules: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ComplianceResult {
+  id: string;
+  device_id: string;
+  policy_id: string;
+  is_compliant: boolean;
+  violations: string[];
+  checked_at: string;
+}
+
+export interface SoftwarePackage {
+  id: string;
+  name: string;
+  version: string;
+  installer_url: string;
+  installer_type: string;
+  silent_args: string;
+  file_size: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface SoftwareDeployment {
+  id: string;
+  package_id: string;
+  device_id: string;
+  status: string;
+  installed_at: string;
+  error_message: string;
+  created_at: string;
+}
+
+export interface SSOProvider {
+  id: string;
+  name: string;
+  provider_type: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface MFAStatus {
+  enabled: boolean;
+  method: string | null;
+}
+
+export interface NotificationEntry {
+  id: string;
+  recipient_email: string;
+  subject: string;
+  status: string;
+  sent_at: string;
+  created_at: string;
+}

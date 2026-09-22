@@ -1,16 +1,29 @@
 import { z } from 'zod';
 
+// Password policy: min 12 chars, uppercase, lowercase, number, special char
+const passwordSchema = z.string()
+  .min(12, 'Password must be at least 12 characters')
+  .max(128, 'Password is too long')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
+
 export const LoginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Invalid email format'),
   password: z.string().min(1, 'Password is required'),
 });
 
-export const RegisterSchema = z.object({
+export const InviteUserSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Invalid email format'),
-  username: z.string().min(3, 'Username must be at least 3 characters').max(50, 'Username is too long'),
-  full_name: z.string().min(1, 'Full name is required').max(100, 'Full name is too long'),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password is too long'),
-  role_id: z.string().optional().default('role_user'),
+  username: z.string().min(3, 'Username must be at least 3 characters').max(50).optional(),
+  full_name: z.string().min(1, 'Full name is required').max(100).optional(),
+  role_id: z.string().uuid().optional(),
+});
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: passwordSchema,
 });
 
 export const DeviceRegisterSchema = z.object({
@@ -32,7 +45,7 @@ export const HeartbeatSchema = z.object({
 
 export const CommandSchema = z.object({
   device_id: z.string().min(1),
-  command_type: z.enum(['reboot', 'shutdown', 'lock', 'unlock', 'inventory', 'update_agent', 'quarantine', 'scan', 'get_info']),
+  command_type: z.enum(['reboot', 'shutdown', 'lock', 'unlock', 'inventory', 'update_agent', 'quarantine', 'scan', 'get_info', 'install_software', 'uninstall_software']),
   parameters: z.record(z.any()).optional().default({}),
 });
 
@@ -60,8 +73,62 @@ export const PaginationSchema = z.object({
   order: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 
+// Device Groups
+export const DeviceGroupSchema = z.object({
+  name: z.string().min(1, 'Group name is required').max(100),
+  description: z.string().max(500).optional().default(''),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional().default('#6366f1'),
+});
+
+export const DeviceGroupAssignSchema = z.object({
+  device_ids: z.array(z.string().uuid()).min(1, 'At least one device required'),
+});
+
+// Compliance Policies
+export const CompliancePolicySchema = z.object({
+  name: z.string().min(1, 'Policy name is required').max(100),
+  description: z.string().max(500).optional().default(''),
+  rules: z.object({
+    min_os_version: z.string().optional(),
+    require_firewall: z.boolean().optional().default(true),
+    require_antivirus: z.boolean().optional().default(true),
+    max_cpu_usage: z.number().min(0).max(100).optional(),
+    max_disk_usage: z.number().min(0).max(100).optional(),
+    required_agent_version: z.string().optional(),
+    blocked_software: z.array(z.string()).optional().default([]),
+    required_software: z.array(z.string()).optional().default([]),
+  }),
+  group_ids: z.array(z.string().uuid()).optional().default([]),
+});
+
+// Software Deployment
+export const SoftwareDeploySchema = z.object({
+  name: z.string().min(1, 'Software name is required').max(100),
+  version: z.string().max(50).optional(),
+  installer_url: z.string().url('Invalid URL'),
+  installer_type: z.enum(['msi', 'exe', 'msix', 'deb', 'rpm', 'pkg']),
+  silent_args: z.string().optional().default('/quiet /norestart'),
+  uninstall_args: z.string().optional().default('/quiet'),
+  group_ids: z.array(z.string().uuid()).optional().default([]),
+  device_ids: z.array(z.string().uuid()).optional().default([]),
+});
+
+// MFA
+export const MfaVerifySchema = z.object({
+  token: z.string().length(6, 'MFA token must be 6 digits').regex(/^\d+$/, 'MFA token must be digits'),
+});
+
+// Settings
+export const SettingsUpdateSchema = z.object({
+  value: z.string().min(1, 'Value is required'),
+});
+
 export type LoginInput = z.infer<typeof LoginSchema>;
-export type RegisterInput = z.infer<typeof RegisterSchema>;
+export type InviteUserInput = z.infer<typeof InviteUserSchema>;
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
 export type DeviceRegisterInput = z.infer<typeof DeviceRegisterSchema>;
 export type HeartbeatInput = z.infer<typeof HeartbeatSchema>;
 export type CommandInput = z.infer<typeof CommandSchema>;
+export type DeviceGroupInput = z.infer<typeof DeviceGroupSchema>;
+export type CompliancePolicyInput = z.infer<typeof CompliancePolicySchema>;
+export type SoftwareDeployInput = z.infer<typeof SoftwareDeploySchema>;

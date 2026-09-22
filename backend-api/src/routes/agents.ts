@@ -8,7 +8,7 @@ const router = Router();
 
 router.get('/stats', authenticate, requirePermission('devices.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = query(`
+    const result = await query(`
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,

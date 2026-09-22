@@ -23,13 +23,14 @@ CREATE TYPE alert_type AS ENUM (
     'abnormal_network',
     'device_offline',
     'brute_force',
-    'unauthorized_access'
+    'unauthorized_access',
+    'tamper_detected'
 );
 CREATE TYPE command_status AS ENUM ('pending', 'sent', 'executing', 'completed', 'failed', 'timeout');
 CREATE TYPE command_type AS ENUM (
     'reboot', 'shutdown', 'lock', 'unlock',
     'inventory', 'update_agent', 'quarantine',
-    'remove', 'scan', 'get_info'
+    'remove', 'scan', 'get_info', 'uninstall_agent'
 );
 CREATE TYPE log_action AS ENUM (
     'login', 'logout', 'login_failed', 'password_change',
@@ -128,6 +129,7 @@ CREATE TABLE devices (
     disk_usage DECIMAL(5,2),
     last_heartbeat TIMESTAMPTZ,
     last_inventory TIMESTAMPTZ,
+    last_agent_hash VARCHAR(64),
     registered_at TIMESTAMPTZ DEFAULT NOW(),
     is_authorized BOOLEAN DEFAULT TRUE,
     notes TEXT,
