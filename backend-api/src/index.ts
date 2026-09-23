@@ -94,6 +94,8 @@ import groupsRoutes from './routes/groups';
 import policiesRoutes from './routes/policies';
 import softwareRoutes from './routes/software';
 import notificationsRoutes from './routes/notifications';
+import hermesRoutes from './routes/hermes';
+import netsentinelRoutes from './routes/netsentinel';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -111,6 +113,8 @@ app.use('/api/groups', groupsRoutes);
 app.use('/api/policies', policiesRoutes);
 app.use('/api/software', softwareRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/hermes', hermesRoutes);
+app.use('/api/netsentinel', netsentinelRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

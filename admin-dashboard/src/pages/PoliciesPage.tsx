@@ -170,7 +170,7 @@ export default function PoliciesPage() {
         </div>
         <button
           onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Create Policy
@@ -189,7 +189,7 @@ export default function PoliciesPage() {
         {[
           { label: 'Total Policies', value: stats?.total || 0, color: 'text-gray-900 dark:text-white' },
           { label: 'Active', value: stats?.active || 0, color: 'text-emerald-600 dark:text-emerald-400' },
-          { label: 'Compliance Rate', value: `${stats?.compliance_rate || 0}%`, color: 'text-indigo-600 dark:text-indigo-400' },
+          { label: 'Compliance Rate', value: `${stats?.compliance_rate || 0}%`, color: 'text-blue-600 dark:text-blue-400' },
         ].map((stat) => (
           <div
             key={stat.label}
@@ -261,14 +261,14 @@ export default function PoliciesPage() {
                         <button
                           onClick={() => handleRunCheck(policy.id)}
                           disabled={checking}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors disabled:opacity-50"
+                          className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50"
                           title="Run Compliance Check"
                         >
                           <Play className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => openEditModal(policy)}
-                          className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                          className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                           title="Edit"
                         >
                           <Edit2 className="w-4 h-4" />
@@ -377,7 +377,7 @@ export default function PoliciesPage() {
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="e.g., Security Baseline"
                 />
               </div>
@@ -387,7 +387,7 @@ export default function PoliciesPage() {
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   rows={2}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                   placeholder="Optional description"
                 />
               </div>
@@ -401,7 +401,7 @@ export default function PoliciesPage() {
                         type="button"
                         onClick={() => handleRuleChange(field.key, !formRules[field.key])}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          formRules[field.key] ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
+                          formRules[field.key] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
                         }`}
                       >
                         <span
@@ -415,7 +415,7 @@ export default function PoliciesPage() {
                         type={field.type}
                         value={formRules[field.key] || ''}
                         onChange={(e) => handleRuleChange(field.key, field.type === 'number' ? Number(e.target.value) : e.target.value)}
-                        className="w-40 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-40 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                         placeholder={field.placeholder}
                       />
                     )}
@@ -433,7 +433,7 @@ export default function PoliciesPage() {
               <button
                 onClick={handleSave}
                 disabled={saving || updating}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 {saving || updating ? 'Saving...' : editingPolicy ? 'Update' : 'Create'}
               </button>

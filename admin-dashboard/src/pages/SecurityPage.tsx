@@ -173,7 +173,7 @@ export default function SecurityPage() {
               e.stopPropagation();
               setSelectedEvent(row);
             }}
-            className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
             title="View Details"
           >
             <Eye className="w-4 h-4" />
@@ -215,7 +215,7 @@ export default function SecurityPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
-          { label: 'Total Events', value: stats?.total || 0, color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400' },
+          { label: 'Total Events', value: stats?.total || 0, color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' },
           { label: 'Critical', value: stats?.critical || 0, color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' },
           { label: 'High', value: stats?.high || 0, color: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' },
           { label: 'Medium', value: stats?.medium || 0, color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
@@ -248,7 +248,7 @@ export default function SecurityPage() {
             setSeverityFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Severity</option>
           <option value="critical">Critical</option>
@@ -263,7 +263,7 @@ export default function SecurityPage() {
             setTypeFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Types</option>
           <option value="malware">Malware</option>
@@ -278,7 +278,7 @@ export default function SecurityPage() {
             setDateRange(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Time</option>
           <option value="24h">Last 24 Hours</option>

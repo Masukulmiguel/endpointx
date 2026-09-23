@@ -17,6 +17,8 @@ import notificationsRoutes from './notifications';
 import mfaRoutes from './mfa';
 import reportsRoutes from './reports';
 import ssoRoutes from './sso';
+import hermesRoutes from './hermes';
+import netsentinelRoutes from './netsentinel';
 
 const router = Router();
 
@@ -38,5 +40,7 @@ router.use('/notifications', notificationsRoutes);
 router.use('/mfa', mfaRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/sso', ssoRoutes);
+router.use('/hermes', hermesRoutes);
+router.use('/netsentinel', netsentinelRoutes);
 
 export default router;

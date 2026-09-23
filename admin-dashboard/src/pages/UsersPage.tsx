@@ -42,7 +42,7 @@ function getInitials(name: string): string {
 function Avatar({ name, className = '' }: { name: string; className?: string }) {
   return (
     <div
-      className={`flex items-center justify-center w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-semibold text-xs flex-shrink-0 ${className}`}
+      className={`flex items-center justify-center w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-semibold text-xs flex-shrink-0 ${className}`}
     >
       {getInitials(name)}
     </div>
@@ -177,7 +177,7 @@ export default function UsersPage() {
       label: 'Role',
       sortable: true,
       render: (row: User) => (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400">
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400">
           <Shield className="w-3 h-3" />
           {row.role_name || 'Unknown'}
         </span>
@@ -212,7 +212,7 @@ export default function UsersPage() {
               e.stopPropagation();
               openEditModal(row);
             }}
-            className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
             title="Edit"
           >
             <Pencil className="w-4 h-4" />
@@ -247,7 +247,7 @@ export default function UsersPage() {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <UserPlus className="w-4 h-4" />
           Add User
@@ -282,7 +282,7 @@ export default function UsersPage() {
             setRoleFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Roles</option>
           {roles.map((role) => (
@@ -310,7 +310,7 @@ export default function UsersPage() {
               type="email"
               value={addForm.email}
               onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
               placeholder="user@example.com"
             />
           </div>
@@ -320,7 +320,7 @@ export default function UsersPage() {
               type="text"
               value={addForm.username}
               onChange={(e) => setAddForm((f) => ({ ...f, username: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
               placeholder="username"
             />
           </div>
@@ -330,7 +330,7 @@ export default function UsersPage() {
               type="text"
               value={addForm.full_name}
               onChange={(e) => setAddForm((f) => ({ ...f, full_name: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
               placeholder="John Doe"
             />
           </div>
@@ -340,7 +340,7 @@ export default function UsersPage() {
               type="password"
               value={addForm.password}
               onChange={(e) => setAddForm((f) => ({ ...f, password: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
               placeholder="••••••••"
             />
           </div>
@@ -349,7 +349,7 @@ export default function UsersPage() {
             <select
               value={addForm.role_id}
               onChange={(e) => setAddForm((f) => ({ ...f, role_id: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
             >
               <option value="">Select role</option>
               {roles.map((role) => (
@@ -369,7 +369,7 @@ export default function UsersPage() {
             <button
               onClick={handleAddUser}
               disabled={creating || !addForm.email || !addForm.username || !addForm.password || !addForm.role_id}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {creating ? 'Creating...' : 'Create User'}
             </button>
@@ -385,7 +385,7 @@ export default function UsersPage() {
               type="email"
               value={editForm.email}
               onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
           <div>
@@ -394,7 +394,7 @@ export default function UsersPage() {
               type="text"
               value={editForm.full_name}
               onChange={(e) => setEditForm((f) => ({ ...f, full_name: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
           <div>
@@ -402,7 +402,7 @@ export default function UsersPage() {
             <select
               value={editForm.role_id}
               onChange={(e) => setEditForm((f) => ({ ...f, role_id: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
             >
               <option value="">Select role</option>
               {roles.map((role) => (
@@ -421,7 +421,7 @@ export default function UsersPage() {
               type="button"
               onClick={() => setEditForm((f) => ({ ...f, is_active: !f.is_active }))}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                editForm.is_active ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
+                editForm.is_active ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
               }`}
             >
               <span
@@ -441,7 +441,7 @@ export default function UsersPage() {
             <button
               onClick={handleEditUser}
               disabled={updating}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {updating ? 'Saving...' : 'Save Changes'}
             </button>

@@ -152,8 +152,8 @@ export default function MfaPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <Key className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+              <Key className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Multi-Factor Authentication</h2>
@@ -177,7 +177,7 @@ export default function MfaPage() {
                     <p className="text-sm font-medium text-gray-900 dark:text-white">Backup Codes</p>
                     <button
                       onClick={handleCopyCodes}
-                      className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       {copied ? 'Copied!' : 'Copy'}
@@ -216,14 +216,14 @@ export default function MfaPage() {
                         type="text"
                         value={totpCode}
                         onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        className="w-32 px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-center tracking-widest"
+                        className="w-32 px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-center tracking-widest"
                         placeholder="000000"
                         maxLength={6}
                       />
                       <button
                         onClick={handleVerify}
                         disabled={verifyLoading || totpCode.length !== 6}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                       >
                         {verifyLoading ? 'Verifying...' : 'Verify & Enable'}
                       </button>
@@ -240,7 +240,7 @@ export default function MfaPage() {
                 <button
                   onClick={handleSetup}
                   disabled={setupLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   <Key className="w-4 h-4" />
                   {setupLoading ? 'Setting up...' : 'Enable MFA'}
@@ -254,8 +254,8 @@ export default function MfaPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <Shield className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+              <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">SSO Configuration</h2>
@@ -264,7 +264,7 @@ export default function MfaPage() {
           </div>
           <button
             onClick={() => setShowAddSSO(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+            className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus className="w-4 h-4" />
             Add Provider
@@ -280,8 +280,8 @@ export default function MfaPage() {
               {providers.map((provider) => (
                 <div key={provider.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                      <Shield className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                      <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">{provider.name}</p>
@@ -314,8 +314,8 @@ export default function MfaPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <Lock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+              <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Password Policy</h2>
@@ -353,7 +353,7 @@ export default function MfaPage() {
                   type="text"
                   value={ssoForm.name}
                   onChange={(e) => setSsoForm({ ...ssoForm, name: e.target.value })}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="e.g., Company SSO"
                 />
               </div>
@@ -362,7 +362,7 @@ export default function MfaPage() {
                 <select
                   value={ssoForm.provider_type}
                   onChange={(e) => setSsoForm({ ...ssoForm, provider_type: e.target.value })}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                   {ssoTypes.map((t) => (
                     <option key={t} value={t}>{t}</option>
@@ -375,7 +375,7 @@ export default function MfaPage() {
                   type="text"
                   value={ssoForm.client_id}
                   onChange={(e) => setSsoForm({ ...ssoForm, client_id: e.target.value })}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="Client ID"
                 />
               </div>
@@ -386,7 +386,7 @@ export default function MfaPage() {
                     type={showPassword ? 'text' : 'password'}
                     value={ssoForm.client_secret}
                     onChange={(e) => setSsoForm({ ...ssoForm, client_secret: e.target.value })}
-                    className="w-full px-3 py-2.5 pr-10 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-3 py-2.5 pr-10 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder="Client Secret"
                   />
                   <button
@@ -404,7 +404,7 @@ export default function MfaPage() {
                   type="text"
                   value={ssoForm.tenant_id}
                   onChange={(e) => setSsoForm({ ...ssoForm, tenant_id: e.target.value })}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="Tenant ID (if applicable)"
                 />
               </div>
@@ -419,7 +419,7 @@ export default function MfaPage() {
               <button
                 onClick={handleCreateSSO}
                 disabled={ssoSaving}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 {ssoSaving ? 'Adding...' : 'Add Provider'}
               </button>
@@ -455,7 +455,7 @@ export default function MfaPage() {
                   type="password"
                   value={disablePassword}
                   onChange={(e) => setDisablePassword(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="Current password"
                 />
               </div>
@@ -465,7 +465,7 @@ export default function MfaPage() {
                   type="text"
                   value={disableTotp}
                   onChange={(e) => setDisableTotp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-32 px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-center tracking-widest"
+                  className="w-32 px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-center tracking-widest"
                   placeholder="000000"
                   maxLength={6}
                 />

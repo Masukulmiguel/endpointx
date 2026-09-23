@@ -179,7 +179,7 @@ export default function SoftwarePage() {
         </div>
         <button
           onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Package
@@ -201,7 +201,7 @@ export default function SoftwarePage() {
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               activeTab === tab
-                ? 'bg-white dark:bg-gray-600 text-indigo-600 shadow-sm'
+                ? 'bg-white dark:bg-gray-600 text-blue-600 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
@@ -249,8 +249,8 @@ export default function SoftwarePage() {
                       <tr key={pkg.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                              <Package className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                              <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                             </div>
                             <div>
                               <p className="text-sm font-medium text-gray-900 dark:text-white">{pkg.name}</p>
@@ -272,14 +272,14 @@ export default function SoftwarePage() {
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => setSelectedPkg(pkg)}
-                              className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                              className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                               title="Deploy"
                             >
                               <ArrowDownToLine className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => openEditModal(pkg)}
-                              className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                              className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                               title="Edit"
                             >
                               <Edit2 className="w-4 h-4" />
@@ -390,7 +390,7 @@ export default function SoftwarePage() {
                   <select
                     value={deployType}
                     onChange={(e) => setDeployType(e.target.value as 'device' | 'group')}
-                    className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   >
                     <option value="device">Device</option>
                     <option value="group">Group</option>
@@ -399,7 +399,7 @@ export default function SoftwarePage() {
                     type="text"
                     value={deployTarget}
                     onChange={(e) => setDeployTarget(e.target.value)}
-                    className="flex-1 px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="flex-1 px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder={deployType === 'device' ? 'Device ID' : 'Group ID'}
                   />
                 </div>
@@ -415,7 +415,7 @@ export default function SoftwarePage() {
               <button
                 onClick={handleDeploy}
                 disabled={deploying}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 <ArrowDownToLine className="w-4 h-4" />
                 {deploying ? 'Deploying...' : 'Deploy'}
@@ -446,7 +446,7 @@ export default function SoftwarePage() {
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="e.g., Chrome Browser"
                 />
               </div>
@@ -456,7 +456,7 @@ export default function SoftwarePage() {
                   type="text"
                   value={formVersion}
                   onChange={(e) => setFormVersion(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="e.g., 1.0.0"
                 />
               </div>
@@ -466,7 +466,7 @@ export default function SoftwarePage() {
                   type="url"
                   value={formUrl}
                   onChange={(e) => setFormUrl(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="https://example.com/installer.msi"
                 />
               </div>
@@ -475,7 +475,7 @@ export default function SoftwarePage() {
                 <select
                   value={formType}
                   onChange={(e) => setFormType(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                   {installerTypes.map((t) => (
                     <option key={t} value={t}>{t.toUpperCase()}</option>
@@ -488,7 +488,7 @@ export default function SoftwarePage() {
                   type="text"
                   value={formSilentArgs}
                   onChange={(e) => setFormSilentArgs(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="e.g., /quiet /norestart"
                 />
               </div>
@@ -503,7 +503,7 @@ export default function SoftwarePage() {
               <button
                 onClick={handleSave}
                 disabled={saving || updating}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 {saving || updating ? 'Saving...' : editingPkg ? 'Update' : 'Create'}
               </button>

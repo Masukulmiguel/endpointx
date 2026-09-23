@@ -98,7 +98,7 @@ export default function LoginPage() {
                   className={`w-full pl-10 pr-4 py-2.5 text-sm bg-gray-800 border rounded-lg text-white placeholder-gray-500 outline-none transition-all ${
                     errors.email
                       ? 'border-red-500/50 focus:ring-2 focus:ring-red-500/20'
-                      : 'border-gray-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      : 'border-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
                   }`}
                   autoComplete="email"
                   disabled={loading}
@@ -125,7 +125,7 @@ export default function LoginPage() {
                   className={`w-full pl-10 pr-10 py-2.5 text-sm bg-gray-800 border rounded-lg text-white placeholder-gray-500 outline-none transition-all ${
                     errors.password
                       ? 'border-red-500/50 focus:ring-2 focus:ring-red-500/20'
-                      : 'border-gray-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      : 'border-gray-700 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500'
                   }`}
                   autoComplete="current-password"
                   disabled={loading}
@@ -145,7 +145,7 @@ export default function LoginPage() {
             <div className="flex items-center justify-end">
               <button
                 type="button"
-                className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
               >
                 Forgot password?
               </button>
@@ -154,7 +154,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white text-sm font-medium rounded-lg transition-colors focus:ring-2 focus:ring-indigo-500/20 focus:outline-none"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white text-sm font-medium rounded-lg transition-colors focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
             >
               {loading ? (
                 <>

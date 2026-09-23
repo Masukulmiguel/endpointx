@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Copy, Check, Monitor, Wifi } from 'lucide-react';
+import { Download, Copy, Check, Monitor, Wifi, Smartphone, QrCode } from 'lucide-react';
 
 const API_URL = 'https://endpointx.onrender.com';
 
@@ -13,43 +13,94 @@ export default function InstallPage() {
   };
 
   const installScript = `irm ${API_URL}/api/devices/public/install.ps1 | iex`;
+  const updateScript = `irm ${API_URL}/api/devices/public/update.ps1 | iex`;
+  const mobileUrl = `${API_URL}/api/devices/public/mobile`;
 
   return (
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
         <Monitor className="w-6 h-6" />
-        Instalar Agent em Novos PCs
+        Instalar Agent (PC e Telemóvel)
       </h1>
 
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-6">
         <p className="text-blue-400 text-sm">
-          Use este guia para conectar outros PCs da rede ao sistema EndpointX.
+          Use este guia para conectar PCs e telemóveis da rede ao sistema EndpointX (v1.1.0).
         </p>
       </div>
 
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Download className="w-5 h-5 text-green-400" />
-          Link de Instalacao
+          Windows — Instalação rápida
         </h2>
         <p className="text-gray-400 text-sm mb-4">
-          No PC remoto, abra o PowerShell como Administrador e cole:
+          No PC remoto, abra o PowerShell e cole (não fecha a shell):
         </p>
         <div className="bg-gray-900 rounded p-3 flex items-center justify-between">
-          <code className="text-cyan-400 text-sm font-mono">{installScript}</code>
+          <code className="text-cyan-400 text-sm font-mono break-all">{installScript}</code>
           <button
             onClick={() => copyToClipboard(installScript, 'quick')}
             className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+            title="Copiar comando"
           >
             {copied === 'quick' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
           </button>
         </div>
         <p className="text-gray-500 text-xs mt-2">
-          Requer Python instalado com "Add to PATH" marcado.
+          Requer Python instalado com &quot;Add to PATH&quot; marcado. Seguro para <code>irm | iex</code>.
         </p>
+
+        <div className="mt-4 bg-gray-900 rounded p-3 flex items-center justify-between">
+          <code className="text-yellow-400 text-sm font-mono break-all">{updateScript}</code>
+          <button
+            onClick={() => copyToClipboard(updateScript, 'update')}
+            className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+            title="Copiar comando"
+          >
+            {copied === 'update' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          </button>
+        </div>
+        <p className="text-gray-500 text-xs mt-1">Atualização rápida do agent já instalado.</p>
       </div>
 
-      {/* Method 2: Git install */}
+      <div className="bg-gray-800 rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Smartphone className="w-5 h-5 text-blue-400" />
+          Telemóvel / Tablet (Android e iOS)
+        </h2>
+        <p className="text-gray-400 text-sm mb-4">
+          No telemóvel, abra o link de registo (página mobile). O dispositivo entra como{' '}
+          <span className="text-yellow-400">PENDING</span> até aprovação no dashboard (Zero Trust).
+        </p>
+        <div className="bg-gray-900 rounded p-3 flex items-center justify-between mb-3">
+          <code className="text-blue-400 text-sm font-mono break-all">{mobileUrl}</code>
+          <button
+            onClick={() => copyToClipboard(mobileUrl, 'mobile')}
+            className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+            title="Copiar link"
+          >
+            {copied === 'mobile' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          </button>
+        </div>
+        <div className="bg-white rounded-lg p-3 w-fit">
+          <QrCode className="w-40 h-40 text-gray-900" aria-label="QR code placeholder" />
+        </div>
+        <p className="text-gray-500 text-xs mt-2">
+          Alternativa: abra a partir do QR code no telemóvel. Também disponível em{' '}
+          <code>GET /api/devices/public/mobile</code> e <code>POST /api/devices/mobile/register</code>.
+          Para MDM: Android Enterprise, Apple Business Manager, Intune, Jamf.
+        </p>
+        <a
+          href={mobileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium"
+        >
+          Abrir página mobile
+        </a>
+      </div>
+
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Wifi className="w-5 h-5 text-blue-400" />
@@ -95,14 +146,13 @@ export default function InstallPage() {
         </div>
       </div>
 
-      {/* Config info */}
       <div className="bg-gray-800 rounded-lg p-6">
         <h2 className="text-lg font-semibold mb-4">Configuracao Automatica</h2>
         <p className="text-gray-400 text-sm mb-4">
           Os agents serao automaticamente configurados para apontar para:
         </p>
         <div className="bg-gray-900 rounded p-3">
-          <code className="text-purple-400 text-xs">{API_URL}/api</code>
+          <code className="text-blue-400 text-xs">{API_URL}/api</code>
         </div>
         <p className="text-gray-500 text-xs mt-2">
           Nao e necessario editar o config.yaml manualmente.

@@ -81,7 +81,7 @@ export default function NetworkPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { label: 'Total Devices', value: stats?.total_devices ?? devices.length, icon: Monitor, color: 'text-indigo-600 dark:text-indigo-400' },
+          { label: 'Total Devices', value: stats?.total_devices ?? devices.length, icon: Monitor, color: 'text-blue-600 dark:text-blue-400' },
           { label: 'Online', value: stats?.online_devices ?? onlineDevices.length, icon: Wifi, color: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'Average Latency', value: `${stats?.average_latency ?? 0}ms`, icon: Activity, color: 'text-amber-600 dark:text-amber-400' },
         ].map((stat) => (
@@ -116,7 +116,7 @@ export default function NetworkPage() {
             {onlineDevices.map((device) => (
               <div
                 key={device.id}
-                className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors"
+                className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
               >
                 <div className="flex items-center gap-3 mb-2">
                   <div className="relative">
@@ -146,7 +146,7 @@ export default function NetworkPage() {
           <select
             value={deviceFilter}
             onChange={(e) => setDeviceFilter(e.target.value)}
-            className="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
           >
             <option value="">All Devices</option>
             {devices.map((d) => (
@@ -178,7 +178,7 @@ export default function NetworkPage() {
                 formatter={(value: number) => formatBandwidth(value)}
               />
               <Line type="monotone" dataKey="inbound" stroke="#10b981" strokeWidth={2} dot={false} name="Inbound" />
-              <Line type="monotone" dataKey="outbound" stroke="#6366f1" strokeWidth={2} dot={false} name="Outbound" />
+              <Line type="monotone" dataKey="outbound" stroke="#0080ff" strokeWidth={2} dot={false} name="Outbound" />
             </LineChart>
           </ResponsiveContainer>
         )}

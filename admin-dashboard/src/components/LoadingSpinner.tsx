@@ -13,7 +13,7 @@ const sizeMap = {
 };
 
 export default function LoadingSpinner({ size = 'md', color, className = '' }: LoadingSpinnerProps) {
-  const defaultColor = color || 'text-indigo-600 dark:text-indigo-400';
+  const defaultColor = color || 'text-blue-600 dark:text-blue-400';
 
   return (
     <div className={`flex items-center justify-center ${className}`}>

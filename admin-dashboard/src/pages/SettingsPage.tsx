@@ -127,8 +127,8 @@ export default function SettingsPage() {
           >
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                  <Icon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{group.title}</h2>
@@ -153,7 +153,7 @@ export default function SettingsPage() {
                         }}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                           localValues[setting.key] === 'true'
-                            ? 'bg-indigo-600'
+                            ? 'bg-blue-600'
                             : 'bg-gray-300 dark:bg-gray-600'
                         }`}
                       >
@@ -168,13 +168,13 @@ export default function SettingsPage() {
                         type={setting.type}
                         value={localValues[setting.key] || ''}
                         onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                        className="w-32 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-32 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     )}
                     <button
                       onClick={() => handleSave(setting.key)}
                       disabled={saving || localValues[setting.key] === (settingsRaw?.settings?.find(s => s.key === setting.key)?.value || '')}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <Save className="w-4 h-4" />
                       Save

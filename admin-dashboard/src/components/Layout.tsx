@@ -25,11 +25,13 @@ import {
   Key,
   ChartBar,
   UsersRound,
+  Radar,
 } from 'lucide-react';
 import api from '../services/api';
 
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { label: 'HERMES', path: '/hermes', icon: Radar },
   { label: 'Devices', path: '/devices', icon: Monitor },
   { label: 'Install Agent', path: '/install', icon: Download },
   { label: 'Users', path: '/users', icon: Users },
@@ -50,8 +52,9 @@ const navItems = [
 
 const routeTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/hermes': 'HERMES Security Intelligence',
   '/devices': 'Devices',
-  '/install': 'Install Agent',
+  '/install': 'Install Agent (PC e Mobile)',
   '/users': 'Users',
   '/roles': 'Roles & Permissions',
   '/security': 'Security',
@@ -191,11 +194,11 @@ export default function Layout() {
                     to={item.path}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       active
-                        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'
                     }`}
                   >
-                    <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                    <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} />
                     {item.label}
                   </Link>
                 </li>
@@ -206,7 +209,7 @@ export default function Layout() {
 
         <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-semibold text-sm">
+            <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-semibold text-sm">
               A
             </div>
             <div className="flex-1 min-w-0">
@@ -241,7 +244,7 @@ export default function Layout() {
               <input
                 type="text"
                 placeholder="Search..."
-                className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
           </div>
@@ -267,7 +270,7 @@ export default function Layout() {
                 <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
-                    <button onClick={() => { setNotifOpen(false); navigate('/alerts'); }} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                    <button onClick={() => { setNotifOpen(false); navigate('/alerts'); }} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
                       View all
                     </button>
                   </div>
@@ -313,7 +316,7 @@ export default function Layout() {
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
-                <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-semibold text-sm">
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-semibold text-sm">
                   A
                 </div>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`} />

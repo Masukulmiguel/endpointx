@@ -126,8 +126,8 @@ export default function NotificationsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                <Mail className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Email Settings</h2>
@@ -146,7 +146,7 @@ export default function NotificationsPage() {
                     type="text"
                     value={settings.SMTP_HOST}
                     onChange={(e) => setSettings({ ...settings, SMTP_HOST: e.target.value })}
-                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder="smtp.gmail.com"
                   />
                 </div>
@@ -156,7 +156,7 @@ export default function NotificationsPage() {
                     type="text"
                     value={settings.SMTP_PORT}
                     onChange={(e) => setSettings({ ...settings, SMTP_PORT: e.target.value })}
-                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder="587"
                   />
                 </div>
@@ -166,7 +166,7 @@ export default function NotificationsPage() {
                     type="text"
                     value={settings.SMTP_USER}
                     onChange={(e) => setSettings({ ...settings, SMTP_USER: e.target.value })}
-                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder="user@gmail.com"
                   />
                 </div>
@@ -176,7 +176,7 @@ export default function NotificationsPage() {
                     type="password"
                     value={settings.SMTP_PASS}
                     onChange={(e) => setSettings({ ...settings, SMTP_PASS: e.target.value })}
-                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder="Password"
                   />
                 </div>
@@ -186,14 +186,14 @@ export default function NotificationsPage() {
                     type="email"
                     value={settings.SMTP_FROM}
                     onChange={(e) => setSettings({ ...settings, SMTP_FROM: e.target.value })}
-                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     placeholder="noreply@endpointx.com"
                   />
                 </div>
                 <button
                   onClick={handleSaveSettings}
                   disabled={savingSettings}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   <Save className="w-4 h-4" />
                   {savingSettings ? 'Saving...' : 'Save Settings'}
@@ -206,8 +206,8 @@ export default function NotificationsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                <Send className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <Send className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Test Email</h2>
@@ -222,14 +222,14 @@ export default function NotificationsPage() {
                 type="email"
                 value={testEmail}
                 onChange={(e) => setTestEmail(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="user@example.com"
               />
             </div>
             <button
               onClick={handleSendTest}
               disabled={sendingTest}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               <Send className="w-4 h-4" />
               {sendingTest ? 'Sending...' : 'Send Test Email'}
@@ -241,8 +241,8 @@ export default function NotificationsPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <Bell className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+              <Bell className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Notification Log</h2>

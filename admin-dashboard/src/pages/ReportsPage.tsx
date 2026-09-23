@@ -87,7 +87,7 @@ export default function ReportsPage() {
           { label: 'Online', value: summary?.online_devices || 0, color: 'text-emerald-600 dark:text-emerald-400', icon: Monitor },
           { label: 'Offline', value: summary?.offline_devices || 0, color: 'text-gray-600 dark:text-gray-400', icon: Monitor },
           { label: 'Total Alerts', value: summary?.total_alerts || 0, color: 'text-red-600 dark:text-red-400', icon: Bell },
-          { label: 'Compliance Rate', value: `${summary?.compliance_rate || 0}%`, color: 'text-indigo-600 dark:text-indigo-400', icon: ShieldCheck },
+          { label: 'Compliance Rate', value: `${summary?.compliance_rate || 0}%`, color: 'text-blue-600 dark:text-blue-400', icon: ShieldCheck },
         ].map((stat) => {
           const Icon = stat.icon;
           return (
@@ -110,28 +110,28 @@ export default function ReportsPage() {
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => handleDownload('devices', 'csv')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <FileSpreadsheet className="w-4 h-4" />
             Devices CSV
           </button>
           <button
             onClick={() => handleDownload('devices', 'pdf')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <FileText className="w-4 h-4" />
             Devices PDF
           </button>
           <button
             onClick={() => handleDownload('alerts', 'csv')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <FileSpreadsheet className="w-4 h-4" />
             Alerts CSV
           </button>
           <button
             onClick={() => handleDownload('compliance', 'csv')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <FileSpreadsheet className="w-4 h-4" />
             Compliance CSV
@@ -151,7 +151,7 @@ export default function ReportsPage() {
                 </div>
                 <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-indigo-500 rounded-full transition-all"
+                    className="h-full bg-blue-500 rounded-full transition-all"
                     style={{ width: `${(item.count / maxBarValue) * 100}%` }}
                   />
                 </div>

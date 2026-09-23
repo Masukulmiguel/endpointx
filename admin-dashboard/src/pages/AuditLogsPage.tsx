@@ -34,7 +34,7 @@ function getActionIcon(action: string) {
   if (lower.includes('update') || lower.includes('edit') || lower.includes('modify')) return <Pencil className="w-4 h-4 text-amber-500" />;
   if (lower.includes('delete') || lower.includes('remove')) return <Trash2 className="w-4 h-4 text-red-500" />;
   if (lower.includes('settings') || lower.includes('config')) return <Settings className="w-4 h-4 text-purple-500" />;
-  if (lower.includes('role') || lower.includes('permission')) return <Shield className="w-4 h-4 text-indigo-500" />;
+  if (lower.includes('role') || lower.includes('permission')) return <Shield className="w-4 h-4 text-blue-500" />;
   if (lower.includes('user')) return <User className="w-4 h-4 text-cyan-500" />;
   return <FileText className="w-4 h-4 text-gray-400" />;
 }
@@ -157,7 +157,7 @@ export default function AuditLogsPage() {
             e.stopPropagation();
             setSelectedLog(row);
           }}
-          className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+          className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
           title="View Details"
         >
           <Eye className="w-4 h-4" />
@@ -177,7 +177,7 @@ export default function AuditLogsPage() {
         </div>
         <button
           onClick={handleExport}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Download className="w-4 h-4" />
           Export CSV
@@ -215,7 +215,7 @@ export default function AuditLogsPage() {
             setActionFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Actions</option>
           <option value="login">Login</option>
@@ -231,7 +231,7 @@ export default function AuditLogsPage() {
             setUserFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Users</option>
         </select>
@@ -241,7 +241,7 @@ export default function AuditLogsPage() {
             setDateRange(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Time</option>
           <option value="24h">Last 24 Hours</option>

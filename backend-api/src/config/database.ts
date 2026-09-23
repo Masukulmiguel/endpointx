@@ -285,7 +285,7 @@ const createInlineSchema = async (): Promise<void> => {
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       name VARCHAR(100) UNIQUE NOT NULL,
       description TEXT,
-      color VARCHAR(7) DEFAULT '#6366f1',
+      color VARCHAR(7) DEFAULT '#0080ff',
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -374,6 +374,195 @@ const createInlineSchema = async (): Promise<void> => {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS hermes_scan_policies (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) UNIQUE NOT NULL,
+      description TEXT,
+      ports TEXT,
+      excluded_ports TEXT,
+      excluded_hosts TEXT,
+      max_concurrency INTEGER DEFAULT 5,
+      request_timeout_ms INTEGER DEFAULT 2000,
+      rate_limit_per_sec INTEGER DEFAULT 20,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_scans (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      scan_type VARCHAR(50) NOT NULL,
+      policy_id UUID REFERENCES hermes_scan_policies(id),
+      status VARCHAR(20) DEFAULT 'pending',
+      scope TEXT[],
+      started_by UUID REFERENCES users(id),
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      stats JSONB DEFAULT '{}',
+      error_message TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_assets (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      hostname VARCHAR(255),
+      ip_address TEXT,
+      os_type VARCHAR(50),
+      os_version VARCHAR(100),
+      is_authorized BOOLEAN DEFAULT FALSE,
+      agent_online BOOLEAN DEFAULT FALSE,
+      last_seen TIMESTAMPTZ,
+      internet_exposed BOOLEAN DEFAULT FALSE,
+      posture_score INTEGER DEFAULT 0,
+      posture_factors JSONB DEFAULT '{}',
+      metadata JSONB DEFAULT '{}',
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_ports (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE CASCADE,
+      scan_id UUID REFERENCES hermes_scans(id) ON DELETE SET NULL,
+      port INTEGER NOT NULL,
+      protocol VARCHAR(10) NOT NULL DEFAULT 'tcp',
+      state VARCHAR(20) NOT NULL DEFAULT 'unknown',
+      service VARCHAR(100),
+      product VARCHAR(150),
+      version VARCHAR(100),
+      banner TEXT,
+      detection_method VARCHAR(50),
+      confidence DECIMAL(5,2) DEFAULT 0,
+      risk VARCHAR(20) DEFAULT 'info',
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(asset_id, port, protocol)
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_services (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE CASCADE,
+      port_id UUID REFERENCES hermes_ports(id) ON DELETE CASCADE,
+      name VARCHAR(100),
+      product VARCHAR(150),
+      version VARCHAR(100),
+      cpe TEXT,
+      confidence DECIMAL(5,2) DEFAULT 0,
+      detection_method VARCHAR(50),
+      detected_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_cves (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      cve_id VARCHAR(30) UNIQUE NOT NULL,
+      cvss_score DECIMAL(4,1),
+      severity VARCHAR(20),
+      description TEXT,
+      affected_product VARCHAR(150),
+      affected_version VARCHAR(100),
+      cpe TEXT,
+      remediation TEXT,
+      references TEXT[],
+      source VARCHAR(50) DEFAULT 'local',
+      published_at TIMESTAMPTZ,
+      fetched_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_findings (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      scan_id UUID REFERENCES hermes_scans(id) ON DELETE SET NULL,
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE CASCADE,
+      port_id UUID REFERENCES hermes_ports(id) ON DELETE SET NULL,
+      cve_id VARCHAR(30),
+      finding_type VARCHAR(50) NOT NULL,
+      severity VARCHAR(20) NOT NULL DEFAULT 'info',
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      evidence JSONB DEFAULT '[]',
+      confidence DECIMAL(5,2) DEFAULT 0,
+      risk_score DECIMAL(5,2) DEFAULT 0,
+      risk_reasons TEXT[],
+      is_potential BOOLEAN DEFAULT FALSE,
+      status VARCHAR(30) DEFAULT 'open',
+      acknowledged_by UUID REFERENCES users(id),
+      acknowledged_at TIMESTAMPTZ,
+      acknowledged_reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_risk_scores (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE CASCADE,
+      score INTEGER NOT NULL DEFAULT 0,
+      grade VARCHAR(10),
+      confidence DECIMAL(5,2) DEFAULT 0,
+      factors JSONB DEFAULT '{}',
+      reasons TEXT[],
+      calculated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_alerts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      alert_type VARCHAR(50) NOT NULL,
+      severity VARCHAR(20) NOT NULL DEFAULT 'medium',
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE SET NULL,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      evidence JSONB DEFAULT '[]',
+      recommended_action TEXT,
+      is_open BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_recommendations (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      finding_id UUID REFERENCES hermes_findings(id) ON DELETE CASCADE,
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE SET NULL,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      action_type VARCHAR(50),
+      action_payload JSONB DEFAULT '{}',
+      status VARCHAR(20) DEFAULT 'pending',
+      requires_approval BOOLEAN DEFAULT TRUE,
+      decided_by UUID REFERENCES users(id),
+      decided_at TIMESTAMPTZ,
+      decision_reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_baselines (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      asset_id UUID REFERENCES hermes_assets(id) ON DELETE CASCADE,
+      baseline_type VARCHAR(50) NOT NULL,
+      snapshot JSONB NOT NULL DEFAULT '{}',
+      captured_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(asset_id, baseline_type)
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_exceptions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      finding_id UUID REFERENCES hermes_findings(id) ON DELETE CASCADE,
+      exception_type VARCHAR(30) NOT NULL,
+      reason TEXT,
+      created_by UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS hermes_audit_logs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      action VARCHAR(80) NOT NULL,
+      actor_id UUID REFERENCES users(id),
+      actor_email VARCHAR(255),
+      target_type VARCHAR(50),
+      target_id VARCHAR(255),
+      details JSONB DEFAULT '{}',
+      ip_address TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_devices_agent_id ON devices(agent_id);
     CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
     CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
@@ -406,6 +595,19 @@ const createInlineSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_notification_log_status ON notification_log(status);
     CREATE INDEX IF NOT EXISTS idx_notification_log_recipient ON notification_log(recipient_email);
     CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);
+    CREATE INDEX IF NOT EXISTS idx_hermes_scans_status ON hermes_scans(status);
+    CREATE INDEX IF NOT EXISTS idx_hermes_scans_created ON hermes_scans(created_at);
+    CREATE INDEX IF NOT EXISTS idx_hermes_assets_ip ON hermes_assets(ip_address);
+    CREATE INDEX IF NOT EXISTS idx_hermes_assets_device ON hermes_assets(device_id);
+    CREATE INDEX IF NOT EXISTS idx_hermes_ports_asset ON hermes_ports(asset_id);
+    CREATE INDEX IF NOT EXISTS idx_hermes_ports_state ON hermes_ports(state);
+    CREATE INDEX IF NOT EXISTS idx_hermes_findings_asset ON hermes_findings(asset_id);
+    CREATE INDEX IF NOT EXISTS idx_hermes_findings_severity ON hermes_findings(severity);
+    CREATE INDEX IF NOT EXISTS idx_hermes_findings_status ON hermes_findings(status);
+    CREATE INDEX IF NOT EXISTS idx_hermes_alerts_open ON hermes_alerts(is_open);
+    CREATE INDEX IF NOT EXISTS idx_hermes_recommendations_status ON hermes_recommendations(status);
+    CREATE INDEX IF NOT EXISTS idx_hermes_audit_created ON hermes_audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_hermes_cves_cve ON hermes_cves(cve_id);
 
     DO $$ BEGIN
       ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider_id VARCHAR(100);
@@ -421,6 +623,269 @@ const createInlineSchema = async (): Promise<void> => {
       ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_agent_hash VARCHAR(64);
     EXCEPTION WHEN duplicate_column THEN null;
     END $$;
+
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_type VARCHAR(30) DEFAULT 'UNKNOWN';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS model VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS ipv6_address TEXT;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS vlan VARCHAR(50);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS ssid VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS switch_name VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS switch_port VARCHAR(50);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS access_point VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS location VARCHAR(200);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS ownership VARCHAR(20) DEFAULT 'CORPORATE';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'UNKNOWN';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS quarantine_status VARCHAR(20) DEFAULT 'NORMAL';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_score INTEGER DEFAULT 0;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_posture JSONB DEFAULT '{}';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS managed BOOLEAN DEFAULT FALSE;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS mdm_enrolled BOOLEAN DEFAULT FALSE;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS encryption_status VARCHAR(20);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_patch_level VARCHAR(50);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20) DEFAULT 'approved';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ DEFAULT NOW();
+
+    CREATE TABLE IF NOT EXISTS network_discovery_runs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      source VARCHAR(40) NOT NULL,
+      status VARCHAR(20) DEFAULT 'running',
+      stats JSONB DEFAULT '{}',
+      error_message TEXT,
+      started_by UUID REFERENCES users(id),
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS network_nodes (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      node_type VARCHAR(40) NOT NULL,
+      name VARCHAR(200),
+      hostname VARCHAR(255),
+      ip_address TEXT,
+      mac_address VARCHAR(17),
+      vendor VARCHAR(150),
+      parent_id UUID REFERENCES network_nodes(id) ON DELETE SET NULL,
+      vlan VARCHAR(50),
+      site VARCHAR(100),
+      metadata JSONB DEFAULT '{}',
+      source VARCHAR(40),
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS nac_policies (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(150) NOT NULL,
+      priority INTEGER DEFAULT 100,
+      description TEXT,
+      conditions JSONB NOT NULL DEFAULT '{}',
+      action VARCHAR(30) NOT NULL DEFAULT 'LIMITED_ACCESS',
+      vlan VARCHAR(50),
+      is_active BOOLEAN DEFAULT TRUE,
+      created_by UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS nac_decisions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      policy_id UUID REFERENCES nac_policies(id) ON DELETE SET NULL,
+      decision VARCHAR(30) NOT NULL,
+      reason TEXT,
+      evidence JSONB DEFAULT '[]',
+      auto_applied BOOLEAN DEFAULT FALSE,
+      created_by UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS security_incidents (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      incident_id VARCHAR(40) UNIQUE NOT NULL,
+      severity VARCHAR(20) NOT NULL DEFAULT 'medium',
+      status VARCHAR(30) DEFAULT 'detection',
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      affected_devices UUID[],
+      detection_source VARCHAR(50),
+      evidence JSONB DEFAULT '[]',
+      timeline JSONB DEFAULT '[]',
+      actions_taken JSONB DEFAULT '[]',
+      resolution TEXT,
+      assigned_to UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS device_events (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      event_type VARCHAR(60) NOT NULL,
+      severity VARCHAR(20) DEFAULT 'info',
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS network_monitor_metrics (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      metric_type VARCHAR(40) NOT NULL,
+      value DECIMAL(18,4),
+      labels JSONB DEFAULT '{}',
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS connectors (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) NOT NULL,
+      vendor VARCHAR(50) NOT NULL,
+      connector_type VARCHAR(40) NOT NULL,
+      config JSONB DEFAULT '{}',
+      capabilities JSONB DEFAULT '{}',
+      is_enabled BOOLEAN DEFAULT TRUE,
+      status VARCHAR(20) DEFAULT 'not_configured',
+      last_sync TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_type VARCHAR(30) DEFAULT 'UNKNOWN';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS model VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS ipv6_address TEXT;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS vlan VARCHAR(50);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS ssid VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS switch_name VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS switch_port VARCHAR(50);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS access_point VARCHAR(150);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS location VARCHAR(200);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS ownership VARCHAR(20) DEFAULT 'CORPORATE';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'UNKNOWN';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS quarantine_status VARCHAR(20) DEFAULT 'NORMAL';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_score INTEGER DEFAULT 0;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_posture JSONB DEFAULT '{}';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS managed BOOLEAN DEFAULT FALSE;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS mdm_enrolled BOOLEAN DEFAULT FALSE;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS encryption_status VARCHAR(20);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_patch_level VARCHAR(50);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20) DEFAULT 'approved';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ DEFAULT NOW();
+
+    CREATE TABLE IF NOT EXISTS network_discovery_runs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      source VARCHAR(40) NOT NULL,
+      status VARCHAR(20) DEFAULT 'running',
+      stats JSONB DEFAULT '{}',
+      error_message TEXT,
+      started_by UUID REFERENCES users(id),
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS network_nodes (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      node_type VARCHAR(40) NOT NULL,
+      name VARCHAR(200),
+      hostname VARCHAR(255),
+      ip_address TEXT,
+      mac_address VARCHAR(17),
+      vendor VARCHAR(150),
+      parent_id UUID REFERENCES network_nodes(id) ON DELETE SET NULL,
+      vlan VARCHAR(50),
+      site VARCHAR(100),
+      metadata JSONB DEFAULT '{}',
+      source VARCHAR(40),
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS nac_policies (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(150) NOT NULL,
+      priority INTEGER DEFAULT 100,
+      description TEXT,
+      conditions JSONB NOT NULL DEFAULT '{}',
+      action VARCHAR(30) NOT NULL DEFAULT 'LIMITED_ACCESS',
+      vlan VARCHAR(50),
+      is_active BOOLEAN DEFAULT TRUE,
+      created_by UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS nac_decisions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      policy_id UUID REFERENCES nac_policies(id) ON DELETE SET NULL,
+      decision VARCHAR(30) NOT NULL,
+      reason TEXT,
+      evidence JSONB DEFAULT '[]',
+      auto_applied BOOLEAN DEFAULT FALSE,
+      created_by UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS security_incidents (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      incident_id VARCHAR(40) UNIQUE NOT NULL,
+      severity VARCHAR(20) NOT NULL DEFAULT 'medium',
+      status VARCHAR(30) DEFAULT 'detection',
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      affected_devices UUID[],
+      detection_source VARCHAR(50),
+      evidence JSONB DEFAULT '[]',
+      timeline JSONB DEFAULT '[]',
+      actions_taken JSONB DEFAULT '[]',
+      resolution TEXT,
+      assigned_to UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS device_events (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      event_type VARCHAR(60) NOT NULL,
+      severity VARCHAR(20) DEFAULT 'info',
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS network_monitor_metrics (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      metric_type VARCHAR(40) NOT NULL,
+      value DECIMAL(18,4),
+      labels JSONB DEFAULT '{}',
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS connectors (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) NOT NULL,
+      vendor VARCHAR(50) NOT NULL,
+      connector_type VARCHAR(40) NOT NULL,
+      config JSONB DEFAULT '{}',
+      capabilities JSONB DEFAULT '{}',
+      is_enabled BOOLEAN DEFAULT TRUE,
+      status VARCHAR(20) DEFAULT 'not_configured',
+      last_sync TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type);
   `;
 
   await pool.query(schema);
@@ -429,6 +894,43 @@ const createInlineSchema = async (): Promise<void> => {
 
 // Seed default data
 const seedDefaults = async (): Promise<void> => {
+  // Always ensure HERMES permissions and scan policies exist (safe for existing DBs)
+  const hermesPerms: Array<[string, string, string, string]> = [
+    ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
+    ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
+    ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
+  ];
+  for (const [code, name, desc, category] of hermesPerms) {
+    await pool.query(
+      'INSERT INTO permissions (code, name, description, category) VALUES ($1, $2, $3, $4) ON CONFLICT (code) DO NOTHING',
+      [code, name, desc, category]
+    );
+  }
+  const adminRole = await pool.query(`SELECT id FROM roles WHERE name = 'admin'`);
+  if (adminRole.rows.length > 0) {
+    for (const [code] of hermesPerms) {
+      await pool.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, id FROM permissions WHERE code = $2
+         ON CONFLICT DO NOTHING`,
+        [adminRole.rows[0].id, code]
+      );
+    }
+  }
+
+  const policySeed = [
+    ['Safe Scan', 'Discovery, port detection, service identification, version detection, vulnerability correlation', '21,22,53,80,110,143,443,445,993,995,3306,3389,5432,5900,8080,8443', '1,3,7,9,11,13,15,17,19,20,21,22,23,25,67,68,69,110,137,138,139,161,162,389,445,514,631,873,2049,3389,5353,5900,6000', ''],
+    ['Standard Scan', 'Safe Scan plus configuration, applications, services and security posture', '21,22,23,25,53,80,110,111,135,139,143,389,443,445,993,995,1433,1521,2049,3306,3389,5432,5900,6379,8080,8443,9200,27017', '1,3,7,9,11,13,15,17,19,20,67,68,69,137,138,161,162,514,631,873,2049,5353,6000', ''],
+    ['Deep Assessment', 'Deeper non-destructive checks on explicitly authorized assets only', '1-1024,1433,1521,2049,2375,3000,3306,3389,5432,5601,5900,5984,6379,8000,8080,8081,8443,8888,9000,9090,9200,9300,11211,27017', '1,3,7,9,11,13,15,17,19,20,67,68,69,137,138,161,162,514,631,873,2049,5353,6000', ''],
+  ];
+  for (const [name, description, ports, excludedPorts, excludedHosts] of policySeed) {
+    await pool.query(
+      `INSERT INTO hermes_scan_policies (name, description, ports, excluded_ports, excluded_hosts)
+       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO NOTHING`,
+      [name, description, ports, excludedPorts, excludedHosts]
+    );
+  }
+
   const result = await pool.query('SELECT COUNT(*) as count FROM roles');
   const count = parseInt(result.rows[0]?.count || '0', 10);
   if (count > 0) return;
@@ -467,6 +969,9 @@ const seedDefaults = async (): Promise<void> => {
       ['software.manage', 'Manage Software', 'Create and manage software packages', 'software'],
       ['software.deploy', 'Deploy Software', 'Deploy software to devices', 'software'],
       ['compliance.view', 'View Compliance', 'View compliance results and status', 'compliance'],
+      ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
+      ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
+      ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
     ];
 
     for (const [code, name, desc, category] of permissions) {
@@ -494,8 +999,8 @@ const seedDefaults = async (): Promise<void> => {
     // Assign permissions to roles
     const rolePerms: Record<string, string[]> = {
       admin: permissions.map(p => p[0]),
-      supervisor: ['devices.view', 'devices.manage', 'devices.block', 'devices.commands', 'users.view', 'security.view', 'security.manage', 'logs.view', 'alerts.view', 'alerts.manage', 'agents.view', 'network.view'],
-      technician: ['devices.view', 'devices.commands', 'security.view', 'agents.view', 'network.view', 'alerts.view'],
+      supervisor: ['devices.view', 'devices.manage', 'devices.block', 'devices.commands', 'users.view', 'security.view', 'security.manage', 'logs.view', 'alerts.view', 'alerts.manage', 'agents.view', 'network.view', 'hermes.view'],
+      technician: ['devices.view', 'devices.commands', 'security.view', 'agents.view', 'network.view', 'alerts.view', 'hermes.view'],
       user: ['devices.view', 'alerts.view'],
     };
 
@@ -531,6 +1036,9 @@ const seedDefaults = async (): Promise<void> => {
       ['session_timeout', '900', 'Session timeout in seconds'],
       ['mfa_required', 'false', 'Require MFA for all users'],
       ['agent_min_version', '1.0.0', 'Minimum required agent version'],
+      ['hermes_allowed_cidrs', '192.168.0.0/16,10.0.0.0/8,172.16.0.0/12', 'HERMES allowed CIDR ranges'],
+      ['hermes_emergency_stop', 'false', 'Emergency stop for all HERMES scans'],
+      ['hermes_daily_scan_enabled', 'true', 'Enable daily HERMES scan'],
     ];
 
     for (const [key, value, desc] of settings) {

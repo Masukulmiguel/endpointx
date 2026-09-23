@@ -117,7 +117,7 @@ export default function AlertsPage() {
           checked={selectedIds.has(row.id)}
           onChange={() => toggleSelect(row.id)}
           onClick={(e) => e.stopPropagation()}
-          className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
         />
       ),
     },
@@ -248,7 +248,7 @@ export default function AlertsPage() {
             setSeverityFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Severity</option>
           <option value="critical">Critical</option>
@@ -262,7 +262,7 @@ export default function AlertsPage() {
             setTypeFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Types</option>
           <option value="performance">Performance</option>
@@ -277,7 +277,7 @@ export default function AlertsPage() {
             setStatusFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Status</option>
           <option value="false">Active</option>
@@ -290,7 +290,7 @@ export default function AlertsPage() {
           type="checkbox"
           checked={selectedIds.size === alerts.length && alerts.length > 0}
           onChange={toggleSelectAll}
-          className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
         />
         Select all ({alerts.length})
       </div>

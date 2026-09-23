@@ -39,7 +39,7 @@ router.post('/', authenticate, requirePermission('roles.manage'), async (req: Au
     await query('INSERT INTO roles (id, name, display_name, description) VALUES ($1, $2, $3, $4)', [id, name, display_name, description || '']);
     if (permission_ids && Array.isArray(permission_ids)) {
       for (const pid of permission_ids) {
-        await query('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', [id, pid]);
+        await query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)', [id, pid]);
       }
     }
     res.status(201).json({ success: true, data: { id, name, display_name } });
@@ -51,11 +51,11 @@ router.put('/:id', authenticate, requirePermission('roles.manage'), async (req: 
   try {
     const { id } = req.params;
     const { display_name, description, permission_ids } = req.body;
-    await query('UPDATE roles SET display_name = COALESCE(?, display_name), description = COALESCE(?, description) WHERE id = ? AND is_system = 0', [display_name ?? null, description ?? null, id]);
+    await query('UPDATE roles SET display_name = COALESCE($1, display_name), description = COALESCE($2, description) WHERE id = $3 AND is_system = false', [display_name ?? null, description ?? null, id]);
     if (permission_ids && Array.isArray(permission_ids)) {
-      await query('DELETE FROM role_permissions WHERE role_id = ?', [id]);
+      await query('DELETE FROM role_permissions WHERE role_id = $1', [id]);
       for (const pid of permission_ids) {
-        await query('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', [id, pid]);
+        await query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)', [id, pid]);
       }
     }
     res.json({ success: true, data: { message: 'Role updated' } });
@@ -66,11 +66,11 @@ router.put('/:id', authenticate, requirePermission('roles.manage'), async (req: 
 router.delete('/:id', authenticate, requirePermission('roles.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const role = await query('SELECT is_system FROM roles WHERE id = ?', [id]);
+    const role = await query('SELECT is_system FROM roles WHERE id = $1', [id]);
     if (role.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Role not found' } }); return; }
     if (role.rows[0].is_system) { res.status(400).json({ success: false, error: { message: 'Cannot delete system role' } }); return; }
-    await query('DELETE FROM role_permissions WHERE role_id = ?', [id]);
-    await query('DELETE FROM roles WHERE id = ?', [id]);
+    await query('DELETE FROM role_permissions WHERE role_id = $1', [id]);
+    await query('DELETE FROM roles WHERE id = $1', [id]);
     res.json({ success: true, data: { message: 'Role deleted' } });
   } catch (error) { next(error); }
 });

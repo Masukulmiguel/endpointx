@@ -36,7 +36,7 @@ export default function ErrorState({ error, onRetry, title = 'Something went wro
         <button
           onClick={handleRetry}
           disabled={retrying}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
         >
           <RefreshCw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
           {retrying ? 'Retrying…' : 'Retry'}

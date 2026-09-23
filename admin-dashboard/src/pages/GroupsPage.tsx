@@ -23,7 +23,7 @@ interface DeviceGroup {
 }
 
 const colorOptions = [
-  { value: '#6366f1', label: 'Indigo' },
+  { value: '#0080ff', label: 'EndpointX Blue' },
   { value: '#10b981', label: 'Emerald' },
   { value: '#f59e0b', label: 'Amber' },
   { value: '#ef4444', label: 'Red' },
@@ -52,7 +52,7 @@ export default function GroupsPage() {
   const [editingGroup, setEditingGroup] = useState<DeviceGroup | null>(null);
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formColor, setFormColor] = useState('#6366f1');
+  const [formColor, setFormColor] = useState('#0080ff');
   const [selectedGroup, setSelectedGroup] = useState<DeviceGroup | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -70,7 +70,7 @@ export default function GroupsPage() {
     setEditingGroup(null);
     setFormName('');
     setFormDescription('');
-    setFormColor('#6366f1');
+    setFormColor('#0080ff');
     setShowModal(true);
   };
 
@@ -126,7 +126,7 @@ export default function GroupsPage() {
         </div>
         <button
           onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Create Group
@@ -164,7 +164,7 @@ export default function GroupsPage() {
           {groups.map((group) => (
             <div
               key={group.id}
-              className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all"
+              className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -184,7 +184,7 @@ export default function GroupsPage() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => openEditModal(group)}
-                    className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                    className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                     title="Edit"
                   >
                     <Edit2 className="w-4 h-4" />
@@ -254,7 +254,7 @@ export default function GroupsPage() {
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="e.g., Finance Department"
                 />
               </div>
@@ -266,7 +266,7 @@ export default function GroupsPage() {
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                   placeholder="Optional description"
                 />
               </div>
@@ -301,7 +301,7 @@ export default function GroupsPage() {
               <button
                 onClick={handleSave}
                 disabled={saving || updating}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 {saving || updating ? 'Saving...' : editingGroup ? 'Update' : 'Create'}
               </button>

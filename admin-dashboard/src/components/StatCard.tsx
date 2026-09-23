@@ -13,9 +13,9 @@ interface StatCardProps {
 
 const colorConfig: Record<StatColor, { bg: string; icon: string; ring: string }> = {
   primary: {
-    bg: 'bg-indigo-100 dark:bg-indigo-900/30',
-    icon: 'text-indigo-600 dark:text-indigo-400',
-    ring: 'ring-indigo-200 dark:ring-indigo-800',
+    bg: 'bg-blue-100 dark:bg-blue-900/30',
+    icon: 'text-blue-600 dark:text-blue-400',
+    ring: 'ring-blue-200 dark:ring-blue-800',
   },
   success: {
     bg: 'bg-emerald-100 dark:bg-emerald-900/30',

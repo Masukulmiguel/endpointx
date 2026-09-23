@@ -1,0 +1,547 @@
+import React, { useState } from 'react';
+import {
+  Radar,
+  Play,
+  Square,
+  ShieldAlert,
+  Server,
+  Bug,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Activity,
+  FileText,
+} from 'lucide-react';
+import { useApi, useApiMutation } from '../hooks/useApi';
+import ErrorState from '../components/ErrorState';
+import LoadingSpinner from '../components/LoadingSpinner';
+
+type HermesStatus = {
+  assets: number;
+  authorized_assets: number;
+  unknown_assets: number;
+  vulnerabilities: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  security_score: number;
+  open_alerts: number;
+  pending_recommendations: number;
+  scan_stats: Record<string, number>;
+  active_scans: Array<{ id: string; scan_type: string; status: string; started_at?: string }>;
+  top_findings: Array<{
+    id: string;
+    title: string;
+    severity: string;
+    confidence: number;
+    is_potential: boolean;
+    cve_id?: string;
+    hostname?: string;
+    ip_address?: string;
+  }>;
+  emergency_stop: boolean;
+};
+
+type Finding = {
+  id: string;
+  title: string;
+  severity: string;
+  description?: string;
+  confidence: number;
+  is_potential: boolean;
+  cve_id?: string;
+  evidence?: any;
+  hostname?: string;
+  ip_address?: string;
+  risk_score?: number;
+};
+
+type Recommendation = {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  hostname?: string;
+};
+
+type Scan = {
+  id: string;
+  scan_type: string;
+  status: string;
+  started_at?: string;
+  completed_at?: string;
+  stats?: any;
+};
+
+type Asset = {
+  id: string;
+  hostname?: string;
+  ip_address?: string;
+  is_authorized: boolean;
+  posture_score: number;
+  last_score?: number;
+  last_grade?: string;
+};
+
+const severityBadge = (s: string) => {
+  switch (s) {
+    case 'critical':
+      return 'bg-red-500/20 text-red-400 border border-red-500/30';
+    case 'high':
+      return 'bg-orange-500/20 text-orange-400 border border-orange-500/30';
+    case 'medium':
+      return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+    case 'low':
+      return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+    default:
+      return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
+  }
+};
+
+export default function HermesPage() {
+  const [tab, setTab] = useState<'overview' | 'findings' | 'assets' | 'scans' | 'recommendations'>('overview');
+  const [toast, setToast] = useState<string | null>(null);
+
+  const { data: status, loading, error, refetch } = useApi<HermesStatus>('/hermes/status');
+  const { data: findingsData } = useApi<{ findings: Finding[] }>('/hermes/findings');
+  const { data: assetsData } = useApi<{ assets: Asset[] }>('/hermes/assets');
+  const { data: scansData } = useApi<{ scans: Scan[] }>('/hermes/scans');
+  const { data: recsData } = useApi<{ recommendations: Recommendation[] }>('/hermes/recommendations');
+  const { data: surface } = useApi<any>('/hermes/attack-surface');
+
+  const { loading: starting, mutate: startScan } = useApiMutation('/hermes/scans', 'POST');
+  const { loading: stopping, mutate: emergency } = useApiMutation('/hermes/emergency-stop', 'POST');
+  const { loading: approving, mutate: approveRec } = useApiMutation('', 'POST');
+  const { loading: rejecting, mutate: rejectRec } = useApiMutation('', 'POST');
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleStartScan = async (scanType: string) => {
+    const res = await startScan({ scan_type: scanType });
+    if (res) {
+      showToast(`HERMES scan started (${scanType})`);
+      refetch();
+    }
+  };
+
+  const handleEmergency = async () => {
+    const enable = !status?.emergency_stop;
+    await emergency({ enable });
+    showToast(enable ? 'Emergency stop ENABLED — all scans stopped' : 'Emergency stop cleared');
+    refetch();
+  };
+
+  const handleDecision = async (id: string, action: 'approve' | 'reject') => {
+    const res = action === 'approve' ? await approveRec(`/hermes/recommendations/${id}/approve`, {}) : await rejectRec(`/hermes/recommendations/${id}/reject`, {});
+    if (res) {
+      showToast(action === 'approve' ? 'Recommendation approved' : 'Recommendation rejected');
+      refetch();
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error || !status) {
+    return <ErrorState title="Failed to load HERMES" error={error || 'Unable to load HERMES status'} onRetry={refetch} />;
+  }
+
+  const findings = findingsData?.findings || [];
+  const assets = assetsData?.assets || [];
+  const scans = scansData?.scans || [];
+  const recs = recsData?.recommendations || [];
+  const pendingRecs = recs.filter((r) => r.status === 'pending');
+
+  const score = status.security_score ?? 0;
+  const scoreColor = score >= 80 ? 'text-blue-500' : score >= 60 ? 'text-amber-500' : 'text-red-500';
+
+  return (
+    <div className="space-y-6">
+      {toast && (
+        <div className="px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/30 text-sm text-blue-400">
+          {toast}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
+            <Radar className="w-5 h-5 text-blue-500" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">HERMES Security Intelligence</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Host Evaluation · Risk Monitoring · Engine · Security
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => handleStartScan('quick')} disabled={starting || status.emergency_stop} className="btn-primary disabled:opacity-50">
+            <Play className="w-4 h-4" /> Quick Scan
+          </button>
+          <button onClick={() => handleStartScan('daily')} disabled={starting || status.emergency_stop} className="btn-secondary disabled:opacity-50">
+            <Play className="w-4 h-4" /> Standard Scan
+          </button>
+          <button onClick={() => handleStartScan('full')} disabled={starting || status.emergency_stop} className="btn-secondary disabled:opacity-50">
+            <Play className="w-4 h-4" /> Full Assessment
+          </button>
+          <button
+            onClick={handleEmergency}
+            disabled={stopping}
+            className={`px-4 py-2 rounded-lg font-medium border transition-colors disabled:opacity-50 ${
+              status.emergency_stop
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
+                : 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30'
+            }`}
+            title="STOP ALL HERMES SCANS"
+          >
+            <Square className="w-4 h-4 inline mr-1" />
+            {status.emergency_stop ? 'Clear Emergency Stop' : 'STOP ALL HERMES SCANS'}
+          </button>
+        </div>
+      </div>
+
+      {status.emergency_stop && (
+        <div className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4" />
+          Emergency stop is active — no HERMES scans can run until cleared.
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        {[
+          { label: 'Assets', value: status.assets, icon: Server },
+          { label: 'Vulnerabilities', value: status.vulnerabilities, icon: Bug },
+          { label: 'Critical', value: status.critical, icon: ShieldAlert },
+          { label: 'High', value: status.high, icon: AlertTriangle },
+          { label: 'Medium', value: status.medium, icon: Activity },
+          { label: 'Unknown Devices', value: status.unknown_assets, icon: AlertTriangle },
+        ].map((s) => (
+          <div key={s.label} className="card">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{s.label}</span>
+              <s.icon className="w-4 h-4 text-blue-500" />
+            </div>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="card flex flex-col sm:flex-row sm:items-center gap-6">
+        <div className="flex items-center gap-4">
+          <div className="relative w-20 h-20">
+            <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="34" strokeWidth="8" fill="none" className="stroke-gray-200 dark:stroke-gray-700" />
+              <circle
+                cx="40"
+                cy="40"
+                r="34"
+                strokeWidth="8"
+                fill="none"
+                strokeLinecap="round"
+                className={`stroke-blue-500 transition-all duration-700`}
+                strokeDasharray={`${(score / 100) * 213.6} 213.6`}
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className={`text-lg font-bold ${scoreColor}`}>{score}</span>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Security Posture</p>
+            <p className={`text-3xl font-bold ${scoreColor}`}>{score}/100</p>
+            <p className="text-xs text-gray-400">Why is this score? Based on open ports, finding severity and exposure.</p>
+          </div>
+        </div>
+        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          {[
+            ['Open Ports', surface?.open_ports ?? '—'],
+            ['High Risk Svc', surface?.high_risk_services ?? '—'],
+            ['Critical CVE', status.critical],
+            ['Alerts', status.open_alerts],
+          ].map(([label, val]) => (
+            <div key={String(label)} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3">
+              <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">{val}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+        {(
+          [
+            ['overview', 'Overview'],
+            ['findings', `Findings (${findings.length})`],
+            ['assets', 'Attack Surface / Assets'],
+            ['scans', 'Scans'],
+            ['recommendations', `Recommendations (${pendingRecs.length})`],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === key
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
+        <div className="grid lg:grid-cols-2 gap-6">
+          <div className="card">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Active Scans</h3>
+            {status.active_scans.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No active scans. Start a scan above.</p>
+            ) : (
+              <ul className="space-y-2">
+                {status.active_scans.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700 dark:text-gray-300 capitalize">{s.scan_type.replace('_', ' ')} Assessment</span>
+                    <span className={`badge ${s.status === 'running' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                      {s.status.toUpperCase()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 space-y-1">
+              <div className="flex justify-between"><span>Completed scans</span><span>{status.scan_stats?.completed || 0}</span></div>
+              <div className="flex justify-between"><span>Running</span><span>{status.scan_stats?.running || 0}</span></div>
+              <div className="flex justify-between"><span>Pending recommendations</span><span>{status.pending_recommendations}</span></div>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Top Security Findings</h3>
+            {status.top_findings.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No open findings yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {status.top_findings.map((f) => (
+                  <li key={f.id} className="flex items-start gap-3">
+                    <span className={`badge uppercase shrink-0 ${severityBadge(f.severity)}`}>{f.severity}</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{f.title}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {f.hostname || f.ip_address || 'Unknown'} · confidence {f.confidence}%
+                        {f.is_potential ? ' · POTENTIAL' : ''}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="card lg:col-span-2">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Attack Surface</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {surface &&
+                Object.entries(surface).map(([key, val]) => (
+                  <div key={key} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{key.replace(/_/g, ' ')}</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{String(val)}</p>
+                  </div>
+                ))}
+            </div>
+            <pre className="mt-4 text-xs text-gray-500 dark:text-gray-400 overflow-x-auto">{`Internet
+   │
+Firewall
+   │
+Network
+${assets
+  .filter((a) => a.is_authorized)
+  .slice(0, 8)
+  .map((a) => `   ├── ${a.hostname || a.ip_address || 'asset'}`)
+  .join('\n')}`}</pre>
+          </div>
+        </div>
+      )}
+
+      {tab === 'findings' && (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                <th className="py-2 pr-3">Severity</th>
+                <th className="py-2 pr-3">Finding</th>
+                <th className="py-2 pr-3">Asset</th>
+                <th className="py-2 pr-3">Confidence</th>
+                <th className="py-2 pr-3">Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {findings.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                    No findings. Run a HERMES scan to generate assessments.
+                  </td>
+                </tr>
+              ) : (
+                findings.map((f) => (
+                  <tr key={f.id} className="table-row">
+                    <td className="py-3 pr-3">
+                      <span className={`badge uppercase ${severityBadge(f.severity)}`}>{f.severity}</span>
+                    </td>
+                    <td className="py-3 pr-3">
+                      <p className="font-medium text-gray-900 dark:text-white">{f.title}</p>
+                      {f.description && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{f.description}</p>
+                      )}
+                      {f.is_potential && (
+                        <span className="text-xs text-amber-500">POTENTIAL VULNERABILITY</span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-3 text-gray-600 dark:text-gray-300">{f.hostname || f.ip_address || '—'}</td>
+                    <td className="py-3 pr-3">{f.confidence}%</td>
+                    <td className="py-3 pr-3 text-xs text-gray-500 dark:text-gray-400 max-w-[280px]">
+                      <details>
+                        <summary className="cursor-pointer text-blue-500">View</summary>
+                        <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(f.evidence, null, 2)}</pre>
+                      </details>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === 'assets' && (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                <th className="py-2 pr-3">Hostname</th>
+                <th className="py-2 pr-3">IP</th>
+                <th className="py-2 pr-3">Authorized</th>
+                <th className="py-2 pr-3">Posture</th>
+                <th className="py-2 pr-3">Grade</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assets.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                    No assets discovered yet.
+                  </td>
+                </tr>
+              ) : (
+                assets.map((a) => (
+                  <tr key={a.id} className="table-row">
+                    <td className="py-3 pr-3 font-medium text-gray-900 dark:text-white">{a.hostname || 'Unknown'}</td>
+                    <td className="py-3 pr-3 font-mono text-xs">{a.ip_address || '—'}</td>
+                    <td className="py-3 pr-3">
+                      {a.is_authorized ? (
+                        <span className="badge-green">YES</span>
+                      ) : (
+                        <span className="badge-red">UNKNOWN</span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-3">{a.posture_score}/100</td>
+                    <td className="py-3 pr-3 font-semibold">{a.last_grade || '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === 'scans' && (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                <th className="py-2 pr-3">Type</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Started</th>
+                <th className="py-2 pr-3">Completed</th>
+                <th className="py-2 pr-3">Stats</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scans.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">No scans yet.</td>
+                </tr>
+              ) : (
+                scans.map((s) => (
+                  <tr key={s.id} className="table-row">
+                    <td className="py-3 pr-3 capitalize">{s.scan_type}</td>
+                    <td className="py-3 pr-3">
+                      <span
+                        className={`badge ${
+                          s.status === 'completed'
+                            ? 'badge-green'
+                            : s.status === 'running'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : s.status === 'failed'
+                            ? 'badge-red'
+                            : 'badge-gray'
+                        }`}
+                      >
+                        {s.status}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-3 text-xs text-gray-500">{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
+                    <td className="py-3 pr-3 text-xs text-gray-500">{s.completed_at ? new Date(s.completed_at).toLocaleString() : '—'}</td>
+                    <td className="py-3 pr-3 text-xs font-mono">{s.stats ? JSON.stringify(s.stats) : '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === 'recommendations' && (
+        <div className="space-y-3">
+          {pendingRecs.length === 0 && recs.length === 0 && (
+            <div className="card text-sm text-gray-500 dark:text-gray-400">No recommendations yet.</div>
+          )}
+          {recs.map((r) => (
+            <div key={r.id} className="card flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-gray-900 dark:text-white truncate">{r.title}</p>
+                  <span className={`badge ${r.status === 'approved' ? 'badge-green' : r.status === 'rejected' ? 'badge-red' : 'badge-yellow'}`}>
+                    {r.status}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{r.description}</p>
+                <p className="text-xs text-gray-400 mt-1">{r.hostname || ''}</p>
+              </div>
+              {r.status === 'pending' && (
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => handleDecision(r.id, 'approve')} disabled={approving} className="btn-success text-xs">
+                    <CheckCircle2 className="w-4 h-4" /> Approve
+                  </button>
+                  <button onClick={() => handleDecision(r.id, 'reject')} disabled={rejecting} className="btn-danger text-xs">
+                    <XCircle className="w-4 h-4" /> Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

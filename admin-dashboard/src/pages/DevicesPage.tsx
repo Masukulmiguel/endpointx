@@ -68,7 +68,7 @@ function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }
   return (
     <button
       onClick={onClick}
-      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 text-left hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all w-full"
+      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 text-left hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all w-full"
     >
       <div className="flex items-start justify-between mb-3">
         <div className="min-w-0">
@@ -233,7 +233,7 @@ export default function DevicesPage() {
               e.stopPropagation();
               navigate(`/devices/${row.id}`);
             }}
-            className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
             title="View Details"
           >
             <Eye className="w-4 h-4" />
@@ -287,7 +287,7 @@ export default function DevicesPage() {
             setStatusFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Status</option>
           <option value="online">Online</option>
@@ -302,7 +302,7 @@ export default function DevicesPage() {
             setOsFilter(e.target.value);
             setPage(1);
           }}
-          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All OS</option>
           <option value="windows">Windows</option>
@@ -314,7 +314,7 @@ export default function DevicesPage() {
             onClick={() => setViewMode('grid')}
             className={`p-2 rounded-md transition-colors ${
               viewMode === 'grid'
-                ? 'bg-white dark:bg-gray-600 text-indigo-600 shadow-sm'
+                ? 'bg-white dark:bg-gray-600 text-blue-600 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
@@ -324,7 +324,7 @@ export default function DevicesPage() {
             onClick={() => setViewMode('list')}
             className={`p-2 rounded-md transition-colors ${
               viewMode === 'list'
-                ? 'bg-white dark:bg-gray-600 text-indigo-600 shadow-sm'
+                ? 'bg-white dark:bg-gray-600 text-blue-600 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >

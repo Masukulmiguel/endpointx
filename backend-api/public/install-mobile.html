@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0080ff" />
+  <title>EndpointX — Registo de Telemóvel</title>
+  <style>
+    :root { color-scheme: light dark; --blue: #0080ff; --bg: #0b1220; --card: #121a2b; --text: #e8eef8; --muted: #93a4bd; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #0a3a7a 0%, var(--bg) 55%);
+      color: var(--text); min-height: 100vh; padding: 24px 16px 40px;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .brand img { width: 52px; height: 52px; border-radius: 12px; object-fit: contain; background: #fff; }
+    .brand h1 { margin: 0; font-size: 1.35rem; }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+    .card { background: var(--card); border: 1px solid #1f2b44; border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+    .card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    .card p, li { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+    ul { padding-left: 1.1rem; margin: 8px 0 0; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 12px 0 6px; }
+    input, select, textarea {
+      width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a3a58;
+      background: #0d1526; color: var(--text); font-size: 1rem;
+    }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); border-color: transparent; }
+    button {
+      width: 100%; margin-top: 16px; padding: 14px; border: 0; border-radius: 12px;
+      background: var(--blue); color: #fff; font-weight: 700; font-size: 1rem; cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; }
+    .ok { background: #0d3b22; border: 1px solid #1f8a4c; color: #7dffb2; border-radius: 12px; padding: 14px; margin-top: 14px; display: none; }
+    .err { background: #3b1212; border: 1px solid #a33; color: #ff9b9b; border-radius: 12px; padding: 14px; margin-top: 14px; display: none; }
+    .privacy { font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
+    .tag { display: inline-block; background: #0a2f5c; color: #7ec1ff; border-radius: 999px; padding: 4px 10px; font-size: 0.75rem; margin: 0 6px 6px 0; }
+    footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="https://endpointx-dashboard.onrender.com/logotipo.png" alt="EndpointX" onerror="this.style.display='none'" />
+      <div>
+        <h1>EndpointX Mobile</h1>
+        <p>Registo de telemóvel / tablet (v1.1.0)</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Como funciona</h2>
+      <p>Este registo liga o dispositivo à rede corporativa para gestão de conformidade e segurança. <strong>Não</strong> recolhe mensagens privadas, passwords, fotografias nem teclas digitadas.</p>
+      <div>
+        <span class="tag">Android</span>
+        <span class="tag">iPhone / iPad</span>
+        <span class="tag">BYOD</span>
+        <span class="tag">Corporativo</span>
+      </div>
+      <p class="privacy">Após o registo, o administrador pode aprovar, limitar ou colocar o dispositivo em quarentena (Zero Trust).</p>
+    </div>
+
+    <div class="card">
+      <h2>Registar dispositivo</h2>
+      <form id="regForm">
+        <label for="deviceName">Nome do dispositivo</label>
+        <input id="deviceName" name="device_name" placeholder="ex.: iPhone da Maria" required maxlength="80" />
+
+        <label for="ownerName">Utilizador / proprietário</label>
+        <input id="ownerName" name="owner" placeholder="ex.: maria.empresa" maxlength="80" />
+
+        <label for="ownership">Tipo de propriedade</label>
+        <select id="ownership" name="ownership">
+          <option value="BYOD">BYOD (dispositivo pessoal)</option>
+          <option value="CORPORATE">Corporativo</option>
+          <option value="GUEST">Convidado</option>
+        </select>
+
+        <label for="department">Departamento (opcional)</label>
+        <input id="department" name="department" placeholder="ex.: Comercial" maxlength="80" />
+
+        <button type="submit" id="submitBtn">Registar neste telemóvel</button>
+      </form>
+      <div class="ok" id="okBox"></div>
+      <div class="err" id="errBox"></div>
+      <p class="privacy" id="uaBox"></p>
+    </div>
+
+    <div class="card">
+      <h2>Administração (MDM)</h2>
+      <p>Para gestão avançada, use um MDM suportado:</p>
+      <ul>
+        <li>Android Enterprise</li>
+        <li>Apple Business Manager / MDM</li>
+        <li>Microsoft Intune</li>
+        <li>Jamf Pro</li>
+      </ul>
+      <p class="privacy">Estado inicial: <strong>PENDING</strong> → aprovação no dashboard EndpointX.</p>
+    </div>
+
+    <footer>EndpointX NetSentinel · Registo defensivo de identidade de dispositivo</footer>
+  </div>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var apiBase = params.get('api') || (window.location.origin + '/api');
+      var ua = navigator.userAgent || '';
+      document.getElementById('uaBox').textContent = 'User-Agent detectado: ' + ua.slice(0, 160);
+
+      function parseOs(ua) {
+        var s = ua.toLowerCase();
+        if (s.indexOf('android') >= 0) return { os: 'android', type: s.indexOf('tablet') >= 0 || s.indexOf('sm-t') >= 0 ? 'TABLET' : 'MOBILE' };
+        if (s.indexOf('iphone') >= 0) return { os: 'ios', type: 'MOBILE' };
+        if (s.indexOf('ipad') >= 0) return { os: 'ios', type: 'TABLET' };
+        return { os: 'unknown', type: 'MOBILE' };
+      }
+
+      function parseModel(ua) {
+        var m = ua.match(/;\s*([^;)]+)\s+Build\//) || ua.match(/\(([^;)]+);[^)]*Android[^)]*\)/) || ua.match(/iPhone;\s*CPU[^ ]*\s+like\s+Mac\s+OS\s+X/i);
+        if (m && m[1]) return m[1].trim().slice(0, 80);
+        return null;
+      }
+
+      document.getElementById('regForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var btn = document.getElementById('submitBtn');
+        var ok = document.getElementById('okBox');
+        var err = document.getElementById('errBox');
+        ok.style.display = 'none';
+        err.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = 'A registar…';
+
+        var osInfo = parseOs(ua);
+        var payload = {
+          device_name: document.getElementById('deviceName').value.trim(),
+          owner: document.getElementById('ownerName').value.trim(),
+          ownership: document.getElementById('ownership').value,
+          department: document.getElementById('department').value.trim(),
+          os_type: osInfo.os,
+          device_type: osInfo.type,
+          model: parseModel(ua),
+          user_agent: ua.slice(0, 500),
+          source: 'mobile_enrollment_page'
+        };
+
+        try {
+          var res = await fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          var data = await res.json();
+          if (!res.ok || data.success === false) {
+            throw new Error((data && data.error && data.error.message) || ('HTTP ' + res.status));
+          }
+          ok.style.display = 'block';
+          ok.textContent = 'Registo enviado! Dispositivo: ' + (data.data.device_id || 'ok') +
+            ' — estado PENDING até aprovação do administrador.';
+          document.getElementById('regForm').reset();
+        } catch (ex) {
+          err.style.display = 'block';
+          err.textContent = 'Falha no registo: ' + (ex.message || ex);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Registar neste telemóvel';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

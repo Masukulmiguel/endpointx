@@ -119,7 +119,7 @@ export default function AgentsPage() {
               e.stopPropagation();
               setSelectedDevice(row);
             }}
-            className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
             title="View Details"
           >
             <Eye className="w-4 h-4" />
@@ -159,7 +159,7 @@ export default function AgentsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { label: 'Total Agents', value: stats?.total || 0, icon: Cpu, color: 'text-indigo-600 dark:text-indigo-400' },
+          { label: 'Total Agents', value: stats?.total || 0, icon: Cpu, color: 'text-blue-600 dark:text-blue-400' },
           { label: 'Online', value: stats?.online || 0, icon: RefreshCw, color: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'Outdated', value: stats?.outdated || 0, icon: AlertTriangle, color: 'text-amber-600 dark:text-amber-400' },
         ].map((stat) => (
@@ -191,8 +191,8 @@ export default function AgentsPage() {
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-            <Download className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+            <Download className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Agent Installation</h2>
@@ -247,7 +247,7 @@ export default function AgentsPage() {
               <button
                 onClick={() => handleUpdateAgent(selectedDevice.id)}
                 disabled={updating}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 <RefreshCw className={`w-4 h-4 ${updating ? 'animate-spin' : ''}`} />
                 {updating ? 'Updating...' : 'Update Agent'}

@@ -197,7 +197,7 @@ export default function DashboardPage() {
                   <Line
                     type="monotone"
                     dataKey="count"
-                    stroke="#6366f1"
+                    stroke="#0080ff"
                     strokeWidth={2}
                     dot={false}
                     activeDot={{ r: 4 }}
