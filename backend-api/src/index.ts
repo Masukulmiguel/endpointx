@@ -13,6 +13,7 @@ import logger from './utils/logger';
 import { initDatabase, closeDatabase } from './config/database';
 import { validateSecrets } from './config/constants';
 import { updateOfflineDevices } from './routes/devices';
+import { errorHandler } from './middleware/errorHandler';
 
 // Validate secrets before starting
 try {
@@ -118,14 +119,11 @@ app.use('/api/netsentinel', netsentinelRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ success: false, error: { message: 'Route not found', code: 'NOT_FOUND' } });
 });
 
 // Error handler
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error('Unhandled error', { message: err.message });
-  res.status(500).json({ error: 'Internal server error' });
-});
+app.use(errorHandler);
 
 // Socket.IO
 io.on('connection', (socket) => {

@@ -12,11 +12,11 @@ router.get('/', authenticate, requirePermission('logs.view'), async (req: AuthRe
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = (page - 1) * limit;
 
-    const countResult = await query('SELECT COUNT(*) AS total FROM notification_logs');
+    const countResult = await query('SELECT COUNT(*) AS total FROM notification_log');
     const total = countResult.rows[0]?.total || 0;
 
     const result = await query(
-      'SELECT * FROM notification_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+      'SELECT * FROM notification_log ORDER BY created_at DESC LIMIT $1 OFFSET $2',
       [limit, offset]
     );
 
@@ -43,8 +43,8 @@ router.post('/test', authenticate, requirePermission('settings.manage'), async (
     const id = idResult.rows[0].id;
 
     await query(
-      `INSERT INTO notification_logs (id, recipient, subject, body, status, created_at)
-       VALUES ($1, $2, 'EndpointX Test Notification', 'This is a test notification from EndpointX.', 'sent', NOW())`,
+      `INSERT INTO notification_log (id, recipient_email, subject, body, status, sent_at, created_at)
+       VALUES ($1, $2, 'EndpointX Test Notification', 'This is a test notification from EndpointX.', 'sent', NOW(), NOW())`,
       [id, email]
     );
 

@@ -32,11 +32,11 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
 
     // Heartbeat trend - count heartbeats per hour for last 24h
     const heartbeatTrend = await query(`
-      SELECT TO_CHAR(recorded_at, 'HH24:MI') as time, COUNT(*) as count
+      SELECT TO_CHAR(date_trunc('hour', recorded_at), 'HH24:MI') as time, COUNT(*) as count
       FROM device_heartbeats
       WHERE recorded_at > NOW() - INTERVAL '24 hours'
-      GROUP BY TO_CHAR(recorded_at, 'YYYY-MM-DD HH24')
-      ORDER BY time ASC
+      GROUP BY date_trunc('hour', recorded_at)
+      ORDER BY date_trunc('hour', recorded_at) ASC
     `, []);
 
     // Alerts by type
