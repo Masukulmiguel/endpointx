@@ -35,8 +35,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const response = await api.getProfile() as { data: User };
-      setUser(response.data);
+      const response = await api.getProfile() as { data: { user: User } };
+      setUser(response.data.user);
     } catch {
       api.logout();
       setUser(null);
