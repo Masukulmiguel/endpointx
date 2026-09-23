@@ -11,10 +11,12 @@ import {
   AlertTriangle,
   Activity,
   FileText,
+  Sparkles,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import ErrorState from '../components/ErrorState';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useI18n } from '../i18n';
 
 type HermesStatus = {
   assets: number;
@@ -100,8 +102,13 @@ const severityBadge = (s: string) => {
 };
 
 export default function HermesPage() {
-  const [tab, setTab] = useState<'overview' | 'findings' | 'assets' | 'scans' | 'recommendations'>('overview');
+  const [tab, setTab] = useState<'overview' | 'findings' | 'assets' | 'scans' | 'recommendations' | 'ai'>('overview');
   const [toast, setToast] = useState<string | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiFindingId, setAiFindingId] = useState<string | null>(null);
+  const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
+  const { locale, t } = useI18n();
 
   const { data: status, loading, error, refetch } = useApi<HermesStatus>('/hermes/status');
   const { data: findingsData } = useApi<{ findings: Finding[] }>('/hermes/findings');
@@ -109,11 +116,14 @@ export default function HermesPage() {
   const { data: scansData } = useApi<{ scans: Scan[] }>('/hermes/scans');
   const { data: recsData } = useApi<{ recommendations: Recommendation[] }>('/hermes/recommendations');
   const { data: surface } = useApi<any>('/hermes/attack-surface');
+  const { data: aiStatus } = useApi<{ configured: boolean; healthy: boolean; version?: string | null; error?: string | null }>('/hermes/ai/status');
 
   const { loading: starting, mutate: startScan } = useApiMutation('/hermes/scans', 'POST');
   const { loading: stopping, mutate: emergency } = useApiMutation('/hermes/emergency-stop', 'POST');
   const { loading: approving, mutate: approveRec } = useApiMutation('', 'POST');
   const { loading: rejecting, mutate: rejectRec } = useApiMutation('', 'POST');
+  const { loading: analyzing, mutate: analyzeAi } = useApiMutation('/hermes/ai/analyze', 'POST');
+  const { loading: recommending, mutate: recommendAi } = useApiMutation('/hermes/ai/recommend', 'POST');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -123,7 +133,7 @@ export default function HermesPage() {
   const handleStartScan = async (scanType: string) => {
     const res = await startScan({ scan_type: scanType });
     if (res) {
-      showToast(`HERMES scan started (${scanType})`);
+      showToast(`${t('hermes.scanStarted')} (${scanType})`);
       refetch();
     }
   };
@@ -131,15 +141,38 @@ export default function HermesPage() {
   const handleEmergency = async () => {
     const enable = !status?.emergency_stop;
     await emergency({ enable });
-    showToast(enable ? 'Emergency stop ENABLED — all scans stopped' : 'Emergency stop cleared');
+    showToast(enable ? t('hermes.emergencyOn') : t('hermes.emergencyOff'));
     refetch();
   };
 
   const handleDecision = async (id: string, action: 'approve' | 'reject') => {
     const res = action === 'approve' ? await approveRec(`/hermes/recommendations/${id}/approve`, {}) : await rejectRec(`/hermes/recommendations/${id}/reject`, {});
     if (res) {
-      showToast(action === 'approve' ? 'Recommendation approved' : 'Recommendation rejected');
+      showToast(action === 'approve' ? t('hermes.recApproved') : t('hermes.recRejected'));
       refetch();
+    }
+  };
+
+  const handleAiAnalyze = async () => {
+    setAiError(null);
+    setAiAnalysis(null);
+    const res = await analyzeAi({ locale }) as { analysis?: string } | null;
+    if (res?.analysis) {
+      setAiAnalysis(res.analysis);
+    } else {
+      setAiError(aiStatus?.configured === false ? t('hermes.ai.notConfigured') : t('common.error'));
+    }
+  };
+
+  const handleAiRecommend = async (findingId: string) => {
+    setAiFindingId(findingId);
+    setAiRecommendation(null);
+    setAiError(null);
+    const res = await recommendAi({ finding_id: findingId, locale }) as { recommendation?: string } | null;
+    if (res?.recommendation) {
+      setAiRecommendation(res.recommendation);
+    } else {
+      setAiError(t('common.error'));
     }
   };
 
@@ -152,7 +185,7 @@ export default function HermesPage() {
   }
 
   if (error || !status) {
-    return <ErrorState title="Failed to load HERMES" error={error || 'Unable to load HERMES status'} onRetry={refetch} />;
+    return <ErrorState title={t('hermes.failedLoad')} error={error || t('hermes.failedLoadBody')} onRetry={refetch} />;
   }
 
   const findings = findingsData?.findings || [];
@@ -178,21 +211,21 @@ export default function HermesPage() {
             <Radar className="w-5 h-5 text-blue-500" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">HERMES Security Intelligence</h1>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('page.hermes.title')}</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Host Evaluation · Risk Monitoring · Engine · Security
+              {t('hermes.subtitle')}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => handleStartScan('quick')} disabled={starting || status.emergency_stop} className="btn-primary disabled:opacity-50">
-            <Play className="w-4 h-4" /> Quick Scan
+            <Play className="w-4 h-4" /> {t('hermes.quickScan')}
           </button>
           <button onClick={() => handleStartScan('daily')} disabled={starting || status.emergency_stop} className="btn-secondary disabled:opacity-50">
-            <Play className="w-4 h-4" /> Standard Scan
+            <Play className="w-4 h-4" /> {t('hermes.standardScan')}
           </button>
           <button onClick={() => handleStartScan('full')} disabled={starting || status.emergency_stop} className="btn-secondary disabled:opacity-50">
-            <Play className="w-4 h-4" /> Full Assessment
+            <Play className="w-4 h-4" /> {t('hermes.fullScan')}
           </button>
           <button
             onClick={handleEmergency}
@@ -202,10 +235,10 @@ export default function HermesPage() {
                 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
                 : 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30'
             }`}
-            title="STOP ALL HERMES SCANS"
+            title={t('hermes.stopAll')}
           >
             <Square className="w-4 h-4 inline mr-1" />
-            {status.emergency_stop ? 'Clear Emergency Stop' : 'STOP ALL HERMES SCANS'}
+            {status.emergency_stop ? t('hermes.clearStop') : t('hermes.stopAll')}
           </button>
         </div>
       </div>
@@ -213,18 +246,18 @@ export default function HermesPage() {
       {status.emergency_stop && (
         <div className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4" />
-          Emergency stop is active — no HERMES scans can run until cleared.
+          {t('hermes.emergencyActive')}
         </div>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {[
-          { label: 'Assets', value: status.assets, icon: Server },
-          { label: 'Vulnerabilities', value: status.vulnerabilities, icon: Bug },
-          { label: 'Critical', value: status.critical, icon: ShieldAlert },
-          { label: 'High', value: status.high, icon: AlertTriangle },
-          { label: 'Medium', value: status.medium, icon: Activity },
-          { label: 'Unknown Devices', value: status.unknown_assets, icon: AlertTriangle },
+          { label: t('hermes.assets'), value: status.assets, icon: Server },
+          { label: t('hermes.vulnerabilities'), value: status.vulnerabilities, icon: Bug },
+          { label: t('hermes.critical'), value: status.critical, icon: ShieldAlert },
+          { label: t('hermes.high'), value: status.high, icon: AlertTriangle },
+          { label: t('hermes.medium'), value: status.medium, icon: Activity },
+          { label: t('hermes.unknownDevices'), value: status.unknown_assets, icon: AlertTriangle },
         ].map((s) => (
           <div key={s.label} className="card">
             <div className="flex items-center justify-between">
@@ -257,17 +290,17 @@ export default function HermesPage() {
             </div>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Security Posture</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('hermes.securityPosture')}</p>
             <p className={`text-3xl font-bold ${scoreColor}`}>{score}/100</p>
-            <p className="text-xs text-gray-400">Why is this score? Based on open ports, finding severity and exposure.</p>
+            <p className="text-xs text-gray-400">{t('hermes.scoreHelp')}</p>
           </div>
         </div>
         <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           {[
-            ['Open Ports', surface?.open_ports ?? '—'],
-            ['High Risk Svc', surface?.high_risk_services ?? '—'],
-            ['Critical CVE', status.critical],
-            ['Alerts', status.open_alerts],
+            [t('hermes.openPorts'), surface?.open_ports ?? '—'],
+            [t('hermes.highRiskSvc'), surface?.high_risk_services ?? '—'],
+            [t('hermes.criticalCve'), status.critical],
+            [t('hermes.alerts'), status.open_alerts],
           ].map(([label, val]) => (
             <div key={String(label)} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3">
               <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
@@ -280,11 +313,12 @@ export default function HermesPage() {
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
         {(
           [
-            ['overview', 'Overview'],
-            ['findings', `Findings (${findings.length})`],
-            ['assets', 'Attack Surface / Assets'],
-            ['scans', 'Scans'],
-            ['recommendations', `Recommendations (${pendingRecs.length})`],
+            ['overview', t('hermes.tab.overview')],
+            ['findings', `${t('hermes.tab.findings')} (${findings.length})`],
+            ['assets', t('hermes.tab.assets')],
+            ['scans', t('hermes.tab.scans')],
+            ['recommendations', `${t('hermes.tab.recommendations')} (${pendingRecs.length})`],
+            ['ai', t('hermes.tab.ai')],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -304,14 +338,14 @@ export default function HermesPage() {
       {tab === 'overview' && (
         <div className="grid lg:grid-cols-2 gap-6">
           <div className="card">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Active Scans</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">{t('hermes.activeScans')}</h3>
             {status.active_scans.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">No active scans. Start a scan above.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('hermes.noActiveScans')}</p>
             ) : (
               <ul className="space-y-2">
                 {status.active_scans.map((s) => (
                   <li key={s.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-700 dark:text-gray-300 capitalize">{s.scan_type.replace('_', ' ')} Assessment</span>
+                    <span className="text-gray-700 dark:text-gray-300 capitalize">{s.scan_type.replace('_', ' ')}</span>
                     <span className={`badge ${s.status === 'running' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>
                       {s.status.toUpperCase()}
                     </span>
@@ -320,16 +354,16 @@ export default function HermesPage() {
               </ul>
             )}
             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 space-y-1">
-              <div className="flex justify-between"><span>Completed scans</span><span>{status.scan_stats?.completed || 0}</span></div>
-              <div className="flex justify-between"><span>Running</span><span>{status.scan_stats?.running || 0}</span></div>
-              <div className="flex justify-between"><span>Pending recommendations</span><span>{status.pending_recommendations}</span></div>
+              <div className="flex justify-between"><span>{t('hermes.completedScans')}</span><span>{status.scan_stats?.completed || 0}</span></div>
+              <div className="flex justify-between"><span>{t('hermes.running')}</span><span>{status.scan_stats?.running || 0}</span></div>
+              <div className="flex justify-between"><span>{t('hermes.pendingRecs')}</span><span>{status.pending_recommendations}</span></div>
             </div>
           </div>
 
           <div className="card">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Top Security Findings</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">{t('hermes.topFindings')}</h3>
             {status.top_findings.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">No open findings yet.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('hermes.noFindings')}</p>
             ) : (
               <ul className="space-y-3">
                 {status.top_findings.map((f) => (
@@ -338,8 +372,8 @@ export default function HermesPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{f.title}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {f.hostname || f.ip_address || 'Unknown'} · confidence {f.confidence}%
-                        {f.is_potential ? ' · POTENTIAL' : ''}
+                        {f.hostname || f.ip_address || t('common.unknown')} · {t('hermes.confidence')} {f.confidence}%
+                        {f.is_potential ? ` · ${t('hermes.potential')}` : ''}
                       </p>
                     </div>
                   </li>
@@ -349,7 +383,7 @@ export default function HermesPage() {
           </div>
 
           <div className="card lg:col-span-2">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">Attack Surface</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">{t('hermes.attackSurface')}</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {surface &&
                 Object.entries(surface).map(([key, val]) => (
@@ -378,18 +412,18 @@ ${assets
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <th className="py-2 pr-3">Severity</th>
-                <th className="py-2 pr-3">Finding</th>
-                <th className="py-2 pr-3">Asset</th>
-                <th className="py-2 pr-3">Confidence</th>
-                <th className="py-2 pr-3">Evidence</th>
+                <th className="py-2 pr-3">{t('hermes.severity')}</th>
+                <th className="py-2 pr-3">{t('hermes.finding')}</th>
+                <th className="py-2 pr-3">{t('hermes.asset')}</th>
+                <th className="py-2 pr-3">{t('hermes.confidence')}</th>
+                <th className="py-2 pr-3">{t('hermes.evidence')}</th>
               </tr>
             </thead>
             <tbody>
               {findings.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No findings. Run a HERMES scan to generate assessments.
+                    {t('hermes.noFindingsRun')}
                   </td>
                 </tr>
               ) : (
@@ -404,14 +438,14 @@ ${assets
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{f.description}</p>
                       )}
                       {f.is_potential && (
-                        <span className="text-xs text-amber-500">POTENTIAL VULNERABILITY</span>
+                        <span className="text-xs text-amber-500">{t('hermes.potentialVuln')}</span>
                       )}
                     </td>
                     <td className="py-3 pr-3 text-gray-600 dark:text-gray-300">{f.hostname || f.ip_address || '—'}</td>
                     <td className="py-3 pr-3">{f.confidence}%</td>
                     <td className="py-3 pr-3 text-xs text-gray-500 dark:text-gray-400 max-w-[280px]">
                       <details>
-                        <summary className="cursor-pointer text-blue-500">View</summary>
+                        <summary className="cursor-pointer text-blue-500">{t('common.view')}</summary>
                         <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(f.evidence, null, 2)}</pre>
                       </details>
                     </td>
@@ -428,30 +462,30 @@ ${assets
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <th className="py-2 pr-3">Hostname</th>
-                <th className="py-2 pr-3">IP</th>
-                <th className="py-2 pr-3">Authorized</th>
-                <th className="py-2 pr-3">Posture</th>
-                <th className="py-2 pr-3">Grade</th>
+                <th className="py-2 pr-3">{t('hermes.hostname')}</th>
+                <th className="py-2 pr-3">{t('hermes.ip')}</th>
+                <th className="py-2 pr-3">{t('hermes.authorized')}</th>
+                <th className="py-2 pr-3">{t('hermes.posture')}</th>
+                <th className="py-2 pr-3">{t('hermes.grade')}</th>
               </tr>
             </thead>
             <tbody>
               {assets.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No assets discovered yet.
+                    {t('hermes.noAssets')}
                   </td>
                 </tr>
               ) : (
                 assets.map((a) => (
                   <tr key={a.id} className="table-row">
-                    <td className="py-3 pr-3 font-medium text-gray-900 dark:text-white">{a.hostname || 'Unknown'}</td>
+                    <td className="py-3 pr-3 font-medium text-gray-900 dark:text-white">{a.hostname || t('common.unknown')}</td>
                     <td className="py-3 pr-3 font-mono text-xs">{a.ip_address || '—'}</td>
                     <td className="py-3 pr-3">
                       {a.is_authorized ? (
-                        <span className="badge-green">YES</span>
+                        <span className="badge-green">{t('hermes.yes')}</span>
                       ) : (
-                        <span className="badge-red">UNKNOWN</span>
+                        <span className="badge-red">{t('common.unknown').toUpperCase()}</span>
                       )}
                     </td>
                     <td className="py-3 pr-3">{a.posture_score}/100</td>
@@ -469,17 +503,17 @@ ${assets
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <th className="py-2 pr-3">Type</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3">Started</th>
-                <th className="py-2 pr-3">Completed</th>
-                <th className="py-2 pr-3">Stats</th>
+                <th className="py-2 pr-3">{t('hermes.type')}</th>
+                <th className="py-2 pr-3">{t('common.status')}</th>
+                <th className="py-2 pr-3">{t('hermes.started')}</th>
+                <th className="py-2 pr-3">{t('hermes.completed')}</th>
+                <th className="py-2 pr-3">{t('hermes.stats')}</th>
               </tr>
             </thead>
             <tbody>
               {scans.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">No scans yet.</td>
+                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">{t('hermes.noScans')}</td>
                 </tr>
               ) : (
                 scans.map((s) => (
@@ -514,7 +548,7 @@ ${assets
       {tab === 'recommendations' && (
         <div className="space-y-3">
           {pendingRecs.length === 0 && recs.length === 0 && (
-            <div className="card text-sm text-gray-500 dark:text-gray-400">No recommendations yet.</div>
+            <div className="card text-sm text-gray-500 dark:text-gray-400">{t('hermes.noRecs')}</div>
           )}
           {recs.map((r) => (
             <div key={r.id} className="card flex flex-col sm:flex-row sm:items-center gap-4">
@@ -531,15 +565,88 @@ ${assets
               {r.status === 'pending' && (
                 <div className="flex gap-2 shrink-0">
                   <button onClick={() => handleDecision(r.id, 'approve')} disabled={approving} className="btn-success text-xs">
-                    <CheckCircle2 className="w-4 h-4" /> Approve
+                    <CheckCircle2 className="w-4 h-4" /> {t('common.approve')}
                   </button>
                   <button onClick={() => handleDecision(r.id, 'reject')} disabled={rejecting} className="btn-danger text-xs">
-                    <XCircle className="w-4 h-4" /> Reject
+                    <XCircle className="w-4 h-4" /> {t('common.reject')}
                   </button>
                 </div>
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'ai' && (
+        <div className="space-y-4">
+          <div className="card">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-blue-500" />
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">{t('hermes.ai.title')}</h3>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('hermes.ai.subtitle')}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {aiStatus?.configured
+                    ? `opencode: ${aiStatus.healthy ? 'OK' : aiStatus.error || 'offline'}${aiStatus.version ? ` · v${aiStatus.version}` : ''}`
+                    : t('hermes.ai.notConfigured')}
+                </p>
+              </div>
+              <button
+                onClick={handleAiAnalyze}
+                disabled={analyzing || aiStatus?.configured === false}
+                className="btn-primary disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4" />
+                {analyzing ? t('hermes.ai.analyzing') : t('hermes.ai.analyze')}
+              </button>
+            </div>
+
+            {aiError && (
+              <div className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+                {aiError}
+              </div>
+            )}
+
+            {aiAnalysis && (
+              <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 p-4">
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{aiAnalysis}</pre>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">{t('hermes.tab.findings')}</h3>
+            <div className="space-y-2">
+              {findings.slice(0, 20).map((f) => (
+                <div key={f.id} className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`badge uppercase shrink-0 ${severityBadge(f.severity)}`}>{f.severity}</span>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{f.title}</p>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{f.hostname || f.ip_address || t('common.unknown')}</p>
+                  </div>
+                  <button
+                    onClick={() => handleAiRecommend(f.id)}
+                    disabled={recommending || aiStatus?.configured === false}
+                    className="btn-secondary text-xs shrink-0 disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {aiFindingId === f.id && recommending ? t('hermes.ai.recommending') : t('hermes.ai.recommend')}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {aiRecommendation && (
+              <div className="mt-4 rounded-lg bg-blue-500/5 border border-blue-500/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-2">{t('hermes.ai.forFinding')}</p>
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{aiRecommendation}</pre>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

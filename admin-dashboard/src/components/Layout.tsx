@@ -28,47 +28,48 @@ import {
   Radar,
 } from 'lucide-react';
 import api from '../services/api';
+import { useI18n, type Locale } from '../i18n';
 
 const navItems = [
-  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { label: 'HERMES', path: '/hermes', icon: Radar },
-  { label: 'Devices', path: '/devices', icon: Monitor },
-  { label: 'Install Agent', path: '/install', icon: Download },
-  { label: 'Users', path: '/users', icon: Users },
-  { label: 'Roles & Permissions', path: '/roles', icon: Shield },
-  { label: 'Security', path: '/security', icon: Lock },
-  { label: 'Alerts', path: '/alerts', icon: Bell },
-  { label: 'Groups', path: '/groups', icon: UsersRound },
-  { label: 'Policies', path: '/policies', icon: ShieldCheck },
-  { label: 'Software', path: '/software', icon: ArrowDownToLine },
-  { label: 'Security (MFA)', path: '/security/mfa', icon: Key },
-  { label: 'Reports', path: '/reports', icon: ChartBar },
-  { label: 'Notifications', path: '/notifications', icon: Bell },
-  { label: 'Network', path: '/network', icon: Wifi },
-  { label: 'Audit Logs', path: '/audit-logs', icon: FileText },
-  { label: 'Agents', path: '/agents', icon: Cpu },
-  { label: 'Settings', path: '/settings', icon: Settings },
+  { key: 'nav.dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { key: 'nav.hermes', path: '/hermes', icon: Radar },
+  { key: 'nav.devices', path: '/devices', icon: Monitor },
+  { key: 'nav.install', path: '/install', icon: Download },
+  { key: 'nav.users', path: '/users', icon: Users },
+  { key: 'nav.roles', path: '/roles', icon: Shield },
+  { key: 'nav.security', path: '/security', icon: Lock },
+  { key: 'nav.alerts', path: '/alerts', icon: Bell },
+  { key: 'nav.groups', path: '/groups', icon: UsersRound },
+  { key: 'nav.policies', path: '/policies', icon: ShieldCheck },
+  { key: 'nav.software', path: '/software', icon: ArrowDownToLine },
+  { key: 'nav.mfa', path: '/security/mfa', icon: Key },
+  { key: 'nav.reports', path: '/reports', icon: ChartBar },
+  { key: 'nav.notifications', path: '/notifications', icon: Bell },
+  { key: 'nav.network', path: '/network', icon: Wifi },
+  { key: 'nav.audit', path: '/audit-logs', icon: FileText },
+  { key: 'nav.agents', path: '/agents', icon: Cpu },
+  { key: 'nav.settings', path: '/settings', icon: Settings },
 ];
 
-const routeTitles: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/hermes': 'HERMES Security Intelligence',
-  '/devices': 'Devices',
-  '/install': 'Install Agent (PC e Mobile)',
-  '/users': 'Users',
-  '/roles': 'Roles & Permissions',
-  '/security': 'Security',
-  '/alerts': 'Alerts',
-  '/groups': 'Groups',
-  '/policies': 'Policies',
-  '/software': 'Software',
-  '/security/mfa': 'Security (MFA)',
-  '/reports': 'Reports',
-  '/notifications': 'Notifications',
-  '/network': 'Network',
-  '/audit-logs': 'Audit Logs',
-  '/agents': 'Agents',
-  '/settings': 'Settings',
+const routeTitleKeys: Record<string, string> = {
+  '/dashboard': 'nav.dashboard',
+  '/hermes': 'page.hermes.title',
+  '/devices': 'nav.devices',
+  '/install': 'page.install.title',
+  '/users': 'nav.users',
+  '/roles': 'nav.roles',
+  '/security': 'nav.security',
+  '/alerts': 'nav.alerts',
+  '/groups': 'nav.groups',
+  '/policies': 'nav.policies',
+  '/software': 'nav.software',
+  '/security/mfa': 'nav.mfa',
+  '/reports': 'nav.reports',
+  '/notifications': 'nav.notifications',
+  '/network': 'nav.network',
+  '/audit-logs': 'nav.audit',
+  '/agents': 'nav.agents',
+  '/settings': 'nav.settings',
 };
 
 export default function Layout() {
@@ -81,8 +82,9 @@ export default function Layout() {
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const { locale, setLocale, t } = useI18n();
 
-  const pageTitle = routeTitles[location.pathname] || 'EndpointX';
+  const pageTitle = t(routeTitleKeys[location.pathname] || 'page.title.default');
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -199,7 +201,7 @@ export default function Layout() {
                     }`}
                   >
                     <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                    {item.label}
+                    {t(item.key)}
                   </Link>
                 </li>
               );
@@ -214,12 +216,12 @@ export default function Layout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">Admin User</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Super Admin</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{t('nav.superAdmin')}</p>
             </div>
             <button
               onClick={handleLogout}
               className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              title="Logout"
+              title={t('nav.logout')}
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -243,13 +245,30 @@ export default function Layout() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder={t('nav.search')}
                 className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center rounded-lg bg-gray-100 dark:bg-gray-700 p-0.5 text-xs font-medium">
+              {(['pt', 'en'] as Locale[]).map((code) => (
+                <button
+                  key={code}
+                  onClick={() => setLocale(code)}
+                  className={`px-2.5 py-1 rounded-md transition-colors ${
+                    locale === code
+                      ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                  title={code === 'pt' ? t('common.portuguese') : t('common.english')}
+                >
+                  {code.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
             <div ref={notifRef} className="relative">
               <button
                 onClick={() => setNotifOpen(!notifOpen)}
@@ -269,15 +288,15 @@ export default function Layout() {
               {notifOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t('nav.notifications.title')}</h3>
                     <button onClick={() => { setNotifOpen(false); navigate('/alerts'); }} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                      View all
+                      {t('nav.notifications.viewAll')}
                     </button>
                   </div>
                   <div className="max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
                     {alerts.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                        No notifications
+                        {t('nav.notifications.empty')}
                       </div>
                     ) : (
                       alerts.map((alert) => (
@@ -297,7 +316,7 @@ export default function Layout() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDismissAlert(alert.id); }}
                                 className="flex-shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                                title="Dismiss"
+                                title={t('nav.dismiss')}
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -334,7 +353,7 @@ export default function Layout() {
                     onClick={() => setUserDropdownOpen(false)}
                   >
                     <User className="w-4 h-4" />
-                    My Profile
+                    {t('nav.profile')}
                   </Link>
                   <Link
                     to="/settings"
@@ -342,7 +361,7 @@ export default function Layout() {
                     onClick={() => setUserDropdownOpen(false)}
                   >
                     <Settings className="w-4 h-4" />
-                    Settings
+                    {t('nav.settings')}
                   </Link>
                   <hr className="my-1 border-gray-200 dark:border-gray-700" />
                   <button
@@ -353,7 +372,7 @@ export default function Layout() {
                     className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                   >
                     <LogOut className="w-4 h-4" />
-                    Logout
+                    {t('nav.logout')}
                   </button>
                 </div>
               )}

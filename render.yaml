@@ -17,6 +17,16 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://endpointx-dashboard.onrender.com
+      - key: OPENCODE_SERVER_URL
+        sync: false
+      - key: OPENCODE_SERVER_USERNAME
+        value: opencode
+      - key: OPENCODE_SERVER_PASSWORD
+        sync: false
+      - key: OPENCODE_MODEL
+        sync: false
+      - key: OPENCODE_TIMEOUT_MS
+        value: "60000"
       - key: DB_HOST
         fromDatabase:
           name: endpointx-db

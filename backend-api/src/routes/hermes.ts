@@ -4,6 +4,12 @@ import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import logger from '../utils/logger';
+import {
+  isOpencodeConfigured,
+  opencodeHealth,
+  analyzeSecurityContext,
+  recommendForFinding,
+} from '../services/opencode';
 
 const router = Router();
 
@@ -364,7 +370,7 @@ async function runScan(scanId: string, scanType: string, startedBy: string | nul
                   'NEW OPEN PORT',
                   `Port ${port}/${ident.service} was not present in the previous baseline.`,
                   JSON.stringify([{ port, service: ident.service, previous_baseline: known, detected_at: new Date().toISOString() }]),
-                  JSON.stringify(['New attack surface detected']),
+                  ['New attack surface detected'],
                 ]
               );
               await query(
@@ -387,7 +393,7 @@ async function runScan(scanId: string, scanType: string, startedBy: string | nul
               `HIGH RISK SERVICE: ${ident.service} on port ${port}`,
               `${ident.service} increases exposure and should be restricted or disabled if not required.`,
               JSON.stringify([{ port, protocol: 'tcp', service: ident.service, banner }]),
-              JSON.stringify(['Service exposure', 'Internet-facing risk if routed']),
+              ['Service exposure', 'Internet-facing risk if routed'],
             ]
           );
         }
@@ -525,7 +531,7 @@ async function correlateSoftwareVulns(scanId: string) {
           ]),
           rule.potential ? 70 : 90,
           rule.cvss * 10,
-          JSON.stringify(['CVSS', 'Version match', 'Service exposure']),
+          ['CVSS', 'Version match', 'Service exposure'],
           !!rule.potential,
         ]
       );
@@ -576,7 +582,7 @@ async function correlateSoftwareVulns(scanId: string) {
           rule.description,
           JSON.stringify([{ source: 'endpoint inventory', application: app.name, version: app.version }]),
           rule.cvss * 10,
-          JSON.stringify(['CVSS', 'Installed application match']),
+          ['CVSS', 'Installed application match'],
         ]
       );
     }
@@ -623,7 +629,7 @@ async function updatePostureScores() {
       [
         newId(), asset.id, score,
         score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F',
-        85, JSON.stringify(factors), JSON.stringify(reasons),
+        85, JSON.stringify(factors), reasons,
       ]
     );
     await query(`UPDATE hermes_assets SET posture_score = $1, posture_factors = $2, updated_at = NOW() WHERE id = $3`, [score, JSON.stringify(factors), asset.id]);
@@ -1044,6 +1050,101 @@ router.get('/policies', authenticate, requirePermission('hermes.view'), async (_
     const cidrs = await getSetting('hermes_allowed_cidrs', '');
     res.json({ success: true, data: { policies: r.rows, allowed_cidrs: cidrs } });
   } catch (error) {
+    next(error);
+  }
+});
+
+// ---------- AI (opencode) ----------
+
+router.get('/ai/status', authenticate, requirePermission('hermes.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const health = await opencodeHealth();
+    res.json({
+      success: true,
+      data: {
+        configured: isOpencodeConfigured(),
+        healthy: health.ok,
+        version: health.version || null,
+        error: health.error || null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/ai/analyze', authenticate, requirePermission('hermes.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!isOpencodeConfigured()) {
+      res.status(503).json({
+        success: false,
+        error: { message: 'IA não configurada. Defina OPENCODE_SERVER_URL no backend.' },
+      });
+      return;
+    }
+
+    const locale = (req.body?.locale as string) || 'pt';
+    const assets = await query('SELECT COUNT(*) as total FROM hermes_assets');
+    const avgScore = await query(`SELECT COALESCE(ROUND(AVG(posture_score)), 0) as score FROM hermes_assets WHERE is_authorized`);
+    const scans = await query(`SELECT status, COUNT(*) as c FROM hermes_scans GROUP BY status`);
+    const topFindings = await query(
+      `SELECT f.title, f.severity, f.description, f.cve_id, a.hostname
+       FROM hermes_findings f LEFT JOIN hermes_assets a ON f.asset_id = a.id
+       WHERE f.status = 'open'
+       ORDER BY CASE f.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END
+       LIMIT 25`
+    );
+
+    const scanStats: Record<string, number> = {};
+    for (const r of scans.rows) scanStats[r.status] = parseInt(r.c, 10);
+
+    const analysis = await analyzeSecurityContext({
+      assets: parseInt(assets.rows[0]?.total || '0', 10),
+      postureScore: parseInt(avgScore.rows[0]?.score || '0', 10),
+      scanStats,
+      openFindings: topFindings.rows,
+      locale,
+    });
+
+    res.json({ success: true, data: { analysis } });
+  } catch (error) {
+    logger.error('HERMES AI analyze failed', { error: (error as Error).message });
+    next(error);
+  }
+});
+
+router.post('/ai/recommend', authenticate, requirePermission('hermes.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!isOpencodeConfigured()) {
+      res.status(503).json({
+        success: false,
+        error: { message: 'IA não configurada. Defina OPENCODE_SERVER_URL no backend.' },
+      });
+      return;
+    }
+
+    const findingId = req.body?.finding_id as string | undefined;
+    const locale = (req.body?.locale as string) || 'pt';
+    if (!findingId) {
+      res.status(400).json({ success: false, error: { message: 'finding_id é obrigatório' } });
+      return;
+    }
+
+    const r = await query(
+      `SELECT f.title, f.severity, f.description, f.cve_id, a.hostname
+       FROM hermes_findings f LEFT JOIN hermes_assets a ON f.asset_id = a.id
+       WHERE f.id = $1`,
+      [findingId]
+    );
+    if (r.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Finding não encontrado' } });
+      return;
+    }
+
+    const recommendation = await recommendForFinding(r.rows[0], locale);
+    res.json({ success: true, data: { recommendation } });
+  } catch (error) {
+    logger.error('HERMES AI recommend failed', { error: (error as Error).message });
     next(error);
   }
 });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../i18n';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [mounted, setMounted] = useState(false);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { locale, setLocale, t } = useI18n();
 
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 100);
@@ -28,14 +30,14 @@ export default function LoginPage() {
   const validate = (): boolean => {
     const newErrors: typeof errors = {};
     if (!email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = t('login.emailRequired');
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      newErrors.email = 'Enter a valid email address';
+      newErrors.email = t('login.emailInvalid');
     }
     if (!password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = t('login.passwordRequired');
     } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = t('login.passwordMin');
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -51,7 +53,7 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Login failed. Please check your credentials.');
+      setServerError(err instanceof Error ? err.message : t('login.failed'));
     } finally {
       setLoading(false);
     }
@@ -69,8 +71,24 @@ export default function LoginPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4">
               <img src="/logotipo.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
             </div>
-            <h1 className="text-2xl font-bold text-white">EndpointX</h1>
-            <p className="text-gray-400 text-sm mt-1">Sign in to your admin account</p>
+            <h1 className="text-2xl font-bold text-white">{t('login.title')}</h1>
+            <p className="text-gray-400 text-sm mt-1">{t('login.subtitle')}</p>
+            <div className="mt-3 flex justify-center gap-1 rounded-lg bg-gray-800 p-0.5 text-xs w-fit mx-auto">
+              {(['pt', 'en'] as const).map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setLocale(code)}
+                  className={`px-3 py-1 rounded-md transition-colors ${
+                    locale === code
+                      ? 'bg-gray-900 text-blue-400'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {code.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
 
           {serverError && (
@@ -82,7 +100,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Email
+                {t('login.email')}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -109,7 +127,7 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Password
+                {t('login.password')}
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -159,10 +177,10 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Signing in...
+                  {t('login.signingIn')}
                 </>
               ) : (
-                'Sign in'
+                t('login.submit')
               )}
             </button>
           </form>

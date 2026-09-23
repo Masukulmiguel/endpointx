@@ -29,6 +29,7 @@ import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 import ErrorState from '../components/ErrorState';
 import type { DashboardOverview } from '../types';
+import { useI18n } from '../i18n';
 
 const PIE_COLORS = ['#10b981', '#6b7280', '#f59e0b', '#ef4444', '#8b5cf6'];
 const SEVERITY_COLORS: Record<string, string> = {
@@ -79,6 +80,7 @@ function SkeletonChart() {
 export default function DashboardPage() {
   const { data, loading, error, refetch } = useApi<DashboardOverview>('/dashboard/overview');
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const startAutoRefresh = useCallback(() => {
     const interval = setInterval(() => {
@@ -96,26 +98,26 @@ export default function DashboardPage() {
 
   const statCards = overview
     ? [
-        { title: 'Total Devices', value: overview.total_devices, change: 0, icon: Monitor, color: 'primary' as const },
-        { title: 'Online', value: overview.online_devices, change: 0, icon: Wifi, color: 'success' as const },
-        { title: 'Offline', value: overview.offline_devices, change: 0, icon: WifiOff, color: 'warning' as const },
-        { title: 'Alerts', value: overview.total_alerts || overview.alert_devices, change: 0, icon: AlertTriangle, color: 'danger' as const },
-        { title: 'Blocked', value: overview.blocked_devices, change: 0, icon: ShieldOff, color: 'danger' as const },
-        { title: 'Active Users', value: overview.active_users, change: 0, icon: Users, color: 'info' as const },
+        { title: t('dashboard.totalDevices'), value: overview.total_devices, change: 0, icon: Monitor, color: 'primary' as const },
+        { title: t('dashboard.online'), value: overview.online_devices, change: 0, icon: Wifi, color: 'success' as const },
+        { title: t('dashboard.offline'), value: overview.offline_devices, change: 0, icon: WifiOff, color: 'warning' as const },
+        { title: t('dashboard.alerts'), value: overview.total_alerts || overview.alert_devices, change: 0, icon: AlertTriangle, color: 'danger' as const },
+        { title: t('dashboard.blocked'), value: overview.blocked_devices, change: 0, icon: ShieldOff, color: 'danger' as const },
+        { title: t('dashboard.activeUsers'), value: overview.active_users, change: 0, icon: Users, color: 'info' as const },
       ]
     : [];
 
   if (error) {
-    return <ErrorState error={error} onRetry={refetch} title="Failed to load dashboard" />;
+    return <ErrorState error={error} onRetry={refetch} title={t('dashboard.failedLoad')} />;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('dashboard.title')}</h1>
         <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
           <Clock className="w-4 h-4" />
-          Auto-refreshes every 30s
+          {t('dashboard.autoRefresh')}
         </div>
       </div>
 
@@ -146,7 +148,7 @@ export default function DashboardPage() {
           <>
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
-                Device Status Distribution
+                {t('dashboard.deviceStatus')}
               </h3>
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
@@ -179,7 +181,7 @@ export default function DashboardPage() {
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
-                Heartbeat Trend (Last 24h)
+                {t('dashboard.heartbeat')}
               </h3>
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={overview?.heartbeat_trend || []}>
@@ -208,7 +210,7 @@ export default function DashboardPage() {
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
-                Alerts by Type
+                {t('dashboard.alertsByType')}
               </h3>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={overview?.alerts_by_type || []}>
@@ -230,7 +232,7 @@ export default function DashboardPage() {
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
-                Security Events by Severity
+                {t('dashboard.eventsBySeverity')}
               </h3>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={overview?.events_by_severity || []}>
@@ -264,7 +266,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-              Recent Security Events
+              {t('dashboard.recentEvents')}
             </h3>
           </div>
           <div className="overflow-x-auto">
@@ -272,16 +274,16 @@ export default function DashboardPage() {
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                    Event
+                    {t('dashboard.event')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                    Device
+                    {t('nav.devices')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                    Severity
+                    {t('hermes.severity')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                    Time
+                    {t('dashboard.time')}
                   </th>
                 </tr>
               </thead>
@@ -298,7 +300,7 @@ export default function DashboardPage() {
                 ) : (overview?.recent_events || []).length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                      No recent security events
+                      {t('dashboard.noRecentEvents')}
                     </td>
                   </tr>
                 ) : (
