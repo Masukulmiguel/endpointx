@@ -411,7 +411,7 @@ INSERT INTO app_settings (key, value, description) VALUES
     ('lockout_duration', '900', 'Account lockout duration in seconds'),
     ('session_timeout', '900', 'Session timeout in seconds'),
     ('mfa_required', 'false', 'Require MFA for all users'),
-    ('agent_min_version', '1.0.0', 'Minimum required agent version');
+    ('agent_min_version', '1.1.0', 'Minimum required agent version');
 
 -- Default admin user (password: REDACTED_PASSWORD - change immediately!)
 -- Password hash generated with bcrypt

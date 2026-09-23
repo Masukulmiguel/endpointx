@@ -583,7 +583,7 @@ class EndpointAgent:
                     "network_in": net_traffic.get("bytes_recv", 0),
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
-                    "current_version": "1.2.0",
+                    "current_version": "1.1.0",
                 }
 
                 if self._tamper:
@@ -605,8 +605,8 @@ class EndpointAgent:
                     data = resp.json()
                     server_data = data.get("data", {})
                     server_version = server_data.get("agent_version", "")
-                    if server_version and server_version != "1.2.0" and not getattr(self, '_update_attempted', False):
-                        logger.info("New agent version available: %s (current: 1.2.0)", server_version)
+                    if server_version and server_version != "1.1.0" and not getattr(self, '_update_attempted', False):
+                        logger.info("New agent version available: %s (current: 1.1.0)", server_version)
                         self._update_attempted = True
                         self._auto_update()
                     return data
@@ -1055,7 +1055,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.2.0 by Masukulu Miguel")
+        print("EndpointX Agent v1.1.0 by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:

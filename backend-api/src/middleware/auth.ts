@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT } from '../config/constants';
+import { query } from '../config/database';
 import logger from '../utils/logger';
 
 interface AuthUser {
@@ -28,6 +29,35 @@ interface JwtPayload {
   aud: string;
 }
 
+// Short-lived cache so RBAC uses current DB permissions even if the JWT is stale
+const permCache = new Map<string, { perms: string[]; exp: number }>();
+const PERM_CACHE_TTL_MS = 60_000;
+
+async function loadRolePermissions(roleId: string): Promise<string[] | null> {
+  const hit = permCache.get(roleId);
+  if (hit && hit.exp > Date.now()) return hit.perms;
+  try {
+    const result = await query(
+      'SELECT p.code FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id WHERE rp.role_id = $1',
+      [roleId]
+    );
+    const perms = result.rows.map((r: { code: string }) => r.code);
+    permCache.set(roleId, { perms, exp: Date.now() + PERM_CACHE_TTL_MS });
+    return perms;
+  } catch (error) {
+    logger.warn('Failed to load role permissions from DB', {
+      roleId,
+      error: (error as Error).message,
+    });
+    return null;
+  }
+}
+
+export function invalidatePermissionCache(roleId?: string) {
+  if (roleId) permCache.delete(roleId);
+  else permCache.clear();
+}
+
 function extractToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -42,11 +72,11 @@ function extractToken(req: Request): string | null {
   return null;
 }
 
-function authenticate(
+async function authenticate(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   const token = extractToken(req);
 
   if (!token) {
@@ -66,12 +96,13 @@ function authenticate(
       audience: JWT.AUDIENCE,
     }) as JwtPayload;
 
+    const dbPerms = await loadRolePermissions(decoded.role_id);
     const authUser: AuthUser = {
       id: decoded.id,
       email: decoded.email,
       role_id: decoded.role_id,
       role_name: decoded.role_name,
-      permissions: decoded.permissions || [],
+      permissions: dbPerms ?? decoded.permissions ?? [],
     };
 
     (req as AuthRequest).user = authUser;
@@ -131,11 +162,11 @@ function authenticate(
   }
 }
 
-function optionalAuth(
+async function optionalAuth(
   req: Request,
   _res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   const token = extractToken(req);
 
   if (!token) {
@@ -149,12 +180,13 @@ function optionalAuth(
       audience: JWT.AUDIENCE,
     }) as JwtPayload;
 
+    const dbPerms = await loadRolePermissions(decoded.role_id);
     const authUser: AuthUser = {
       id: decoded.id,
       email: decoded.email,
       role_id: decoded.role_id,
       role_name: decoded.role_name,
-      permissions: decoded.permissions || [],
+      permissions: dbPerms ?? decoded.permissions ?? [],
     };
 
     (req as AuthRequest).user = authUser;

@@ -9,6 +9,8 @@ import {
   opencodeHealth,
   analyzeSecurityContext,
   recommendForFinding,
+  localAnalyzeSecurityContext,
+  localRecommendForFinding,
 } from '../services/opencode';
 
 const router = Router();
@@ -1075,14 +1077,6 @@ router.get('/ai/status', authenticate, requirePermission('hermes.view'), async (
 
 router.post('/ai/analyze', authenticate, requirePermission('hermes.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!isOpencodeConfigured()) {
-      res.status(503).json({
-        success: false,
-        error: { message: 'IA não configurada. Defina OPENCODE_SERVER_URL no backend.' },
-      });
-      return;
-    }
-
     const locale = (req.body?.locale as string) || 'pt';
     const assets = await query('SELECT COUNT(*) as total FROM hermes_assets');
     const avgScore = await query(`SELECT COALESCE(ROUND(AVG(posture_score)), 0) as score FROM hermes_assets WHERE is_authorized`);
@@ -1098,15 +1092,28 @@ router.post('/ai/analyze', authenticate, requirePermission('hermes.view'), async
     const scanStats: Record<string, number> = {};
     for (const r of scans.rows) scanStats[r.status] = parseInt(r.c, 10);
 
-    const analysis = await analyzeSecurityContext({
+    const context = {
       assets: parseInt(assets.rows[0]?.total || '0', 10),
       postureScore: parseInt(avgScore.rows[0]?.score || '0', 10),
       scanStats,
       openFindings: topFindings.rows,
       locale,
-    });
+    };
 
-    res.json({ success: true, data: { analysis } });
+    if (isOpencodeConfigured()) {
+      try {
+        const analysis = await analyzeSecurityContext(context);
+        res.json({ success: true, data: { analysis, mode: 'opencode' } });
+        return;
+      } catch (aiError) {
+        logger.warn('HERMES AI analyze fell back to local briefing', { error: (aiError as Error).message });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { analysis: localAnalyzeSecurityContext(context), mode: 'local' },
+    });
   } catch (error) {
     logger.error('HERMES AI analyze failed', { error: (error as Error).message });
     next(error);
@@ -1115,14 +1122,6 @@ router.post('/ai/analyze', authenticate, requirePermission('hermes.view'), async
 
 router.post('/ai/recommend', authenticate, requirePermission('hermes.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!isOpencodeConfigured()) {
-      res.status(503).json({
-        success: false,
-        error: { message: 'IA não configurada. Defina OPENCODE_SERVER_URL no backend.' },
-      });
-      return;
-    }
-
     const findingId = req.body?.finding_id as string | undefined;
     const locale = (req.body?.locale as string) || 'pt';
     if (!findingId) {
@@ -1141,8 +1140,20 @@ router.post('/ai/recommend', authenticate, requirePermission('hermes.view'), asy
       return;
     }
 
-    const recommendation = await recommendForFinding(r.rows[0], locale);
-    res.json({ success: true, data: { recommendation } });
+    if (isOpencodeConfigured()) {
+      try {
+        const recommendation = await recommendForFinding(r.rows[0], locale);
+        res.json({ success: true, data: { recommendation, mode: 'opencode' } });
+        return;
+      } catch (aiError) {
+        logger.warn('HERMES AI recommend fell back to local briefing', { error: (aiError as Error).message });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { recommendation: localRecommendForFinding(r.rows[0], locale), mode: 'local' },
+    });
   } catch (error) {
     logger.error('HERMES AI recommend failed', { error: (error as Error).message });
     next(error);

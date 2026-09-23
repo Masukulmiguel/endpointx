@@ -70,7 +70,7 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
 // Agent heartbeat
 router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes, agent_hash } = req.body;
+    const { agent_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes, agent_hash, current_version } = req.body;
 
     if (!agent_id) {
       res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
@@ -85,9 +85,21 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     }
 
     const device = deviceResult.rows[0];
+    const agentVersion = typeof current_version === 'string' && current_version.trim()
+      ? current_version.trim().slice(0, 20)
+      : null;
 
-    await query("UPDATE devices SET status = 'online', last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3 WHERE id = $4",
-      [cpu_usage || 0, ram_usage || 0, disk_usage || 0, device.id]);
+    if (agentVersion) {
+      await query(
+        "UPDATE devices SET status = 'online', last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3, agent_version = $4 WHERE id = $5",
+        [cpu_usage || 0, ram_usage || 0, disk_usage || 0, agentVersion, device.id]
+      );
+    } else {
+      await query(
+        "UPDATE devices SET status = 'online', last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3 WHERE id = $4",
+        [cpu_usage || 0, ram_usage || 0, disk_usage || 0, device.id]
+      );
+    }
 
     // Store agent hash if provided; detect tamper if it changes
     if (agent_hash) {
@@ -122,7 +134,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       await query("UPDATE agent_commands SET status = 'processing' WHERE id = $1", [cmd.id]);
     }
 
-    res.json({ success: true, data: { device_id: device.id, commands: commands.rows, agent_version: '1.2.0' } });
+    res.json({ success: true, data: { device_id: device.id, commands: commands.rows, agent_version: '1.1.0' } });
   } catch (error) {
     next(error);
   }

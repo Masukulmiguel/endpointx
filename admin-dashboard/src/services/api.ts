@@ -328,33 +328,33 @@ class ApiClient {
   // Compliance Policies
   async getPolicies(params?: Record<string, any>) {
     const query = params ? '?' + new URLSearchParams(params).toString() : '';
-    return this.request(`/compliance/policies${query}`);
+    return this.request(`/policies${query}`);
   }
 
   async createPolicy(data: any) {
-    return this.request('/compliance/policies', {
+    return this.request('/policies', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
   async updatePolicy(id: string, data: any) {
-    return this.request(`/compliance/policies/${id}`, {
+    return this.request(`/policies/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
   async deletePolicy(id: string) {
-    return this.request(`/compliance/policies/${id}`, { method: 'DELETE' });
+    return this.request(`/policies/${id}`, { method: 'DELETE' });
   }
 
   async checkCompliance(policyId: string) {
-    return this.request(`/compliance/policies/${policyId}/check`, { method: 'POST' });
+    return this.request(`/policies/${policyId}/check`, { method: 'POST' });
   }
 
   async getComplianceResults(policyId: string) {
-    return this.request(`/compliance/policies/${policyId}/results`);
+    return this.request(`/policies/${policyId}/results`);
   }
 
   // Software

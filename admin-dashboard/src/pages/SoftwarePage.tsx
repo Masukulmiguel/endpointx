@@ -457,7 +457,7 @@ export default function SoftwarePage() {
                   value={formVersion}
                   onChange={(e) => setFormVersion(e.target.value)}
                   className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="e.g., 1.0.0"
+                  placeholder="e.g., 1.1.0"
                 />
               </div>
               <div>

@@ -60,7 +60,7 @@ const ruleFields = [
   { key: 'require_antivirus', label: 'Require Antivirus', type: 'toggle' },
   { key: 'max_cpu_usage', label: 'Max CPU Usage (%)', type: 'number', placeholder: 'e.g., 90' },
   { key: 'max_disk_usage', label: 'Max Disk Usage (%)', type: 'number', placeholder: 'e.g., 90' },
-  { key: 'required_agent_version', label: 'Required Agent Version', type: 'text', placeholder: 'e.g., 1.0.0' },
+  { key: 'required_agent_version', label: 'Required Agent Version', type: 'text', placeholder: 'e.g., 1.1.0' },
 ];
 
 export default function PoliciesPage() {
@@ -76,11 +76,11 @@ export default function PoliciesPage() {
   const [checkResults, setCheckResults] = useState<ComplianceResult[] | null>(null);
   const [checking, setChecking] = useState(false);
 
-  const { data, loading, error, refetch } = useApi<{ policies: CompliancePolicy[] }>('/compliance/policies', {
+  const { data, loading, error, refetch } = useApi<{ policies: CompliancePolicy[] }>('/policies', {
     params: search ? { search } : undefined,
   });
-  const { data: statsData } = useApi<PolicyStats>('/compliance/stats');
-  const { loading: saving, mutate: createPolicy } = useApiMutation('/compliance/policies', 'POST');
+  const { data: statsData } = useApi<PolicyStats>('/policies/stats');
+  const { loading: saving, mutate: createPolicy } = useApiMutation('/policies', 'POST');
   const { loading: updating, mutate: updatePolicy } = useApiMutation('', 'PUT');
   const { loading: deleting, mutate: deletePolicy } = useApiMutation('', 'DELETE');
 
@@ -115,7 +115,7 @@ export default function PoliciesPage() {
     const payload = { name: formName.trim(), description: formDescription.trim(), rules: formRules };
     let result;
     if (editingPolicy) {
-      result = await updatePolicy(`/compliance/policies/${editingPolicy.id}`, payload);
+      result = await updatePolicy(`/policies/${editingPolicy.id}`, payload);
     } else {
       result = await createPolicy(payload);
     }
@@ -130,7 +130,7 @@ export default function PoliciesPage() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      const result = await deletePolicy(`/compliance/policies/${id}`, undefined as any);
+      const result = await deletePolicy(`/policies/${id}`, undefined as any);
       if (result !== null) {
         refetch();
         setDeleteConfirm(null);

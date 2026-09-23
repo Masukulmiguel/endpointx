@@ -1032,7 +1032,7 @@ const seedDefaults = async (): Promise<void> => {
       ['lockout_duration', '900', 'Account lockout duration in seconds'],
       ['session_timeout', '900', 'Session timeout in seconds'],
       ['mfa_required', 'false', 'Require MFA for all users'],
-      ['agent_min_version', '1.0.0', 'Minimum required agent version'],
+      ['agent_min_version', '1.1.0', 'Minimum required agent version'],
       ['hermes_allowed_cidrs', '192.168.0.0/16,10.0.0.0/8,172.16.0.0/12', 'HERMES allowed CIDR ranges'],
       ['hermes_emergency_stop', 'false', 'Emergency stop for all HERMES scans'],
       ['hermes_daily_scan_enabled', 'true', 'Enable daily HERMES scan'],
@@ -1044,6 +1044,13 @@ const seedDefaults = async (): Promise<void> => {
         [key, value, desc]
       );
     }
+
+    // Ensure agent_min_version is current on existing DBs (seed used to insert 1.0.0)
+    await client.query(
+      `INSERT INTO app_settings (key, value, description)
+       VALUES ('agent_min_version', '1.1.0', 'Minimum required agent version')
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value WHERE app_settings.value = '1.0.0'`
+    );
 
     await client.query('COMMIT');
     logger.info('Default data seeded successfully');

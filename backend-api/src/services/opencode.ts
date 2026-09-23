@@ -10,6 +10,168 @@ export function isOpencodeConfigured(): boolean {
   return Boolean(OPENCODE_URL);
 }
 
+export function localAnalyzeSecurityContext(context: {
+  assets?: number;
+  openFindings?: Array<{
+    title: string;
+    severity: string;
+    hostname?: string;
+    cve_id?: string;
+    description?: string;
+  }>;
+  scanStats?: Record<string, number>;
+  postureScore?: number;
+  locale?: string;
+}): string {
+  const pt = context.locale !== 'en';
+  const findings = context.openFindings || [];
+  const assets = context.assets ?? 0;
+  const posture = context.postureScore ?? 0;
+  const critical = findings.filter((f) => f.severity === 'critical').length;
+  const high = findings.filter((f) => f.severity === 'high').length;
+  const medium = findings.filter((f) => f.severity === 'medium').length;
+  const low = findings.filter((f) => f.severity === 'low').length;
+  const failedScans = context.scanStats?.failed ?? 0;
+  const completedScans = context.scanStats?.completed ?? 0;
+
+  const risk =
+    critical > 0 ? 'critical' : high > 0 ? 'high' : medium > 0 || low > 0 ? 'medium' : 'low';
+
+  const top = findings.slice(0, 5);
+  const riskBullets =
+    top.length > 0
+      ? top.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}${f.hostname ? ` (${f.hostname})` : ''}${f.cve_id ? ` — ${f.cve_id}` : ''}`)
+      : pt
+        ? ['1. Sem findings abertos com severidade elevada.']
+        : ['1. No open findings at high severity.'];
+
+  const actions = pt
+    ? [
+        critical > 0 ? 'Priorizar remediação dos findings críticos.' : null,
+        high > 0 ? 'Revisar findings de severidade alta esta semana.' : null,
+        failedScans > 0 ? `Investigar ${failedScans} scan(s) HERMES falhados.` : null,
+        posture < 70 ? 'Melhorar a postura de segurança dos ativos autorizados.' : null,
+        'Manter agentes no mínimo 1.1.0 e confirmar heartbeats recentes.',
+      ].filter(Boolean) as string[]
+    : [
+        critical > 0 ? 'Remediate critical findings first.' : null,
+        high > 0 ? 'Review high-severity findings this week.' : null,
+        failedScans > 0 ? `Investigate ${failedScans} failed HERMES scan(s).` : null,
+        posture < 70 ? 'Improve security posture on authorized assets.' : null,
+        'Keep agents at 1.1.0+ and verify recent heartbeats.',
+      ].filter(Boolean) as string[];
+
+  const healthy = pt
+    ? [
+        `Postura média dos ativos: ${posture}/100.`,
+        completedScans > 0 ? `${completedScans} scan(s) concluído(s).` : null,
+        assets > 0 ? `${assets} ativo(s) sob gestão HERMES.` : null,
+        'Sem indícios de paragem de emergência ativa.',
+      ].filter(Boolean) as string[]
+    : [
+        `Average asset posture: ${posture}/100.`,
+        completedScans > 0 ? `${completedScans} completed scan(s).` : null,
+        assets > 0 ? `${assets} asset(s) under HERMES management.` : null,
+        'No emergency stop active.',
+      ].filter(Boolean) as string[];
+
+  const lines = pt
+    ? [
+        'Briefing de segurança HERMES (análise local — opencode não configurado no servidor).',
+        '',
+        '1) Principais riscos',
+        ...riskBullets,
+        `   Findings: ${critical} crítico(s), ${high} alto(s), ${medium} médio(s), ${low} baixo(s).`,
+        '',
+        '2) Ações imediatas',
+        ...actions.map((a, i) => `${i + 1}. ${a}`),
+        '',
+        '3) O que parece saudável',
+        ...healthy.map((a, i) => `${i + 1}. ${a}`),
+        '',
+        `4) Nível de risco global: ${risk}`,
+        '',
+        'Nota: configure OPENCODE_SERVER_URL no Render para briefing gerado por IA real.',
+      ]
+    : [
+        'HERMES security briefing (local analysis — opencode not configured on the server).',
+        '',
+        '1) Top risks',
+        ...riskBullets,
+        `   Findings: ${critical} critical, ${high} high, ${medium} medium, ${low} low.`,
+        '',
+        '2) Immediate actions',
+        ...actions.map((a, i) => `${i + 1}. ${a}`),
+        '',
+        '3) What looks healthy',
+        ...healthy.map((a, i) => `${i + 1}. ${a}`),
+        '',
+        `4) Overall risk level: ${risk}`,
+        '',
+        'Note: set OPENCODE_SERVER_URL on Render for real AI-generated briefings.',
+      ];
+
+  return lines.join('\n');
+}
+
+export function localRecommendForFinding(
+  finding: {
+    title: string;
+    severity: string;
+    description?: string;
+    hostname?: string;
+    cve_id?: string;
+  },
+  locale = 'pt'
+): string {
+  const pt = locale !== 'en';
+  const sev = (finding.severity || 'medium').toLowerCase();
+  const risk =
+    pt
+      ? `Este finding de severidade ${sev} ${finding.cve_id ? `(${finding.cve_id})` : ''} representa risco ${sev === 'critical' || sev === 'high' ? 'elevado' : 'moderado'} para ${finding.hostname || 'o ativo afetado'}.`
+      : `This ${sev} severity finding ${finding.cve_id ? `(${finding.cve_id})` : ''} poses ${sev === 'critical' || sev === 'high' ? 'high' : 'moderate'} risk to ${finding.hostname || 'the affected asset'}.`;
+
+  const steps = pt
+    ? [
+        '1. Confirmar o ativo e o impacto (host, serviços expostos, dados sensíveis).',
+        '2. Aplicar patch/configuração recomendada pelo vendor ou regra HERMES.',
+        '3. Isolar temporariamente se for crítico e não houver correção imediata.',
+        '4. Reexecutar o scan HERMES no ativo para validar a remediação.',
+        '5. Registar a exceção no dashboard se houver justificação de negócio.',
+      ]
+    : [
+        '1. Confirm asset and impact (host, exposed services, sensitive data).',
+        '2. Apply the vendor/HERMES recommended patch or configuration.',
+        '3. Temporarily isolate if critical and no immediate fix exists.',
+        '4. Re-run the HERMES scan on the asset to verify remediation.',
+        '5. Document an exception in the dashboard if there is a business justification.',
+      ];
+
+  const verify = pt
+    ? 'Verificação: novo scan sem o finding aberto + heartbeat OK + sem novos alertas related em 24h.'
+    : 'Verification: new scan without the open finding + OK heartbeat + no related alerts in 24h.';
+
+  return [
+    pt ? 'Recomendação de remediação HERMES (análise local).' : 'HERMES remediation recommendation (local analysis).',
+    '',
+    pt ? 'Risco' : 'Risk',
+    risk,
+    finding.description ? finding.description.slice(0, 400) : '',
+    '',
+    pt ? 'Remediação passo a passo' : 'Step-by-step remediation',
+    ...steps,
+    '',
+    pt ? 'Verificação' : 'Verification',
+    verify,
+    '',
+    pt
+      ? 'Nota: configure OPENCODE_SERVER_URL para recomendações geradas por IA real.'
+      : 'Note: set OPENCODE_SERVER_URL for real AI-generated recommendations.',
+  ]
+    .filter((l) => l !== '')
+    .join('\n');
+}
+
 async function opencodeFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!OPENCODE_URL) {
     throw new Error('OPENCODE_SERVER_URL não configurado');

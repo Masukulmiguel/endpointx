@@ -12,7 +12,7 @@ router.get('/stats', authenticate, requirePermission('devices.view'), async (_re
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-        SUM(CASE WHEN agent_version IS NOT NULL AND agent_version < '1.0.0' THEN 1 ELSE 0 END) as outdated
+        SUM(CASE WHEN agent_version IS NOT NULL AND agent_version < '1.1.0' THEN 1 ELSE 0 END) as outdated
       FROM devices
     `);
 

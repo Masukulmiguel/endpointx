@@ -160,7 +160,7 @@ export default function HermesPage() {
     if (res?.analysis) {
       setAiAnalysis(res.analysis);
     } else {
-      setAiError(aiStatus?.configured === false ? t('hermes.ai.notConfigured') : t('common.error'));
+      setAiError(t('common.error'));
     }
   };
 
@@ -590,12 +590,12 @@ ${assets
                 <p className="text-xs text-gray-400 mt-1">
                   {aiStatus?.configured
                     ? `opencode: ${aiStatus.healthy ? 'OK' : aiStatus.error || 'offline'}${aiStatus.version ? ` · v${aiStatus.version}` : ''}`
-                    : t('hermes.ai.notConfigured')}
+                    : `${t('hermes.ai.localMode')}`}
                 </p>
               </div>
               <button
                 onClick={handleAiAnalyze}
-                disabled={analyzing || aiStatus?.configured === false}
+                disabled={analyzing}
                 className="btn-primary disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4" />
@@ -630,7 +630,7 @@ ${assets
                   </div>
                   <button
                     onClick={() => handleAiRecommend(f.id)}
-                    disabled={recommending || aiStatus?.configured === false}
+                    disabled={recommending}
                     className="btn-secondary text-xs shrink-0 disabled:opacity-50"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
