@@ -24,9 +24,9 @@ router.get('/permissions', authenticate, requirePermission('roles.view'), async 
 // Get role
 router.get('/:id', authenticate, requirePermission('roles.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const role = await query('SELECT * FROM roles WHERE id = ?', [req.params.id]);
+    const role = await query('SELECT * FROM roles WHERE id = $1', [req.params.id]);
     if (role.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Role not found' } }); return; }
-    const perms = await query('SELECT p.* FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id WHERE rp.role_id = ?', [req.params.id]);
+    const perms = await query('SELECT p.* FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id WHERE rp.role_id = $1', [req.params.id]);
     res.json({ success: true, data: { role: { ...role.rows[0], permissions: perms.rows } } });
   } catch (error) { next(error); }
 });
@@ -36,7 +36,7 @@ router.post('/', authenticate, requirePermission('roles.manage'), async (req: Au
   try {
     const { name, display_name, description, permission_ids } = req.body;
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    await query('INSERT INTO roles (id, name, display_name, description) VALUES (?, ?, ?, ?)', [id, name, display_name, description || '']);
+    await query('INSERT INTO roles (id, name, display_name, description) VALUES ($1, $2, $3, $4)', [id, name, display_name, description || '']);
     if (permission_ids && Array.isArray(permission_ids)) {
       for (const pid of permission_ids) {
         await query('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)', [id, pid]);

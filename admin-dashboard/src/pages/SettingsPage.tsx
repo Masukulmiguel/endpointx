@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import AlertBanner from '../components/AlertBanner';
+import ErrorState from '../components/ErrorState';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 interface SettingsData {
@@ -101,16 +102,7 @@ export default function SettingsPage() {
   }
 
   if (error) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <p className="text-red-500 dark:text-red-400 text-sm">{error}</p>
-          <button onClick={refetch} className="mt-3 text-sm text-indigo-600 hover:text-indigo-500">
-            Retry
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState error={error} onRetry={refetch} title="Failed to load settings" />;
   }
 
   return (

@@ -9,7 +9,7 @@ const router = Router();
 router.get('/', authenticate, requirePermission('alerts.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
-    const result = await query('SELECT a.*, d.hostname FROM alerts a LEFT JOIN devices d ON a.device_id = d.id ORDER BY a.created_at DESC LIMIT ?', [limit]);
+    const result = await query('SELECT a.*, d.hostname FROM alerts a LEFT JOIN devices d ON a.device_id = d.id ORDER BY a.created_at DESC LIMIT $1', [limit]);
     res.json({ success: true, data: { alerts: result.rows } });
   } catch (error) { next(error); }
 });
@@ -19,7 +19,7 @@ router.get('/stats', authenticate, requirePermission('alerts.view'), async (req:
     const totalResult = await query('SELECT COUNT(*) as count FROM alerts', []);
     const bySeverity = await query('SELECT severity, COUNT(*) as count FROM alerts GROUP BY severity', []);
     const byType = await query('SELECT alert_type, COUNT(*) as count FROM alerts GROUP BY alert_type', []);
-    const unresolvedResult = await query("SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = 0", []);
+    const unresolvedResult = await query("SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = false", []);
 
     const sevMap: Record<string, number> = {};
     for (const row of bySeverity.rows) {
@@ -44,7 +44,7 @@ router.get('/stats', authenticate, requirePermission('alerts.view'), async (req:
 
 router.get('/:id', authenticate, requirePermission('alerts.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query('SELECT * FROM alerts WHERE id = ?', [req.params.id]);
+    const result = await query('SELECT * FROM alerts WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
     res.json({ success: true, data: { alert: result.rows[0] } });
   } catch (error) { next(error); }
@@ -76,7 +76,7 @@ router.post('/', authenticate, requirePermission('alerts.manage'), async (req: A
 
 router.post('/:id/dismiss', authenticate, requirePermission('alerts.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    await query("UPDATE alerts SET is_dismissed = 1, dismissed_by = ?, dismissed_at = datetime('now') WHERE id = ?", [req.user?.id, req.params.id]);
+    await query("UPDATE alerts SET is_dismissed = true, dismissed_by = $1, dismissed_at = NOW() WHERE id = $2", [req.user?.id, req.params.id]);
     res.json({ success: true, data: { message: 'Alert dismissed' } });
   } catch (error) { next(error); }
 });

@@ -27,7 +27,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import LoadingSpinner from '../components/LoadingSpinner';
+import ErrorState from '../components/ErrorState';
 import type { DashboardOverview } from '../types';
 
 const PIE_COLORS = ['#10b981', '#6b7280', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -106,16 +106,7 @@ export default function DashboardPage() {
     : [];
 
   if (error) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <p className="text-red-500 dark:text-red-400 text-sm">{error}</p>
-          <button onClick={refetch} className="mt-3 text-sm text-indigo-600 hover:text-indigo-500">
-            Retry
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState error={error} onRetry={refetch} title="Failed to load dashboard" />;
   }
 
   return (

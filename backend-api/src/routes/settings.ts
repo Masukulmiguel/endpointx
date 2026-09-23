@@ -16,9 +16,9 @@ router.put('/:key', authenticate, requirePermission('settings.manage'), async (r
   try {
     const { key } = req.params;
     const { value } = req.body;
-    await query("UPDATE app_settings SET value = ?, updated_at = datetime('now') WHERE key = ?", [value, key]);
+    await query("UPDATE app_settings SET value = $1, updated_at = NOW() WHERE key = $2", [value, key]);
 
-    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'settings_update', 'setting', key, `Setting ${key} updated`, req.ip]);
 
     res.json({ success: true, data: { message: 'Setting updated' } });

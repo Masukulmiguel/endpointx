@@ -9,9 +9,9 @@ const router = Router();
 // Network stats
 router.get('/stats', authenticate, requirePermission('network.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const totalResult = await query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = 1');
-    const onlineResult = await query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = 1 AND status = 'online'");
-    const latencyResult = await query("SELECT AVG(ram_usage) as avg_ram FROM device_heartbeats WHERE recorded_at > datetime('now', '-5 minutes')");
+    const totalResult = await query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = true');
+    const onlineResult = await query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = true AND status = 'online'");
+    const latencyResult = await query("SELECT AVG(ram_usage) as avg_ram FROM device_heartbeats WHERE recorded_at > NOW() - INTERVAL '5 minutes'");
 
     const total = totalResult.rows[0]?.total || 0;
     const online = onlineResult.rows[0]?.online || 0;
@@ -44,7 +44,7 @@ router.get('/bandwidth', authenticate, requirePermission('network.view'), async 
     const params: any[] = [];
 
     if (deviceId) {
-      sql += ' WHERE h.device_id = ?';
+      sql += ' WHERE h.device_id = $1';
       params.push(deviceId);
     }
 
@@ -75,7 +75,7 @@ router.get('/interfaces', authenticate, requirePermission('network.view'), async
     const params: any[] = [];
 
     if (deviceId) {
-      sql += ' WHERE ni.device_id = ?';
+      sql += ' WHERE ni.device_id = $1';
       params.push(deviceId);
     }
 

@@ -58,17 +58,17 @@ router.post('/', authenticate, requirePermission('devices.commands'), async (req
     if (command_type === 'uninstall_agent') {
       const agentSecret = process.env.AGENT_SECRET || '';
       // Look up the device's agent_id for the HMAC
-      const deviceResult = await query('SELECT agent_id FROM devices WHERE id = ?', [device_id]);
+      const deviceResult = await query('SELECT agent_id FROM devices WHERE id = $1', [device_id]);
       const agentId = deviceResult.rows[0]?.agent_id || '';
       const message = `${agentId}:${command_type}`;
       const signature = crypto.createHmac('sha256', agentSecret).update(message).digest('hex');
       finalParams.signature = signature;
     }
 
-    await query('INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES (?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES ($1, $2, $3, $4, $5, $6)',
       [id, device_id, command_type, JSON.stringify(finalParams), 'pending', req.user?.id]);
 
-    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'command_execute', 'device', device_id, `Command: ${command_type}`, req.ip]);
 
     res.status(201).json({ success: true, data: { id, command_type, status: 'pending' } });
@@ -78,7 +78,7 @@ router.post('/', authenticate, requirePermission('devices.commands'), async (req
 // Get single command
 router.get('/:id', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query('SELECT * FROM agent_commands WHERE id = ?', [req.params.id]);
+    const result = await query('SELECT * FROM agent_commands WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Command not found' } }); return; }
     res.json({ success: true, data: { command: result.rows[0] } });
   } catch (error) { next(error); }
@@ -87,7 +87,7 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
 // Cancel command
 router.post('/:id/cancel', authenticate, requirePermission('devices.commands'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    await query("UPDATE agent_commands SET status = 'failed' WHERE id = ? AND status = 'pending'", [req.params.id]);
+    await query("UPDATE agent_commands SET status = 'failed' WHERE id = $1 AND status = 'pending'", [req.params.id]);
     res.json({ success: true, data: { message: 'Command cancelled' } });
   } catch (error) { next(error); }
 });

@@ -9,7 +9,7 @@ async function updateOfflineDevices() {
   try {
     const offlineThresholdSeconds = parseInt(process.env.OFFLINE_THRESHOLD || '300', 10);
     const thresholdMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
-    await query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < datetime('now', '-${thresholdMinutes} minutes')`);
+    await query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < NOW() - INTERVAL '${thresholdMinutes} minutes'`);
   } catch (e) { /* ignore */ }
 }
 
@@ -22,20 +22,20 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
     const alertDevices = await query("SELECT COUNT(*) as count FROM devices WHERE status = 'alert'", []);
     const blockedDevices = await query("SELECT COUNT(*) as count FROM devices WHERE status = 'blocked'", []);
     const totalAlerts = await query('SELECT COUNT(*) as count FROM alerts', []);
-    const unresolvedAlerts = await query("SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = 0", []);
+    const unresolvedAlerts = await query("SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = false", []);
     const quarantineDevices = await query("SELECT COUNT(*) as count FROM devices WHERE status = 'quarantine'", []);
     const totalUsers = await query('SELECT COUNT(*) as count FROM users', []);
-    const activeUsers = await query("SELECT COUNT(*) as count FROM users WHERE is_active = 1", []);
+    const activeUsers = await query("SELECT COUNT(*) as count FROM users WHERE is_active = true", []);
     const recentEvents = await query('SELECT se.*, d.hostname as device_name FROM security_events se LEFT JOIN devices d ON se.device_id = d.id ORDER BY se.created_at DESC LIMIT 10', []);
-    const criticalAlerts = await query("SELECT a.*, d.hostname as device_name FROM alerts a LEFT JOIN devices d ON a.device_id = d.id WHERE a.severity IN ('critical', 'high') AND a.is_dismissed = 0 ORDER BY a.created_at DESC LIMIT 10", []);
+    const criticalAlerts = await query("SELECT a.*, d.hostname as device_name FROM alerts a LEFT JOIN devices d ON a.device_id = d.id WHERE a.severity IN ('critical', 'high') AND a.is_dismissed = false ORDER BY a.created_at DESC LIMIT 10", []);
     const statusDistribution = await query('SELECT status, COUNT(*) as count FROM devices GROUP BY status', []);
 
     // Heartbeat trend - count heartbeats per hour for last 24h
     const heartbeatTrend = await query(`
-      SELECT strftime('%H:%M', recorded_at) as time, COUNT(*) as count
+      SELECT TO_CHAR(recorded_at, 'HH24:MI') as time, COUNT(*) as count
       FROM device_heartbeats
-      WHERE recorded_at > datetime('now', '-24 hours')
-      GROUP BY strftime('%Y-%m-%d %H', recorded_at)
+      WHERE recorded_at > NOW() - INTERVAL '24 hours'
+      GROUP BY TO_CHAR(recorded_at, 'YYYY-MM-DD HH24')
       ORDER BY time ASC
     `, []);
 
