@@ -492,7 +492,7 @@ async function correlateSoftwareVulns(scanId: string) {
       if (rule.matchVersion && !rule.matchVersion(String(row.version))) continue;
 
       await query(
-        `INSERT INTO hermes_cves (id, cve_id, cvss_score, severity, description, affected_product, affected_version, cpe, remediation, references, source, fetched_at)
+        `INSERT INTO hermes_cves (id, cve_id, cvss_score, severity, description, affected_product, affected_version, cpe, remediation, cve_references, source, fetched_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'local', NOW())
          ON CONFLICT (cve_id) DO NOTHING`,
         [

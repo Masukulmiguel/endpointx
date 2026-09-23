@@ -463,7 +463,7 @@ const createInlineSchema = async (): Promise<void> => {
       affected_version VARCHAR(100),
       cpe TEXT,
       remediation TEXT,
-      references TEXT[],
+      cve_references TEXT[],
       source VARCHAR(50) DEFAULT 'local',
       published_at TIMESTAMPTZ,
       fetched_at TIMESTAMPTZ DEFAULT NOW()
