@@ -11,6 +11,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import api from '../services/api';
 import SearchInput from '../components/SearchInput';
 import AlertBanner from '../components/AlertBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -142,15 +143,9 @@ export default function PoliciesPage() {
   const handleRunCheck = useCallback(async (policyId: string) => {
     setChecking(true);
     try {
-      const response = await fetch(`/api/compliance/policies/${policyId}/check`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const result = await response.json();
-      setCheckResults(result.data?.results || result.results || []);
+      const result = await api.checkCompliance(policyId);
+      const payload = result as any;
+      setCheckResults(payload?.data?.results || payload?.results || []);
       setToast({ type: 'success', message: 'Compliance check completed' });
     } catch {
       setToast({ type: 'error', message: 'Compliance check failed' });

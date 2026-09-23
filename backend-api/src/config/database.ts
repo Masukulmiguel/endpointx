@@ -894,21 +894,50 @@ const createInlineSchema = async (): Promise<void> => {
 
 // Seed default data
 const seedDefaults = async (): Promise<void> => {
-  // Always ensure HERMES permissions and scan policies exist (safe for existing DBs)
-  const hermesPerms: Array<[string, string, string, string]> = [
+  // Full permission catalog (safe for existing DBs)
+  const allPerms: Array<[string, string, string, string]> = [
+    ['devices.view', 'View Devices', 'View device list and details', 'devices'],
+    ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
+    ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
+    ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
+    ['devices.commands', 'Execute Device Commands', 'Send commands to devices', 'devices'],
+    ['users.view', 'View Users', 'View user list and profiles', 'users'],
+    ['users.manage', 'Manage Users', 'Create, edit, and delete users', 'users'],
+    ['roles.view', 'View Roles', 'View roles and permissions', 'roles'],
+    ['roles.manage', 'Manage Roles', 'Create, edit, and delete roles', 'roles'],
+    ['security.view', 'View Security Events', 'View security events and alerts', 'security'],
+    ['security.manage', 'Manage Security', 'Dismiss alerts and manage security', 'security'],
+    ['logs.view', 'View Audit Logs', 'View audit logs', 'logs'],
+    ['logs.export', 'Export Audit Logs', 'Export audit logs', 'logs'],
+    ['settings.view', 'View Settings', 'View application settings', 'settings'],
+    ['settings.manage', 'Manage Settings', 'Change application settings', 'settings'],
+    ['agents.view', 'View Agents', 'View agent information', 'agents'],
+    ['agents.manage', 'Manage Agents', 'Manage agent configurations', 'agents'],
+    ['network.view', 'View Network', 'View network information', 'network'],
+    ['alerts.view', 'View Alerts', 'View alerts', 'alerts'],
+    ['alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
+    ['groups.view', 'View Groups', 'View device groups', 'groups'],
+    ['groups.manage', 'Manage Groups', 'Create, edit, and delete device groups', 'groups'],
+    ['policies.view', 'View Policies', 'View compliance policies', 'policies'],
+    ['policies.manage', 'Manage Policies', 'Create, edit, and delete compliance policies', 'policies'],
+    ['software.view', 'View Software', 'View software packages and deployments', 'software'],
+    ['software.manage', 'Manage Software', 'Create and manage software packages', 'software'],
+    ['software.deploy', 'Deploy Software', 'Deploy software to devices', 'software'],
+    ['compliance.view', 'View Compliance', 'View compliance results and status', 'compliance'],
     ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
     ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
     ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
   ];
-  for (const [code, name, desc, category] of hermesPerms) {
+  for (const [code, name, desc, category] of allPerms) {
     await pool.query(
       'INSERT INTO permissions (code, name, description, category) VALUES ($1, $2, $3, $4) ON CONFLICT (code) DO NOTHING',
       [code, name, desc, category]
     );
   }
+  // Admin always gets every permission (repairs existing DBs missing newer codes)
   const adminRole = await pool.query(`SELECT id FROM roles WHERE name = 'admin'`);
   if (adminRole.rows.length > 0) {
-    for (const [code] of hermesPerms) {
+    for (const [code] of allPerms) {
       await pool.query(
         `INSERT INTO role_permissions (role_id, permission_id)
          SELECT $1, id FROM permissions WHERE code = $2
@@ -939,40 +968,8 @@ const seedDefaults = async (): Promise<void> => {
   try {
     await client.query('BEGIN');
 
-    // Insert permissions
-    const permissions = [
-      ['devices.view', 'View Devices', 'View device list and details', 'devices'],
-      ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
-      ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
-      ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
-      ['devices.commands', 'Execute Device Commands', 'Send commands to devices', 'devices'],
-      ['users.view', 'View Users', 'View user list and profiles', 'users'],
-      ['users.manage', 'Manage Users', 'Create, edit, and delete users', 'users'],
-      ['roles.view', 'View Roles', 'View roles and permissions', 'roles'],
-      ['roles.manage', 'Manage Roles', 'Create, edit, and delete roles', 'roles'],
-      ['security.view', 'View Security Events', 'View security events and alerts', 'security'],
-      ['security.manage', 'Manage Security', 'Dismiss alerts and manage security', 'security'],
-      ['logs.view', 'View Audit Logs', 'View audit logs', 'logs'],
-      ['logs.export', 'Export Audit Logs', 'Export audit logs', 'logs'],
-      ['settings.view', 'View Settings', 'View application settings', 'settings'],
-      ['settings.manage', 'Manage Settings', 'Change application settings', 'settings'],
-      ['agents.view', 'View Agents', 'View agent information', 'agents'],
-      ['agents.manage', 'Manage Agents', 'Manage agent configurations', 'agents'],
-      ['network.view', 'View Network', 'View network information', 'network'],
-      ['alerts.view', 'View Alerts', 'View alerts', 'alerts'],
-      ['alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
-      ['groups.view', 'View Groups', 'View device groups', 'groups'],
-      ['groups.manage', 'Manage Groups', 'Create, edit, and delete device groups', 'groups'],
-      ['policies.view', 'View Policies', 'View compliance policies', 'policies'],
-      ['policies.manage', 'Manage Policies', 'Create, edit, and delete compliance policies', 'policies'],
-      ['software.view', 'View Software', 'View software packages and deployments', 'software'],
-      ['software.manage', 'Manage Software', 'Create and manage software packages', 'software'],
-      ['software.deploy', 'Deploy Software', 'Deploy software to devices', 'software'],
-      ['compliance.view', 'View Compliance', 'View compliance results and status', 'compliance'],
-      ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
-      ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
-      ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
-    ];
+    // Insert permissions (catalog already upserted above)
+    const permissions = allPerms;
 
     for (const [code, name, desc, category] of permissions) {
       await client.query(

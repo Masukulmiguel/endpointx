@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
+import api from '../services/api';
 import AlertBanner from '../components/AlertBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -30,11 +31,15 @@ export default function ReportsPage() {
 
   const handleDownload = async (type: string, format: string) => {
     try {
-      const response = await fetch(`/api/reports/${type}?format=${format}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
-      });
-      if (!response.ok) throw new Error('Download failed');
-      const blob = await response.blob();
+      const path =
+        type === 'devices' && format === 'pdf'
+          ? '/reports/devices/pdf'
+          : type === 'devices'
+            ? '/reports/devices/csv'
+            : type === 'alerts'
+              ? '/reports/alerts/csv'
+              : '/reports/compliance/csv';
+      const blob = await api.download(path);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

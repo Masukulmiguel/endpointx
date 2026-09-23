@@ -492,6 +492,25 @@ class ApiClient {
       body: JSON.stringify({ email }),
     });
   }
+
+  async download(path: string): Promise<Blob> {
+    const headers: Record<string, string> = {};
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+    let response = await fetch(`${API_BASE}${path}`, { headers });
+    if (response.status === 401 && this.refreshToken) {
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
+        headers['Authorization'] = `Bearer ${this.accessToken}`;
+        response = await fetch(`${API_BASE}${path}`, { headers });
+      }
+    }
+    if (!response.ok) {
+      throw new Error(`Download failed: HTTP ${response.status}`);
+    }
+    return response.blob();
+  }
 }
 
 export const api = new ApiClient();

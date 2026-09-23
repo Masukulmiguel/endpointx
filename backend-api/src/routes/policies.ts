@@ -5,12 +5,46 @@ import { requirePermission } from '../middleware/rbac';
 
 const router = Router();
 
+const normalizeRules = (rules: any): any[] => {
+  if (Array.isArray(rules)) return rules;
+  if (rules && typeof rules === 'object') {
+    return Object.entries(rules)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([key, value]) => ({ type: key, operator: 'equals', value }));
+  }
+  return [];
+};
+
+// Stats
+router.get('/stats', authenticate, requirePermission('policies.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const [totalRes, activeRes] = await Promise.all([
+      query('SELECT COUNT(*) as count FROM compliance_policies'),
+      query('SELECT COUNT(*) as count FROM compliance_policies WHERE is_active = true'),
+    ]);
+    const total = parseInt(totalRes.rows[0]?.count || '0', 10);
+    const active = parseInt(activeRes.rows[0]?.count || '0', 10);
+    let complianceRate = 0;
+    if (total > 0) {
+      const results = await query(
+        `SELECT COUNT(DISTINCT device_id) AS checked,
+                COUNT(DISTINCT device_id) FILTER (WHERE is_compliant) AS ok
+         FROM compliance_results`
+      );
+      const checked = parseInt(results.rows[0]?.checked || '0', 10);
+      const ok = parseInt(results.rows[0]?.ok || '0', 10);
+      complianceRate = checked > 0 ? Math.round((ok / checked) * 100) : 0;
+    }
+    res.json({ success: true, data: { total, active, compliance_rate: complianceRate } });
+  } catch (error) { next(error); }
+});
+
 // List policies
 router.get('/', authenticate, requirePermission('policies.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await query(
       `SELECT p.*,
-        (SELECT COUNT(*) FROM policy_groups pg WHERE pg.policy_id = p.id) AS group_count
+        (SELECT COUNT(*) FROM policy_assignments pa WHERE pa.policy_id = p.id) AS group_count
        FROM compliance_policies p
        ORDER BY p.created_at DESC`
     );
@@ -26,16 +60,15 @@ router.post('/', authenticate, requirePermission('policies.manage'), async (req:
     const id = idResult.rows[0].id;
 
     await query(
-      'INSERT INTO compliance_policies (id, name, description, rules, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())',
-      [id, name, description || '', JSON.stringify(rules || []), req.user?.id]
+      'INSERT INTO compliance_policies (id, name, description, rules, is_active, created_at, updated_at) VALUES ($1, $2, $3, $4, true, NOW(), NOW())',
+      [id, name, description || '', JSON.stringify(rules || {})]
     );
 
     if (Array.isArray(group_ids)) {
       for (const groupId of group_ids) {
-        const pgIdResult = await query('SELECT uuid_generate_v4() AS id');
         await query(
-          'INSERT INTO policy_groups (id, policy_id, group_id, assigned_at) VALUES ($1, $2, $3, NOW())',
-          [pgIdResult.rows[0].id, id, groupId]
+          'INSERT INTO policy_assignments (policy_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [id, groupId]
         );
       }
     }
@@ -56,8 +89,8 @@ router.get('/:id', authenticate, requirePermission('policies.view'), async (req:
 
     const groupsResult = await query(
       `SELECT dg.* FROM device_groups dg
-       JOIN policy_groups pg ON pg.group_id = dg.id
-       WHERE pg.policy_id = $1`,
+       JOIN policy_assignments pa ON pa.group_id = dg.id
+       WHERE pa.policy_id = $1`,
       [id]
     );
 
@@ -80,12 +113,11 @@ router.put('/:id', authenticate, requirePermission('policies.manage'), async (re
     );
 
     if (Array.isArray(group_ids)) {
-      await query('DELETE FROM policy_groups WHERE policy_id = $1', [id]);
+      await query('DELETE FROM policy_assignments WHERE policy_id = $1', [id]);
       for (const groupId of group_ids) {
-        const pgIdResult = await query('SELECT uuid_generate_v4() AS id');
         await query(
-          'INSERT INTO policy_groups (id, policy_id, group_id, assigned_at) VALUES ($1, $2, $3, NOW())',
-          [pgIdResult.rows[0].id, id, groupId]
+          'INSERT INTO policy_assignments (policy_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [id, groupId]
         );
       }
     }
@@ -98,7 +130,7 @@ router.put('/:id', authenticate, requirePermission('policies.manage'), async (re
 router.delete('/:id', authenticate, requirePermission('policies.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await query('DELETE FROM policy_groups WHERE policy_id = $1', [id]);
+    await query('DELETE FROM policy_assignments WHERE policy_id = $1', [id]);
     await query('DELETE FROM compliance_policies WHERE id = $1', [id]);
     res.json({ success: true, data: { message: 'Policy deleted' } });
   } catch (error) { next(error); }
@@ -116,22 +148,24 @@ router.post('/:id/check', authenticate, requirePermission('policies.manage'), as
     }
 
     const policy = policyResult.rows[0];
-    const rules = typeof policy.rules === 'string' ? JSON.parse(policy.rules) : policy.rules;
+    const rules = normalizeRules(typeof policy.rules === 'string' ? JSON.parse(policy.rules) : policy.rules);
 
     const devicesResult = await query(
       `SELECT DISTINCT d.* FROM devices d
        JOIN device_group_members dgm ON dgm.device_id = d.id
-       JOIN policy_groups pg ON pg.group_id = dgm.group_id
-       WHERE pg.policy_id = $1`,
+       JOIN policy_assignments pa ON pa.group_id = dgm.group_id
+       WHERE pa.policy_id = $1`,
       [id]
     );
 
     let checked = 0;
     let compliant = 0;
     let nonCompliant = 0;
+    const resultRows: any[] = [];
 
     for (const device of devicesResult.rows) {
-      const isCompliant = true;
+      let deviceCompliant = true;
+      const violations: string[] = [];
 
       for (const rule of rules || []) {
         let rulePassed = true;
@@ -153,30 +187,35 @@ router.post('/:id/check', authenticate, requirePermission('policies.manage'), as
         }
 
         if (!rulePassed) {
-          await query(
-            `INSERT INTO compliance_results (id, policy_id, device_id, rule_type, rule_value, passed, checked_at)
-             VALUES (uuid_generate_v4(), $1, $2, $3, $4, false, NOW())`,
-            [id, device.id, rule.type, rule.value || '']
-          );
-          nonCompliant++;
-          break;
+          deviceCompliant = false;
+          violations.push(`${rule.type}: expected ${rule.operator || 'match'} ${rule.value}`);
         }
       }
 
-      if (isCompliant) {
-        await query(
-          `INSERT INTO compliance_results (id, policy_id, device_id, rule_type, rule_value, passed, checked_at)
-           VALUES (uuid_generate_v4(), $1, $2, 'all_rules', '', true, NOW())`,
-          [id, device.id]
-        );
-        compliant++;
-      }
+      const insertRes = await query(
+        `INSERT INTO compliance_results (id, policy_id, device_id, is_compliant, violations, checked_at)
+         VALUES (uuid_generate_v4(), $1, $2, $3, $4, NOW())
+         RETURNING id, checked_at`,
+        [id, device.id, deviceCompliant, JSON.stringify(violations)]
+      );
 
+      resultRows.push({
+        id: insertRes.rows[0].id,
+        device_id: device.id,
+        device_name: device.hostname,
+        policy_id: id,
+        is_compliant: deviceCompliant,
+        violations,
+        checked_at: insertRes.rows[0].checked_at,
+      });
+
+      if (deviceCompliant) compliant++;
+      else nonCompliant++;
       checked++;
     }
 
     await query(
-      'UPDATE compliance_policies SET last_checked_at = NOW() WHERE id = $1',
+      'UPDATE compliance_policies SET updated_at = NOW() WHERE id = $1',
       [id]
     );
 
@@ -186,7 +225,8 @@ router.post('/:id/check', authenticate, requirePermission('policies.manage'), as
         checked,
         compliant,
         non_compliant: nonCompliant,
-        total_devices: devicesResult.rows.length
+        total_devices: devicesResult.rows.length,
+        results: resultRows
       }
     });
   } catch (error) { next(error); }

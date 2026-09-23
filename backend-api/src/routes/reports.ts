@@ -186,14 +186,15 @@ router.get('/alerts/csv', authenticate, requirePermission('logs.view'), async (r
 // GET /summary - Get summary report data
 router.get('/summary', authenticate, requirePermission('logs.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const [totalDevices, onlineDevices, offlineDevices, totalAlerts, unresolvedAlerts, deviceByOs, deviceByStatus] = await Promise.all([
+    const [totalDevices, onlineDevices, offlineDevices, totalAlerts, unresolvedAlerts, deviceByOs, deviceByStatus, alertsBySeverity] = await Promise.all([
       query('SELECT COUNT(*) as count FROM devices'),
       query("SELECT COUNT(*) as count FROM devices WHERE status = 'online'"),
       query("SELECT COUNT(*) as count FROM devices WHERE status = 'offline'"),
       query('SELECT COUNT(*) as count FROM alerts'),
       query('SELECT COUNT(*) as count FROM alerts WHERE is_dismissed = false'),
-      query('SELECT os_type, COUNT(*) as count FROM devices GROUP BY os_type ORDER BY count DESC'),
+      query('SELECT os_type as os, COUNT(*) as count FROM devices GROUP BY os_type ORDER BY count DESC'),
       query('SELECT status, COUNT(*) as count FROM devices GROUP BY status ORDER BY count DESC'),
+      query('SELECT severity, COUNT(*) as count FROM alerts GROUP BY severity ORDER BY count DESC'),
     ]);
 
     const total = parseInt(totalDevices.rows[0]?.count || '0', 10);
@@ -208,8 +209,9 @@ router.get('/summary', authenticate, requirePermission('logs.view'), async (req:
         total_alerts: parseInt(totalAlerts.rows[0]?.count || '0', 10),
         unresolved_alerts: parseInt(unresolvedAlerts.rows[0]?.count || '0', 10),
         compliance_rate: compliant,
-        device_by_os: deviceByOs.rows,
-        device_by_status: deviceByStatus.rows,
+        devices_by_os: deviceByOs.rows,
+        devices_by_status: deviceByStatus.rows,
+        alerts_by_severity: alertsBySeverity.rows,
       },
     });
   } catch (error) {

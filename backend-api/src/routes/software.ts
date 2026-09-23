@@ -6,7 +6,7 @@ import { requirePermission } from '../middleware/rbac';
 const router = Router();
 
 // List packages
-router.get('/', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/packages', authenticate, requirePermission('software.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await query(
       `SELECT sp.*,
@@ -19,25 +19,43 @@ router.get('/', authenticate, requirePermission('software.view'), async (req: Au
   } catch (error) { next(error); }
 });
 
-// Create package
-router.post('/', authenticate, requirePermission('software.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+// List all deployments
+router.get('/deployments', authenticate, requirePermission('software.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, version, description, file_url, file_size, checksum, install_command, uninstall_command } = req.body;
+    const result = await query(
+      `SELECT sd.*, d.hostname AS device_name, d.agent_id, sp.name AS package_name, sp.version AS package_version
+       FROM software_deployments sd
+       JOIN devices d ON d.id = sd.device_id
+       JOIN software_packages sp ON sp.id = sd.package_id
+       ORDER BY sd.created_at DESC`
+    );
+    res.json({ success: true, data: { deployments: result.rows } });
+  } catch (error) { next(error); }
+});
+
+// Create package
+router.post('/packages', authenticate, requirePermission('software.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { name, version, description, installer_url, installer_type, silent_args, uninstall_args, file_size } = req.body;
+    if (!name || !installer_url) {
+      res.status(400).json({ success: false, error: { message: 'name and installer_url are required' } });
+      return;
+    }
     const idResult = await query('SELECT uuid_generate_v4() AS id');
     const id = idResult.rows[0].id;
 
     await query(
-      `INSERT INTO software_packages (id, name, version, description, file_url, file_size, checksum, install_command, uninstall_command, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
-      [id, name, version || '1.0.0', description || '', file_url || '', file_size || 0, checksum || '', install_command || '', uninstall_command || '', req.user?.id]
+      `INSERT INTO software_packages (id, name, version, installer_url, installer_type, silent_args, uninstall_args, file_size, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+      [id, name, version || '1.0.0', installer_url, installer_type || 'msi', silent_args || '/quiet /norestart', uninstall_args || '/quiet', file_size || 0]
     );
 
     res.status(201).json({ success: true, data: { id, name, version } });
   } catch (error) { next(error); }
 });
 
-// Get package with deployment stats
-router.get('/:id', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+// Get package
+router.get('/packages/:id', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const pkgResult = await query('SELECT * FROM software_packages WHERE id = $1', [id]);
@@ -65,24 +83,23 @@ router.get('/:id', authenticate, requirePermission('software.view'), async (req:
 });
 
 // Update package
-router.put('/:id', authenticate, requirePermission('software.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.put('/packages/:id', authenticate, requirePermission('software.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const { name, version, description, file_url, file_size, checksum, install_command, uninstall_command } = req.body;
+    const { name, version, installer_url, installer_type, silent_args, uninstall_args, file_size, is_active } = req.body;
 
     await query(
       `UPDATE software_packages SET
         name = COALESCE($1, name),
         version = COALESCE($2, version),
-        description = COALESCE($3, description),
-        file_url = COALESCE($4, file_url),
-        file_size = COALESCE($5, file_size),
-        checksum = COALESCE($6, checksum),
-        install_command = COALESCE($7, install_command),
-        uninstall_command = COALESCE($8, uninstall_command),
-        updated_at = NOW()
+        installer_url = COALESCE($3, installer_url),
+        installer_type = COALESCE($4, installer_type),
+        silent_args = COALESCE($5, silent_args),
+        uninstall_args = COALESCE($6, uninstall_args),
+        file_size = COALESCE($7, file_size),
+        is_active = COALESCE($8, is_active)
        WHERE id = $9`,
-      [name ?? null, version ?? null, description ?? null, file_url ?? null, file_size ?? null, checksum ?? null, install_command ?? null, uninstall_command ?? null, id]
+      [name ?? null, version ?? null, installer_url ?? null, installer_type ?? null, silent_args ?? null, uninstall_args ?? null, file_size ?? null, is_active ?? null, id]
     );
 
     res.json({ success: true, data: { message: 'Package updated' } });
@@ -90,7 +107,7 @@ router.put('/:id', authenticate, requirePermission('software.manage'), async (re
 });
 
 // Delete package
-router.delete('/:id', authenticate, requirePermission('software.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.delete('/packages/:id', authenticate, requirePermission('software.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     await query('DELETE FROM software_deployments WHERE package_id = $1', [id]);
@@ -99,25 +116,37 @@ router.delete('/:id', authenticate, requirePermission('software.manage'), async 
   } catch (error) { next(error); }
 });
 
-// Deploy to devices
-router.post('/:id/deploy', authenticate, requirePermission('software.deploy'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+// Deploy package to device or group
+router.post('/deploy', authenticate, requirePermission('software.deploy'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
-    const { device_ids } = req.body;
+    const { package_id, target_id, target_type, device_ids } = req.body;
 
-    if (!Array.isArray(device_ids) || device_ids.length === 0) {
-      res.status(400).json({ success: false, error: { message: 'device_ids array is required' } });
-      return;
-    }
-
-    const pkgResult = await query('SELECT * FROM software_packages WHERE id = $1', [id]);
+    const pkgResult = await query('SELECT * FROM software_packages WHERE id = $1', [package_id]);
     if (pkgResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Package not found' } });
       return;
     }
 
+    let targets: string[] = [];
+    if (Array.isArray(device_ids) && device_ids.length > 0) {
+      targets = device_ids;
+    } else if (target_type === 'group' && target_id) {
+      const groupDevices = await query(
+        'SELECT device_id FROM device_group_members WHERE group_id = $1',
+        [target_id]
+      );
+      targets = groupDevices.rows.map((r: any) => r.device_id);
+    } else if (target_id) {
+      targets = [target_id];
+    }
+
+    if (targets.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'No target devices found' } });
+      return;
+    }
+
     const deployments = [];
-    for (const deviceId of device_ids) {
+    for (const deviceId of targets) {
       const devResult = await query('SELECT id, agent_id FROM devices WHERE id = $1', [deviceId]);
       if (devResult.rows.length === 0) continue;
 
@@ -125,9 +154,9 @@ router.post('/:id/deploy', authenticate, requirePermission('software.deploy'), a
       const deployId = deployIdResult.rows[0].id;
 
       await query(
-        `INSERT INTO software_deployments (id, package_id, device_id, status, deployed_by, deployed_at)
-         VALUES ($1, $2, $3, 'pending', $4, NOW())`,
-        [deployId, id, deviceId, req.user?.id]
+        `INSERT INTO software_deployments (id, package_id, device_id, status, created_at)
+         VALUES ($1, $2, $3, 'pending', NOW())`,
+        [deployId, package_id, deviceId]
       );
 
       const device = devResult.rows[0];
@@ -136,7 +165,7 @@ router.post('/:id/deploy', authenticate, requirePermission('software.deploy'), a
         await query(
           `INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by, created_at)
            VALUES ($1, $2, 'install_software', $3, 'pending', $4, NOW())`,
-          [cmdIdResult.rows[0].id, deviceId, JSON.stringify({ package_id: id, package_name: pkgResult.rows[0].name }), req.user?.id]
+          [cmdIdResult.rows[0].id, deviceId, JSON.stringify({ package_id, package_name: pkgResult.rows[0].name }), req.user?.id]
         );
       }
 
@@ -147,31 +176,26 @@ router.post('/:id/deploy', authenticate, requirePermission('software.deploy'), a
   } catch (error) { next(error); }
 });
 
-// List deployments for package
-router.get('/:id/deployments', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+// Legacy aliases
+router.get('/', authenticate, requirePermission('software.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
     const result = await query(
-      `SELECT sd.*, d.hostname, d.agent_id
-       FROM software_deployments sd
-       JOIN devices d ON d.id = sd.device_id
-       WHERE sd.package_id = $1
-       ORDER BY sd.deployed_at DESC`,
-      [id]
+      `SELECT sp.*,
+        (SELECT COUNT(*) FROM software_deployments sd WHERE sd.package_id = sp.id) AS deployment_count
+       FROM software_packages sp ORDER BY sp.created_at DESC`
     );
-    res.json({ success: true, data: { deployments: result.rows } });
+    res.json({ success: true, data: { packages: result.rows } });
   } catch (error) { next(error); }
 });
 
-// List all deployments across all packages
-router.get('/deployments/all', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/deployments/all', authenticate, requirePermission('software.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await query(
-      `SELECT sd.*, d.hostname, d.agent_id, sp.name AS package_name, sp.version AS package_version
+      `SELECT sd.*, d.hostname AS device_name, sp.name AS package_name, sp.version AS package_version
        FROM software_deployments sd
        JOIN devices d ON d.id = sd.device_id
        JOIN software_packages sp ON sp.id = sd.package_id
-       ORDER BY sd.deployed_at DESC`
+       ORDER BY sd.created_at DESC`
     );
     res.json({ success: true, data: { deployments: result.rows } });
   } catch (error) { next(error); }
