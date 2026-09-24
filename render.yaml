@@ -27,6 +27,16 @@ services:
         sync: false
       - key: OPENCODE_TIMEOUT_MS
         value: "60000"
+      - key: OPENCODE_ZEN_API_KEY
+        sync: false
+      - key: OPENCODE_ZEN_MODEL
+        value: mimo-v2.6-flash-free
+      - key: OPENCODE_ZEN_BASE_URL
+        value: https://opencode.ai/zen/v1
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openrouter/free
       - key: DB_HOST
         fromDatabase:
           name: endpointx-db

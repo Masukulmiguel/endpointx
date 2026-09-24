@@ -6,11 +6,12 @@ import { requirePermission } from '../middleware/rbac';
 import logger from '../utils/logger';
 import {
   isOpencodeConfigured,
-  opencodeHealth,
+  aiHealth,
   analyzeSecurityContext,
   recommendForFinding,
   localAnalyzeSecurityContext,
   localRecommendForFinding,
+  freeModelsForProvider,
 } from '../services/opencode';
 
 const router = Router();
@@ -1060,11 +1061,14 @@ router.get('/policies', authenticate, requirePermission('hermes.view'), async (_
 
 router.get('/ai/status', authenticate, requirePermission('hermes.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const health = await opencodeHealth();
+    const health = await aiHealth();
     res.json({
       success: true,
       data: {
         configured: isOpencodeConfigured(),
+        provider: health.provider,
+        model: health.model,
+        freeModels: freeModelsForProvider(health.provider),
         healthy: health.ok,
         version: health.version || null,
         error: health.error || null,
@@ -1102,8 +1106,16 @@ router.post('/ai/analyze', authenticate, requirePermission('hermes.view'), async
 
     if (isOpencodeConfigured()) {
       try {
-        const analysis = await analyzeSecurityContext(context);
-        res.json({ success: true, data: { analysis, mode: 'opencode' } });
+        const result = await analyzeSecurityContext(context);
+        res.json({
+          success: true,
+          data: {
+            analysis: result.analysis,
+            mode: result.provider,
+            provider: result.provider,
+            model: result.model,
+          },
+        });
         return;
       } catch (aiError) {
         logger.warn('HERMES AI analyze fell back to local briefing', { error: (aiError as Error).message });
@@ -1112,7 +1124,7 @@ router.post('/ai/analyze', authenticate, requirePermission('hermes.view'), async
 
     res.json({
       success: true,
-      data: { analysis: localAnalyzeSecurityContext(context), mode: 'local' },
+      data: { analysis: localAnalyzeSecurityContext(context), mode: 'local', provider: null, model: null },
     });
   } catch (error) {
     logger.error('HERMES AI analyze failed', { error: (error as Error).message });
@@ -1142,8 +1154,16 @@ router.post('/ai/recommend', authenticate, requirePermission('hermes.view'), asy
 
     if (isOpencodeConfigured()) {
       try {
-        const recommendation = await recommendForFinding(r.rows[0], locale);
-        res.json({ success: true, data: { recommendation, mode: 'opencode' } });
+        const result = await recommendForFinding(r.rows[0], locale);
+        res.json({
+          success: true,
+          data: {
+            recommendation: result.recommendation,
+            mode: result.provider,
+            provider: result.provider,
+            model: result.model,
+          },
+        });
         return;
       } catch (aiError) {
         logger.warn('HERMES AI recommend fell back to local briefing', { error: (aiError as Error).message });
@@ -1152,7 +1172,12 @@ router.post('/ai/recommend', authenticate, requirePermission('hermes.view'), asy
 
     res.json({
       success: true,
-      data: { recommendation: localRecommendForFinding(r.rows[0], locale), mode: 'local' },
+      data: {
+        recommendation: localRecommendForFinding(r.rows[0], locale),
+        mode: 'local',
+        provider: null,
+        model: null,
+      },
     });
   } catch (error) {
     logger.error('HERMES AI recommend failed', { error: (error as Error).message });

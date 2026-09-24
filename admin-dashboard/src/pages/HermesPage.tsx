@@ -116,7 +116,7 @@ export default function HermesPage() {
   const { data: scansData } = useApi<{ scans: Scan[] }>('/hermes/scans');
   const { data: recsData } = useApi<{ recommendations: Recommendation[] }>('/hermes/recommendations');
   const { data: surface } = useApi<any>('/hermes/attack-surface');
-  const { data: aiStatus } = useApi<{ configured: boolean; healthy: boolean; version?: string | null; error?: string | null }>('/hermes/ai/status');
+  const { data: aiStatus } = useApi<{ configured: boolean; healthy: boolean; provider?: string | null; model?: string | null; freeModels?: string[]; version?: string | null; error?: string | null }>('/hermes/ai/status');
 
   const { loading: starting, mutate: startScan } = useApiMutation('/hermes/scans', 'POST');
   const { loading: stopping, mutate: emergency } = useApiMutation('/hermes/emergency-stop', 'POST');
@@ -589,7 +589,7 @@ ${assets
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('hermes.ai.subtitle')}</p>
                 <p className="text-xs text-gray-400 mt-1">
                   {aiStatus?.configured
-                    ? `opencode: ${aiStatus.healthy ? 'OK' : aiStatus.error || 'offline'}${aiStatus.version ? ` · v${aiStatus.version}` : ''}`
+                    ? `${aiStatus.provider || 'ai'}${aiStatus.model ? ` · ${aiStatus.model}` : ''}: ${aiStatus.healthy ? 'OK' : aiStatus.error || 'offline'}${aiStatus.version ? ` · v${aiStatus.version}` : ''}${aiStatus.freeModels?.length ? ` · free: ${aiStatus.freeModels.slice(0, 3).join(', ')}` : ''}`
                     : `${t('hermes.ai.localMode')}`}
                 </p>
               </div>
