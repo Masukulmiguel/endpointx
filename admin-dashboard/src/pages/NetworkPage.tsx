@@ -19,6 +19,7 @@ import {
 import { useApi } from '../hooks/useApi';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
+import AlertBanner from '../components/AlertBanner';
 import type { Device, NetworkInterface, Heartbeat } from '../types';
 
 interface NetworkStats {
@@ -43,17 +44,19 @@ function formatSpeed(mbps: number | null): string {
 export default function NetworkPage() {
   const [deviceFilter, setDeviceFilter] = useState('');
 
-  const { data: devicesData, loading: devicesLoading } = useApi<{ devices: Device[] }>('/devices', {
+  const { data: devicesData, loading: devicesLoading, error: devicesError } = useApi<{ devices: Device[] }>('/devices', {
     params: { limit: '200' },
   });
 
-  const { data: statsData, loading: statsLoading } = useApi<NetworkStats>('/network/stats');
-  const { data: heartbeatData, loading: heartbeatLoading } = useApi<{ heartbeats: Heartbeat[] }>('/network/bandwidth', {
+  const { data: statsData, loading: statsLoading, error: statsError } = useApi<NetworkStats>('/network/stats');
+  const { data: heartbeatData, loading: heartbeatLoading, error: heartbeatError } = useApi<{ heartbeats: Heartbeat[] }>('/network/bandwidth', {
     params: deviceFilter ? { device_id: deviceFilter } : {},
   });
-  const { data: interfacesData, loading: interfacesLoading } = useApi<{ interfaces: (NetworkInterface & { device_name?: string; device_id?: string })[] }>('/network/interfaces', {
+  const { data: interfacesData, loading: interfacesLoading, error: interfacesError } = useApi<{ interfaces: (NetworkInterface & { device_name?: string; device_id?: string })[] }>('/network/interfaces', {
     params: deviceFilter ? { device_id: deviceFilter } : {},
   });
+
+  const firstError = devicesError || statsError || heartbeatError || interfacesError;
 
   const devices = Array.isArray(devicesData?.devices) ? devicesData.devices : [];
   const stats = statsData;
@@ -78,6 +81,10 @@ export default function NetworkPage() {
           Network overview and device connectivity
         </p>
       </div>
+
+      {firstError && (
+        <AlertBanner type="error" message={firstError} onClose={() => {}} />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[

@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import AlertBanner from '../components/AlertBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -25,6 +26,9 @@ interface ReportSummary {
 }
 
 export default function ReportsPage() {
+  const { hasPermission } = useAuth();
+  const canExportLogs = hasPermission('logs.view');
+  const canExportCompliance = hasPermission('compliance.view');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: summary, loading, error } = useApi<ReportSummary>('/reports/summary');
@@ -113,34 +117,40 @@ export default function ReportsPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Export Data</h2>
         <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => handleDownload('devices', 'csv')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Devices CSV
-          </button>
-          <button
-            onClick={() => handleDownload('devices', 'pdf')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            Devices PDF
-          </button>
-          <button
-            onClick={() => handleDownload('alerts', 'csv')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Alerts CSV
-          </button>
-          <button
-            onClick={() => handleDownload('compliance', 'csv')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Compliance CSV
-          </button>
+          {canExportLogs && (
+            <>
+              <button
+                onClick={() => handleDownload('devices', 'csv')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Devices CSV
+              </button>
+              <button
+                onClick={() => handleDownload('devices', 'pdf')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                Devices PDF
+              </button>
+              <button
+                onClick={() => handleDownload('alerts', 'csv')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Alerts CSV
+              </button>
+            </>
+          )}
+          {canExportCompliance && (
+            <button
+              onClick={() => handleDownload('compliance', 'csv')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Compliance CSV
+            </button>
+          )}
         </div>
       </div>
 

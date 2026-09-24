@@ -42,6 +42,11 @@
   }
 
   function redirectToDashboard(accessToken, refreshToken) {
+    // Drop any previous session before handoff so admin tokens cannot stick
+    try {
+      window.localStorage.removeItem('access_token');
+      window.localStorage.removeItem('refresh_token');
+    } catch (e) { /* ignore */ }
     const url =
       site.DASHBOARD_URL +
       '/?access_token=' +

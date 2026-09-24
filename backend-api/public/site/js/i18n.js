@@ -6,12 +6,12 @@
     pt: {
       'nav.how': 'Como funciona',
       'nav.features': 'Funcionalidades',
+      'nav.shots': 'Screenshots',
       'nav.hermes': 'HERMES',
       'nav.docs': 'Documentação',
       'nav.login': 'Entrar',
       'nav.register': 'Começar grátis',
       'nav.creator': 'Criador',
-      'hero.eyebrow': 'IAM + Endpoint Management + Defesa',
       'hero.title': 'Veja, proteja e governe cada endpoint da sua rede',
       'hero.lead':
         'EndpointX é uma plataforma defensiva de gestão de identidade, acesso e endpoints — com inventário em tempo real, políticas de conformidade e o motor de inteligência de segurança HERMES.',
@@ -65,6 +65,11 @@
       'feat.8.t': 'Integrações e conectores',
       'feat.8.d': 'Ligação a SIEM e ferramentas externas em evolução.',
       'feat.8.s': 'planned',
+      'shots.title': 'O painel EndpointX',
+      'shots.sub': 'Dashboard, dispositivos e HERMES — a plataforma em operação.',
+      'shots.dashboard': 'Visão geral do dashboard',
+      'shots.devices': 'Inventário e saúde dos endpoints',
+      'shots.hermes': 'HERMES — inteligência defensiva',
       'hermes.title': 'HERMES — inteligência defensiva',
       'hermes.sub':
         'Host Evaluation Risk Monitoring Engine Security. Observa, analisa e recomenda — nunca explora hosts de forma ofensiva.',
@@ -147,12 +152,12 @@
     en: {
       'nav.how': 'How it works',
       'nav.features': 'Features',
+      'nav.shots': 'Screenshots',
       'nav.hermes': 'HERMES',
       'nav.docs': 'Docs',
       'nav.login': 'Sign in',
       'nav.register': 'Start free',
       'nav.creator': 'Creator',
-      'hero.eyebrow': 'IAM + Endpoint Management + Defense',
       'hero.title': 'See, protect, and govern every endpoint on your network',
       'hero.lead':
         'EndpointX is a defensive identity, access, and endpoint management platform — real-time inventory, compliance policies, and the HERMES security intelligence engine.',
@@ -206,6 +211,11 @@
       'feat.8.t': 'Integrations & connectors',
       'feat.8.d': 'SIEM and external tool integrations in progress.',
       'feat.8.s': 'planned',
+      'shots.title': 'The EndpointX panel',
+      'shots.sub': 'Dashboard, devices, and HERMES — the platform in action.',
+      'shots.dashboard': 'Dashboard overview',
+      'shots.devices': 'Endpoint inventory and health',
+      'shots.hermes': 'HERMES — defensive intelligence',
       'hermes.title': 'HERMES — defensive intelligence',
       'hermes.sub':
         'Host Evaluation Risk Monitoring Engine Security. Observes, analyzes, and recommends — never offensively exploits hosts.',

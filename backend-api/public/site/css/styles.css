@@ -104,6 +104,18 @@ input {
   object-fit: contain;
 }
 
+.brand img.logo-light {
+  display: none;
+}
+
+html[data-theme='light'] .brand img.logo-dark {
+  display: none;
+}
+
+html[data-theme='light'] .brand img.logo-light {
+  display: block;
+}
+
 .brand span {
   font-size: 1.05rem;
 }
@@ -254,22 +266,6 @@ input {
   align-items: center;
 }
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: rgba(34, 211, 238, 0.08);
-  border: 1px solid rgba(34, 211, 238, 0.25);
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  margin-bottom: 1.1rem;
-}
-
 .hero h1 {
   font-size: clamp(2.2rem, 4.5vw, 3.4rem);
   line-height: 1.12;
@@ -318,8 +314,8 @@ input {
   box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.15);
 }
 
-/* Mock dashboard panel (no screenshots) */
-.mock-panel {
+/* Browser frame for product screenshots */
+.shot-frame {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -421,6 +417,64 @@ input {
 .event-lines span b {
   color: var(--warning);
   font-weight: 600;
+}
+
+/* Product screenshots */
+.shot-frame {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.shot-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hero-shot {
+  transform: perspective(1200px) rotateY(-4deg) rotateX(2deg);
+  transition: transform 0.35s ease;
+}
+
+.hero-shot:hover {
+  transform: perspective(1200px) rotateY(0deg) rotateX(0deg);
+}
+
+.shot-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+.shot-card {
+  margin: 0;
+}
+
+.shot-card figcaption {
+  margin-top: 0.75rem;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.socials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  justify-content: flex-end;
+}
+
+.socials a {
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.socials a:hover {
+  color: var(--primary);
 }
 
 /* Sections */
@@ -846,6 +900,10 @@ label {
     display: none;
   }
 
+  .shot-gallery {
+    grid-template-columns: 1fr;
+  }
+
   .stat-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -861,7 +919,8 @@ label {
   .cards-4,
   .steps,
   .docs-grid,
-  .footer-grid {
+  .footer-grid,
+  .shot-gallery {
     grid-template-columns: 1fr;
   }
 

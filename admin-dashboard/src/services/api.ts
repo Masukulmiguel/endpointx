@@ -2,6 +2,22 @@ const API_BASE = window.location.hostname === 'localhost'
   ? '/api' 
   : 'https://endpointx.onrender.com/api';
 
+function friendlyErrorMessage(raw: string, status: number): string {
+  const isPermission =
+    status === 403 ||
+    /permission|403|forbidden|required permissions/i.test(raw);
+  if (!isPermission) return raw;
+  try {
+    const locale = localStorage.getItem('endpointx_locale');
+    if (locale === 'en') {
+      return 'You do not have permission to access this area. Contact your administrator.';
+    }
+  } catch {
+    // ignore
+  }
+  return 'Não tem permissão para aceder a esta área. Contacte o administrador.';
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
@@ -10,7 +26,8 @@ class ApiClient {
     this.accessToken = localStorage.getItem('access_token');
     this.refreshToken = localStorage.getItem('refresh_token');
 
-    // Accept tokens redirected from the public landing/login site
+    // Accept tokens redirected from the public landing/login site.
+    // Always replace any previous session (e.g. leftover admin tokens).
     const params = new URLSearchParams(window.location.search);
     const qAccess = params.get('access_token');
     const qRefresh = params.get('refresh_token');
@@ -21,7 +38,7 @@ class ApiClient {
       const qs = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
     } else if (qAccess) {
-      this.setTokens(qAccess, this.refreshToken || '');
+      this.setTokens(qAccess, '');
       params.delete('access_token');
       const qs = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
@@ -62,7 +79,7 @@ class ApiClient {
         body?.error?.message ||
         body?.message ||
         `HTTP ${response.status}`;
-      throw new Error(message);
+      throw new Error(friendlyErrorMessage(message, response.status));
     }
 
     return response.json();

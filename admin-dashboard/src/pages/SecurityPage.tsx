@@ -9,6 +9,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import SearchInput from '../components/SearchInput';
 import StatusBadge from '../components/StatusBadge';
 import DataTable from '../components/DataTable';
@@ -65,6 +66,8 @@ interface EventsResponse {
 }
 
 export default function SecurityPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('security.manage');
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -191,7 +194,7 @@ export default function SecurityPage() {
           >
             <Eye className="w-4 h-4" />
           </button>
-          {!row.is_resolved && (
+          {canManage && !row.is_resolved && (
             <button
               onClick={(e) => {
                 e.stopPropagation();

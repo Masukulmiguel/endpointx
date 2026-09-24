@@ -1,7 +1,7 @@
 # EndpointX
 
 <p align="center">
-  <img src="logotipo.png" alt="EndpointX Logo" width="200"/>
+  <img src="logotipo-fundo-branco.png" alt="EndpointX Logo" width="200"/>
 </p>
 
 **Identity, Access, and Endpoint Management Platform**

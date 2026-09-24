@@ -14,6 +14,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import SearchInput from '../components/SearchInput';
 import DataTable from '../components/DataTable';
@@ -40,6 +41,8 @@ function getActionIcon(action: string) {
 }
 
 export default function AuditLogsPage() {
+  const { hasPermission } = useAuth();
+  const canExport = hasPermission('logs.export');
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
@@ -175,13 +178,15 @@ export default function AuditLogsPage() {
             {data?.pagination?.total || 0} log{(data?.pagination?.total || 0) !== 1 ? 's' : ''} total
           </p>
         </div>
-        <button
-          onClick={handleExport}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
+        {canExport && (
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export CSV
+          </button>
+        )}
       </div>
 
       <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-l-4 border-l-amber-500 bg-amber-50 dark:bg-amber-900/20">

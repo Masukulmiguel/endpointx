@@ -29,26 +29,27 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { useI18n, type Locale } from '../i18n';
+import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
   { key: 'nav.dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { key: 'nav.hermes', path: '/hermes', icon: Radar },
-  { key: 'nav.devices', path: '/devices', icon: Monitor },
-  { key: 'nav.install', path: '/install', icon: Download },
-  { key: 'nav.users', path: '/users', icon: Users },
-  { key: 'nav.roles', path: '/roles', icon: Shield },
-  { key: 'nav.security', path: '/security', icon: Lock },
-  { key: 'nav.alerts', path: '/alerts', icon: Bell },
-  { key: 'nav.groups', path: '/groups', icon: UsersRound },
-  { key: 'nav.policies', path: '/policies', icon: ShieldCheck },
-  { key: 'nav.software', path: '/software', icon: ArrowDownToLine },
+  { key: 'nav.hermes', path: '/hermes', icon: Radar, permission: 'hermes.view' },
+  { key: 'nav.devices', path: '/devices', icon: Monitor, permission: 'devices.view' },
+  { key: 'nav.install', path: '/install', icon: Download, permission: 'devices.view' },
+  { key: 'nav.users', path: '/users', icon: Users, permission: 'users.view' },
+  { key: 'nav.roles', path: '/roles', icon: Shield, permission: 'roles.view' },
+  { key: 'nav.security', path: '/security', icon: Lock, permission: 'security.view' },
+  { key: 'nav.alerts', path: '/alerts', icon: Bell, permission: 'alerts.view' },
+  { key: 'nav.groups', path: '/groups', icon: UsersRound, permission: 'groups.view' },
+  { key: 'nav.policies', path: '/policies', icon: ShieldCheck, permission: 'policies.view' },
+  { key: 'nav.software', path: '/software', icon: ArrowDownToLine, permission: 'software.view' },
   { key: 'nav.mfa', path: '/security/mfa', icon: Key },
-  { key: 'nav.reports', path: '/reports', icon: ChartBar },
-  { key: 'nav.notifications', path: '/notifications', icon: Bell },
-  { key: 'nav.network', path: '/network', icon: Wifi },
-  { key: 'nav.audit', path: '/audit-logs', icon: FileText },
-  { key: 'nav.agents', path: '/agents', icon: Cpu },
-  { key: 'nav.settings', path: '/settings', icon: Settings },
+  { key: 'nav.reports', path: '/reports', icon: ChartBar, permission: 'logs.view' },
+  { key: 'nav.notifications', path: '/notifications', icon: Bell, permission: 'logs.view' },
+  { key: 'nav.network', path: '/network', icon: Wifi, permission: 'network.view' },
+  { key: 'nav.audit', path: '/audit-logs', icon: FileText, permission: 'logs.view' },
+  { key: 'nav.agents', path: '/agents', icon: Cpu, permission: 'devices.view' },
+  { key: 'nav.settings', path: '/settings', icon: Settings, permission: 'settings.view' },
 ];
 
 const routeTitleKeys: Record<string, string> = {
@@ -83,6 +84,9 @@ export default function Layout() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const { locale, setLocale, t } = useI18n();
+  const { user, hasPermission, logout } = useAuth();
+
+  const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission));
 
   const pageTitle = t(routeTitleKeys[location.pathname] || 'page.title.default');
 
@@ -157,6 +161,7 @@ export default function Layout() {
   };
 
   const handleLogout = () => {
+    logout();
     navigate('/login');
   };
 
@@ -175,7 +180,8 @@ export default function Layout() {
         }`}
       >
         <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
-          <img src="/logotipo.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain" />
+          <img src="/logotipo-fundo-branco.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain dark:hidden" />
+          <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain hidden dark:block" />
           <span className="text-xl font-bold text-gray-900 dark:text-white">EndpointX</span>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -187,7 +193,7 @@ export default function Layout() {
 
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           <ul className="space-y-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
               return (
@@ -212,11 +218,19 @@ export default function Layout() {
         <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-semibold text-sm">
-              A
+              {(() => {
+                const name = user?.full_name || user?.email || '?';
+                const parts = name.trim().split(/\s+/).filter(Boolean);
+                return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
+              })()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">Admin User</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{t('nav.superAdmin')}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                {user?.full_name || user?.email || 'User'}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {user?.role_name || '—'}
+              </p>
             </div>
             <button
               onClick={handleLogout}
@@ -336,7 +350,11 @@ export default function Layout() {
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-semibold text-sm">
-                  A
+                  {(() => {
+                    const name = user?.full_name || user?.email || '?';
+                    const parts = name.trim().split(/\s+/).filter(Boolean);
+                    return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
+                  })()}
                 </div>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -344,8 +362,11 @@ export default function Layout() {
               {userDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">Admin User</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">admin@endpointx.com</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {user?.full_name || user?.email || '—'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{user?.email || '—'}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{user?.role_name || '—'}</p>
                   </div>
                   <Link
                     to="/profile"

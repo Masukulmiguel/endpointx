@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import { useI18n } from './i18n';
 import Layout from './components/Layout';
+import LoadingSpinner from './components/LoadingSpinner';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import DevicesPage from './pages/DevicesPage';
@@ -21,11 +23,12 @@ import MfaPage from './pages/MfaPage';
 import ReportsPage from './pages/ReportsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import HermesPage from './pages/HermesPage';
-import LoadingSpinner from './components/LoadingSpinner';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading)
     return (
@@ -34,6 +37,48 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function PermissionGate({
+  permission,
+  children,
+}: {
+  permission: string;
+  children: React.ReactNode;
+}) {
+  const { hasPermission, loading } = useAuth();
+  const { t } = useI18n();
+  if (loading)
+    return (
+      <div className="flex items-center justify-center h-64">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  if (!hasPermission(permission)) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center max-w-sm px-4">
+          <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-4">
+            <ShieldAlert className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+            {t('common.permissionDenied')}
+          </h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {t('common.permissionDeniedBody')}
+          </p>
+          <Link
+            to="/dashboard"
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            {t('nav.dashboard')}
+          </Link>
+        </div>
+      </div>
+    );
+  }
   return <>{children}</>;
 }
 
@@ -46,31 +91,150 @@ export default function App() {
       <Route
         path="/"
         element={
-          <ProtectedRoute>
+          <AuthGate>
             <Layout />
-          </ProtectedRoute>
+          </AuthGate>
         }
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="devices" element={<DevicesPage />} />
-        <Route path="devices/:id" element={<DeviceDetailPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="roles" element={<RolesPage />} />
-        <Route path="security" element={<SecurityPage />} />
-        <Route path="alerts" element={<AlertsPage />} />
-        <Route path="audit-logs" element={<AuditLogsPage />} />
-        <Route path="network" element={<NetworkPage />} />
-        <Route path="agents" element={<AgentsPage />} />
-        <Route path="install" element={<InstallPage />} />
-        <Route path="groups" element={<GroupsPage />} />
-        <Route path="policies" element={<PoliciesPage />} />
-        <Route path="software" element={<SoftwarePage />} />
+        <Route
+          path="devices"
+          element={
+            <PermissionGate permission="devices.view">
+              <DevicesPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="devices/:id"
+          element={
+            <PermissionGate permission="devices.view">
+              <DeviceDetailPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="users"
+          element={
+            <PermissionGate permission="users.view">
+              <UsersPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="roles"
+          element={
+            <PermissionGate permission="roles.view">
+              <RolesPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="security"
+          element={
+            <PermissionGate permission="security.view">
+              <SecurityPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="alerts"
+          element={
+            <PermissionGate permission="alerts.view">
+              <AlertsPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="audit-logs"
+          element={
+            <PermissionGate permission="logs.view">
+              <AuditLogsPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="network"
+          element={
+            <PermissionGate permission="network.view">
+              <NetworkPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="agents"
+          element={
+            <PermissionGate permission="devices.view">
+              <AgentsPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="install"
+          element={
+            <PermissionGate permission="devices.view">
+              <InstallPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="groups"
+          element={
+            <PermissionGate permission="groups.view">
+              <GroupsPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="policies"
+          element={
+            <PermissionGate permission="policies.view">
+              <PoliciesPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="software"
+          element={
+            <PermissionGate permission="software.view">
+              <SoftwarePage />
+            </PermissionGate>
+          }
+        />
         <Route path="security/mfa" element={<MfaPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="hermes" element={<HermesPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route
+          path="reports"
+          element={
+            <PermissionGate permission="logs.view">
+              <ReportsPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="notifications"
+          element={
+            <PermissionGate permission="logs.view">
+              <NotificationsPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="hermes"
+          element={
+            <PermissionGate permission="hermes.view">
+              <HermesPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <PermissionGate permission="settings.view">
+              <SettingsPage />
+            </PermissionGate>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

@@ -7,6 +7,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import SearchInput from '../components/SearchInput';
 import StatusBadge from '../components/StatusBadge';
 import DataTable from '../components/DataTable';
@@ -43,6 +44,8 @@ interface AlertsResponse {
 }
 
 export default function AlertsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('alerts.manage');
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -180,7 +183,7 @@ export default function AlertsPage() {
       label: 'Actions',
       render: (row: Alert) => (
         <div className="flex items-center gap-1">
-          {!row.is_dismissed && (
+          {canManage && !row.is_dismissed && (
             <button
               onClick={(e) => {
                 e.stopPropagation();

@@ -277,7 +277,26 @@ export default function HermesPage() {
   }
 
   if (error || !status) {
-    return <ErrorState title={t('hermes.failedLoad')} error={error || t('hermes.failedLoadBody')} onRetry={refetch} />;
+    const isPermission =
+      /permission|403|forbidden|required permissions/i.test(error || '');
+    const isAuth = /auth|token|401|unauthorized/i.test(error || '');
+    const title = isPermission
+      ? t('common.permissionDenied')
+      : isAuth
+        ? t('common.authRequired')
+        : t('hermes.failedLoad');
+    const body = isPermission
+      ? t('common.permissionDeniedBody')
+      : isAuth
+        ? t('common.authRequiredBody')
+        : error || t('hermes.failedLoadBody');
+    return (
+      <ErrorState
+        title={title}
+        error={body}
+        onRetry={isPermission || isAuth ? () => window.location.reload() : refetch}
+      />
+    );
   }
 
   const findings = findingsData?.findings || [];

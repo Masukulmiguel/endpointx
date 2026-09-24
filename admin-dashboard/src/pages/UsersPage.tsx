@@ -8,6 +8,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import SearchInput from '../components/SearchInput';
 import DataTable from '../components/DataTable';
 import Pagination from '../components/Pagination';
@@ -73,6 +74,8 @@ interface EditFormData {
 }
 
 export default function UsersPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('users.manage');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -245,13 +248,15 @@ export default function UsersPage() {
             {data?.pagination?.total || 0} user{(data?.pagination?.total || 0) !== 1 ? 's' : ''} total
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <UserPlus className="w-4 h-4" />
-          Add User
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
+            Add User
+          </button>
+        )}
       </div>
 
       {toast && (
@@ -262,8 +267,14 @@ export default function UsersPage() {
         />
       )}
 
-      {error && (
-        <AlertBanner type="error" message={error} onClose={() => {}} />
+      {error && /permission|403|required permissions|forbidden/i.test(error) ? (
+        <AlertBanner
+          type="warning"
+          message="You do not have permission to manage users. Contact your administrator."
+          onClose={() => {}}
+        />
+      ) : (
+        error && <AlertBanner type="error" message={error} onClose={() => {}} />
       )}
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">

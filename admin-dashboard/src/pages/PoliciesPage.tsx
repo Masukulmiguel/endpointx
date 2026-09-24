@@ -11,6 +11,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import SearchInput from '../components/SearchInput';
 import AlertBanner from '../components/AlertBanner';
@@ -64,6 +65,8 @@ const ruleFields = [
 ];
 
 export default function PoliciesPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('policies.manage');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<CompliancePolicy | null>(null);
@@ -163,13 +166,15 @@ export default function PoliciesPage() {
             {policies.length} polic{policies.length !== 1 ? 'ies' : 'y'} total
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Create Policy
-        </button>
+        {canManage && (
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create Policy
+          </button>
+        )}
       </div>
 
       {toast && (

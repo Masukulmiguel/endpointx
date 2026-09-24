@@ -9,6 +9,7 @@ import {
   Monitor,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import SearchInput from '../components/SearchInput';
 import AlertBanner from '../components/AlertBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -47,6 +48,8 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 export default function GroupsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('groups.manage');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingGroup, setEditingGroup] = useState<DeviceGroup | null>(null);
@@ -124,13 +127,15 @@ export default function GroupsPage() {
             {groups.length} group{groups.length !== 1 ? 's' : ''} total
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Create Group
-        </button>
+        {canManage && (
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create Group
+          </button>
+        )}
       </div>
 
       {toast && (

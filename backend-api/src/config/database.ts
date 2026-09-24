@@ -1005,11 +1005,24 @@ const seedDefaults = async (): Promise<void> => {
     }
 
     // Assign permissions to roles
+    // Free early-access ("user"): view-only demo including HERMES (no manage/approve)
     const rolePerms: Record<string, string[]> = {
       admin: permissions.map(p => p[0]),
       supervisor: ['devices.view', 'devices.manage', 'devices.block', 'devices.commands', 'users.view', 'security.view', 'security.manage', 'logs.view', 'alerts.view', 'alerts.manage', 'agents.view', 'network.view', 'hermes.view'],
       technician: ['devices.view', 'devices.commands', 'security.view', 'agents.view', 'network.view', 'alerts.view', 'hermes.view'],
-      user: ['devices.view', 'alerts.view'],
+      user: [
+        'devices.view',
+        'alerts.view',
+        'security.view',
+        'hermes.view',
+        'agents.view',
+        'network.view',
+        'groups.view',
+        'policies.view',
+        'software.view',
+        'compliance.view',
+        'logs.view',
+      ],
     };
 
     for (const [roleName, permCodes] of Object.entries(rolePerms)) {

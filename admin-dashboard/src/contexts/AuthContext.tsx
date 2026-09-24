@@ -4,8 +4,11 @@ import api from '../services/api';
 interface User {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
+  username?: string;
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  role_id?: string | number | null;
   role_name: string;
   permissions: string[];
   is_active: boolean;
@@ -47,10 +50,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const initAuth = async () => {
       if (api.isAuthenticated()) {
         await fetchProfile();
+      } else {
+        setUser(null);
       }
       setLoading(false);
     };
     initAuth();
+  }, [fetchProfile]);
+
+  useEffect(() => {
+    const onSessionChanged = () => {
+      if (api.isAuthenticated()) {
+        fetchProfile();
+      } else {
+        setUser(null);
+      }
+    };
+    window.addEventListener('auth:session', onSessionChanged);
+    return () => window.removeEventListener('auth:session', onSessionChanged);
   }, [fetchProfile]);
 
   useEffect(() => {

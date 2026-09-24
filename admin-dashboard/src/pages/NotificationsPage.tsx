@@ -9,6 +9,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import AlertBanner from '../components/AlertBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -44,6 +45,9 @@ function formatTimeAgo(dateStr: string | null): string {
 }
 
 export default function NotificationsPage() {
+  const { hasPermission } = useAuth();
+  const canViewSettings = hasPermission('settings.view');
+  const canManageSettings = hasPermission('settings.manage');
   const [settings, setSettings] = useState<EmailSettings>({
     SMTP_HOST: '',
     SMTP_PORT: '587',
@@ -55,7 +59,9 @@ export default function NotificationsPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: notificationsData, loading, error } = useApi<{ notifications: NotificationEntry[] }>('/notifications');
-  const { data: settingsData, loading: settingsLoading } = useApi<{ settings: { key: string; value: string }[] }>('/notifications/settings');
+  const { data: settingsData, loading: settingsLoading, error: settingsError } = useApi<{ settings: { key: string; value: string }[] }>('/notifications/settings', {
+    immediate: canViewSettings,
+  });
   const { loading: savingSettings, mutate: updateSettings } = useApiMutation('/notifications/settings', 'PUT');
   const { loading: sendingTest, mutate: sendTest } = useApiMutation('/notifications/test', 'POST');
 
@@ -122,7 +128,16 @@ export default function NotificationsPage() {
         <AlertBanner type="error" message={error} onClose={() => {}} />
       )}
 
+      {!canViewSettings && (
+        <AlertBanner
+          type="warning"
+          message="You do not have permission to configure email settings. Contact your administrator."
+          onClose={() => {}}
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {canViewSettings && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
@@ -136,6 +151,9 @@ export default function NotificationsPage() {
             </div>
           </div>
           <div className="px-6 py-4 space-y-4">
+            {settingsError && (
+              <AlertBanner type="warning" message={settingsError} onClose={() => {}} />
+            )}
             {settingsLoading ? (
               <LoadingSpinner size="sm" />
             ) : (
@@ -192,7 +210,7 @@ export default function NotificationsPage() {
                 </div>
                 <button
                   onClick={handleSaveSettings}
-                  disabled={savingSettings}
+                  disabled={savingSettings || !canManageSettings}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   <Save className="w-4 h-4" />
@@ -202,7 +220,9 @@ export default function NotificationsPage() {
             )}
           </div>
         </div>
+        )}
 
+        {canManageSettings && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
@@ -236,6 +256,7 @@ export default function NotificationsPage() {
             </button>
           </div>
         </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

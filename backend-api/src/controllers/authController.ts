@@ -203,7 +203,14 @@ export const register = async (req: Request, res: Response, next: NextFunction):
 
     const passwordHash = await hashPassword(password);
     const freeRole = await query("SELECT id FROM roles WHERE name = 'user'");
-    const roleId = freeRole.rows[0]?.id || null;
+    const roleId = freeRole.rows[0]?.id;
+    if (!roleId) {
+      res.status(500).json({
+        success: false,
+        error: { message: 'Free access role is not configured. Contact support.' },
+      });
+      return;
+    }
 
     const baseUsername = (username || normalizedEmail.split('@')[0]).replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase().slice(0, 50) || 'user';
     let uniqueUsername = baseUsername;

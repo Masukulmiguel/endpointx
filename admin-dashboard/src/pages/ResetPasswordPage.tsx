@@ -65,7 +65,7 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-md">
         <div className="bg-gray-900 rounded-2xl shadow-2xl border border-gray-800 p-8">
           <div className="text-center mb-8">
-            <img src="/logotipo.png" alt="EndpointX" className="w-14 h-14 rounded-2xl object-contain mx-auto mb-4" />
+            <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-14 h-14 rounded-2xl object-contain mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-white">Choose a new password</h1>
             <p className="text-gray-400 text-sm mt-1">Minimum 12 characters with upper, lower, number and symbol.</p>
           </div>

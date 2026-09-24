@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,20 +12,25 @@ export default function LoginPage() {
   const [serverError, setServerError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, loading: authLoading, logout } = useAuth();
   const navigate = useNavigate();
   const { locale, setLocale, t } = useI18n();
+  const clearedExistingSession = useRef(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 100);
     return () => clearTimeout(timer);
   }, []);
 
+  // Visiting /login should allow signing in as another account.
+  // Clear a leftover session once (only after auth settles), not after a fresh login.
   useEffect(() => {
+    if (authLoading || clearedExistingSession.current) return;
+    clearedExistingSession.current = true;
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      logout();
     }
-  }, [isAuthenticated, navigate]);
+  }, [authLoading, isAuthenticated, logout]);
 
   const validate = (): boolean => {
     const newErrors: typeof errors = {};
@@ -69,7 +74,7 @@ export default function LoginPage() {
         <div className="bg-gray-900 rounded-2xl shadow-2xl border border-gray-800 p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4">
-              <img src="/logotipo.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
+              <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-white">{t('login.title')}</h1>
             <p className="text-gray-400 text-sm mt-1">{t('login.subtitle')}</p>
@@ -112,7 +117,7 @@ export default function LoginPage() {
                     setEmail(e.target.value);
                     if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
                   }}
-                  placeholder="admin@endpointx.com"
+                  placeholder="you@example.com"
                   className={`w-full pl-10 pr-4 py-2.5 text-sm bg-gray-800 border rounded-lg text-white placeholder-gray-500 outline-none transition-all ${
                     errors.email
                       ? 'border-red-500/50 focus:ring-2 focus:ring-red-500/20'

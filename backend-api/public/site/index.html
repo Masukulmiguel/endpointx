@@ -10,7 +10,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://endpointx.onrender.com/" />
     <link rel="canonical" href="https://endpointx.onrender.com/" />
-    <link rel="icon" type="image/png" href="/logotipo.png" />
+    <link rel="icon" type="image/png" href="/logotipo-fundo-branco.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
@@ -20,12 +20,14 @@
     <header class="site-header">
       <div class="container header-inner">
         <a class="brand" href="/">
-          <img src="/logotipo.png" alt="EndpointX" width="36" height="36" />
+          <img src="/logotipo-fundo-escuro.png" alt="EndpointX" class="logo-dark" width="36" height="36" />
+          <img src="/logotipo-fundo-branco.png" alt="EndpointX" class="logo-light" width="36" height="36" />
           <span>EndpointX</span>
         </a>
         <nav class="nav" aria-label="Primary">
           <a href="#how" data-i18n="nav.how">Como funciona</a>
           <a href="#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="#screenshots" data-i18n="nav.shots">Screenshots</a>
           <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
           <a href="#docs" data-i18n="nav.docs">Documentação</a>
           <a href="https://github.com/Masukulmiguel/endpointx" target="_blank" rel="noopener noreferrer">GitHub</a>
@@ -46,7 +48,6 @@
       <section class="hero">
         <div class="container hero-grid">
           <div>
-            <div class="eyebrow" data-i18n="hero.eyebrow">IAM + Endpoint Management + Defesa</div>
             <h1 data-i18n="hero.title">Veja, proteja e governe cada endpoint da sua rede</h1>
             <p class="hero-lead" data-i18n="hero.lead">
               EndpointX é uma plataforma defensiva de gestão de identidade, acesso e endpoints — com inventário em tempo real, políticas de conformidade e o motor de inteligência de segurança HERMES.
@@ -62,29 +63,18 @@
             </div>
           </div>
 
-          <div class="mock-panel" aria-hidden="true">
+          <div class="shot-frame hero-shot">
             <div class="mock-bar">
               <div class="mock-dots"><i></i><i></i><i></i></div>
-              <span>endpointx · dashboard preview</span>
+              <span>endpointx · dashboard</span>
             </div>
-            <div class="mock-body">
-              <div class="stat-grid">
-                <div class="stat-tile"><strong>128</strong><span data-i18n="mock.devices">Dispositivos</span></div>
-                <div class="stat-tile"><strong>112</strong><span data-i18n="mock.online">Online</span></div>
-                <div class="stat-tile"><strong>7</strong><span data-i18n="mock.alerts">Alertas</span></div>
-                <div class="stat-tile"><strong>2</strong><span>HERMES</span></div>
-              </div>
-              <div class="bar-list">
-                <div class="bar-row"><span data-i18n="mock.cpu">CPU</span><div class="bar-track"><div class="bar-fill" style="width:42%"></div></div><span>42%</span></div>
-                <div class="bar-row"><span data-i18n="mock.ram">RAM</span><div class="bar-track"><div class="bar-fill" style="width:61%"></div></div><span>61%</span></div>
-                <div class="bar-row"><span data-i18n="mock.disk">Disco</span><div class="bar-track"><div class="bar-fill" style="width:54%"></div></div><span>54%</span></div>
-              </div>
-              <div class="event-lines">
-                <div><b>high</b> · open port 3389 · host-finance-02 · evidence</div>
-                <div><b>medium</b> · agent outdated · lab-win-11 · recommend update</div>
-                <div><span>info</span> · baseline drift · srv-db-01 · reviewed</div>
-              </div>
-            </div>
+            <img
+              src="/img/dashboard.png"
+              alt="EndpointX dashboard principal"
+              width="1261"
+              height="841"
+              fetchpriority="high"
+            />
           </div>
         </div>
       </section>
@@ -195,7 +185,48 @@
         </div>
       </section>
 
-      <section id="hermes">
+      <section id="screenshots">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="shots.title">O painel EndpointX</h2>
+            <p data-i18n="shots.sub">Dashboard, dispositivos e HERMES — a plataforma em operação.</p>
+          </div>
+          <div class="shot-gallery">
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <div class="mock-bar">
+                  <div class="mock-dots"><i></i><i></i><i></i></div>
+                  <span>dashboard</span>
+                </div>
+                <img src="/img/dashboard.png" alt="Dashboard EndpointX" width="1261" height="841" loading="lazy" />
+              </div>
+              <figcaption data-i18n="shots.dashboard">Visão geral do dashboard</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <div class="mock-bar">
+                  <div class="mock-dots"><i></i><i></i><i></i></div>
+                  <span>devices</span>
+                </div>
+                <img src="/img/dashboard-device.png" alt="Gestão de dispositivos EndpointX" width="1261" height="841" loading="lazy" />
+              </div>
+              <figcaption data-i18n="shots.devices">Inventário e saúde dos endpoints</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <div class="shot-frame">
+                <div class="mock-bar">
+                  <div class="mock-dots"><i></i><i></i><i></i></div>
+                  <span>hermes</span>
+                </div>
+                <img src="/img/dashboard-hermes.png" alt="HERMES Security Intelligence" width="1261" height="841" loading="lazy" />
+              </div>
+              <figcaption data-i18n="shots.hermes">HERMES — inteligência defensiva</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section id="hermes" class="section-alt">
         <div class="container">
           <div class="section-head">
             <h2 data-i18n="hermes.title">HERMES — inteligência defensiva</h2>
@@ -319,7 +350,8 @@
         <div class="footer-grid">
           <div>
             <a class="brand" href="/">
-              <img src="/logotipo.png" alt="" width="36" height="36" />
+              <img src="/logotipo-fundo-escuro.png" alt="" class="logo-dark" width="36" height="36" />
+              <img src="/logotipo-fundo-branco.png" alt="" class="logo-light" width="36" height="36" />
               <span>EndpointX</span>
             </a>
             <p style="margin-top: 0.75rem; color: var(--text-muted)" data-i18n="meta.description">
@@ -346,7 +378,12 @@
             <span data-i18n="footer.creator">Criado por</span>
             <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer">Masukulu Miguel</a>
             ·
-            <a href="https://github.com/Masukulmiguel/endpointx" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://github.com/Masukulmiguel" target="_blank" rel="noopener noreferrer">codinglife-dev</a>
+          </div>
+          <div class="socials">
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+            <a href="https://github.com/Masukulmiguel" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://github.com/Masukulmiguel/endpointx" target="_blank" rel="noopener noreferrer">Repositório</a>
           </div>
           <div>© <span id="year">2026</span> EndpointX. <span data-i18n="footer.rights">Todos os direitos reservados.</span></div>
         </div>

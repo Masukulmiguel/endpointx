@@ -11,6 +11,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import SearchInput from '../components/SearchInput';
 import StatusBadge from '../components/StatusBadge';
 import AlertBanner from '../components/AlertBanner';
@@ -65,6 +66,8 @@ function formatTimeAgo(dateStr: string | null): string {
 const installerTypes = ['msi', 'exe', 'deb', 'rpm', 'dmg', 'pkg', 'app', 'zip', 'tar'];
 
 export default function SoftwarePage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('software.manage');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingPkg, setEditingPkg] = useState<SoftwarePackage | null>(null);
@@ -177,13 +180,15 @@ export default function SoftwarePage() {
             {packages.length} package{packages.length !== 1 ? 's' : ''} total
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Package
-        </button>
+        {canManage && (
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Package
+          </button>
+        )}
       </div>
 
       {toast && (
