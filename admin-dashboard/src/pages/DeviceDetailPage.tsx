@@ -310,14 +310,14 @@ export default function DeviceDetailPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {device.status === 'blocked' ? (
+            {device.status === 'blocked' || device.status === 'quarantine' ? (
               <button
                 onClick={handleUnblock}
                 disabled={unblockMutation.loading}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-50"
               >
                 <ShieldCheck className="w-4 h-4" />
-                Unblock
+                {device.status === 'quarantine' ? 'Release' : 'Unblock'}
               </button>
             ) : (
               <button
@@ -329,14 +329,16 @@ export default function DeviceDetailPage() {
                 Block
               </button>
             )}
-            <button
-              onClick={handleQuarantine}
-              disabled={quarantineMutation.loading}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-400 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors disabled:opacity-50"
-            >
-              <AlertTriangle className="w-4 h-4" />
-              Quarantine
-            </button>
+            {device.status !== 'quarantine' && device.status !== 'blocked' && (
+              <button
+                onClick={handleQuarantine}
+                disabled={quarantineMutation.loading}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-400 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors disabled:opacity-50"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Quarantine
+              </button>
+            )}
             <button
               onClick={handleRemove}
               disabled={deleteMutation.loading}

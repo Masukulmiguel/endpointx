@@ -14,6 +14,22 @@ export const LoginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const RegisterSchema = z.object({
+  email: z.string().min(1, 'Email is required').email('Invalid email format'),
+  password: passwordSchema,
+  full_name: z.string().min(1, 'Full name is required').max(100),
+  username: z.string().min(3, 'Username must be at least 3 characters').max(50).optional(),
+});
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().min(1, 'Email is required').email('Invalid email format'),
+});
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  password: passwordSchema,
+});
+
 export const InviteUserSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Invalid email format'),
   username: z.string().min(3, 'Username must be at least 3 characters').max(50).optional(),

@@ -3,6 +3,7 @@ dotenv.config();
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import http from 'http';
+import path from 'path';
 import { Server as SocketIOServer } from 'socket.io';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -12,6 +13,7 @@ import rateLimit from 'express-rate-limit';
 import logger from './utils/logger';
 import { initDatabase, closeDatabase } from './config/database';
 import { validateSecrets } from './config/constants';
+import { RATE_LIMIT } from './config/constants';
 import { updateOfflineDevices } from './routes/devices';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -51,19 +53,19 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5000,
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.AUTH_MAX_REQUESTS,
   message: { error: 'Too many authentication attempts, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
 });
 
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10000,
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.MAX_REQUESTS,
   message: { error: 'Too many requests, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
 });
 
 app.use('/api/auth', authLimiter);
@@ -120,9 +122,28 @@ app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/reports', reportsRoutes);
 
-// 404 handler
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({ success: false, error: { message: 'Route not found', code: 'NOT_FOUND' } });
+// Public site (landing, login, register) — served before 404 handler
+const publicSitePath = path.join(__dirname, '..', 'public', 'site');
+app.use(express.static(publicSitePath, { index: 'index.html', extensions: ['html'] }));
+app.get('/sitemap.xml', (_req: Request, res: Response) => {
+  res.sendFile(path.join(publicSitePath, 'sitemap.xml'));
+});
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  res.sendFile(path.join(publicSitePath, 'robots.txt'));
+});
+
+// 404 handler (API JSON for /api/*, HTML for unknown site paths)
+app.use((req: Request, res: Response) => {
+  if (req.path.startsWith('/api')) {
+    res.status(404).json({ success: false, error: { message: 'Route not found', code: 'NOT_FOUND' } });
+    return;
+  }
+  const looksLikeAsset = /\.[a-z0-9]+$/i.test(req.path);
+  if (looksLikeAsset) {
+    res.status(404).type('text/plain').send('Not found');
+    return;
+  }
+  res.status(404).sendFile(path.join(publicSitePath, 'index.html'));
 });
 
 // Error handler

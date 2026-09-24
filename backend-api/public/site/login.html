@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Entrar · EndpointX</title>
+    <meta name="description" content="Entre na sua conta EndpointX." />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="/logotipo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="auth-page">
+      <div class="auth-card">
+        <a class="brand" href="/">
+          <img src="/logotipo.png" alt="EndpointX" width="36" height="36" />
+          <span>EndpointX</span>
+        </a>
+        <h1 data-i18n="login.title">Entrar</h1>
+        <p class="auth-sub" data-i18n="login.sub">Aceda ao painel administrativo EndpointX.</p>
+
+        <div class="lang-switch" style="justify-content: center; margin-bottom: 1.1rem" role="group" aria-label="Language">
+          <button type="button" data-lang-btn="pt">PT</button>
+          <button type="button" data-lang-btn="en">EN</button>
+        </div>
+        <div style="display: flex; justify-content: center; margin-bottom: 1.25rem">
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Theme" aria-pressed="true">◐</button>
+        </div>
+
+        <div id="auth-alert" class="alert" hidden></div>
+
+        <form id="login-form" class="form-stack" novalidate>
+          <div class="field">
+            <label for="email" data-i18n="login.email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required data-i18n-placeholder="login.email" placeholder="Email" />
+          </div>
+          <div class="field">
+            <label for="password" data-i18n="login.password">Palavra-passe</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required data-i18n-placeholder="login.password" placeholder="Palavra-passe" />
+          </div>
+          <button id="login-submit" class="btn btn-primary btn-block" type="submit" data-i18n="login.submit">Entrar</button>
+        </form>
+
+        <p class="auth-meta">
+          <a href="/forgot-password.html" data-i18n="login.forgot">Esqueceu a palavra-passe?</a>
+        </p>
+        <p class="auth-meta">
+          <span data-i18n="login.noAccount">Ainda não tem conta?</span>
+          <a href="/register.html" data-i18n="login.create">Criar conta grátis</a>
+        </p>
+        <p class="auth-meta">
+          <a href="/" data-i18n="login.back">← Voltar ao início</a>
+        </p>
+      </div>
+    </div>
+    <script src="/js/i18n.js"></script>
+    <script src="/js/auth.js"></script>
+  </body>
+</html>

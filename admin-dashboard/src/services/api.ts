@@ -9,6 +9,23 @@ class ApiClient {
   constructor() {
     this.accessToken = localStorage.getItem('access_token');
     this.refreshToken = localStorage.getItem('refresh_token');
+
+    // Accept tokens redirected from the public landing/login site
+    const params = new URLSearchParams(window.location.search);
+    const qAccess = params.get('access_token');
+    const qRefresh = params.get('refresh_token');
+    if (qAccess && qRefresh) {
+      this.setTokens(qAccess, qRefresh);
+      params.delete('access_token');
+      params.delete('refresh_token');
+      const qs = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+    } else if (qAccess) {
+      this.setTokens(qAccess, this.refreshToken || '');
+      params.delete('access_token');
+      const qs = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+    }
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -85,6 +102,7 @@ class ApiClient {
     this.refreshToken = null;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    window.dispatchEvent(new Event('auth:logout'));
   }
 
   isAuthenticated(): boolean {
@@ -96,6 +114,27 @@ class ApiClient {
     return this.request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+  }
+
+  async register(data: { email: string; password: string; full_name: string; username?: string }) {
+    return this.request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async forgotPassword(email: string) {
+    return this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(token: string, password: string) {
+    return this.request('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
     });
   }
 
@@ -153,6 +192,10 @@ class ApiClient {
 
   async quarantineDevice(id: string) {
     return this.request(`/devices/${id}/quarantine`, { method: 'POST' });
+  }
+
+  async releaseQuarantine(id: string) {
+    return this.request(`/devices/${id}/unblock`, { method: 'POST' });
   }
 
   async getDeviceHistory(id: string, params?: Record<string, any>) {

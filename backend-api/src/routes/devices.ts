@@ -77,7 +77,10 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       return;
     }
 
-    const deviceResult = await query("SELECT id, last_agent_hash FROM devices WHERE agent_id = $1 AND is_authorized = true", [agent_id]);
+    const deviceResult = await query(
+      "SELECT id, last_agent_hash, status, quarantine_status FROM devices WHERE agent_id = $1 AND is_authorized = true",
+      [agent_id]
+    );
 
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found or not authorized' } });
@@ -85,11 +88,26 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     }
 
     const device = deviceResult.rows[0];
+    const isContained = device.status === 'blocked' || device.status === 'quarantine'
+      || device.quarantine_status === 'QUARANTINED' || device.quarantine_status === 'BLOCKED';
     const agentVersion = typeof current_version === 'string' && current_version.trim()
       ? current_version.trim().slice(0, 20)
       : null;
 
-    if (agentVersion) {
+    // Contained devices: keep status (do NOT flip back to online); still accept metrics.
+    if (isContained) {
+      if (agentVersion) {
+        await query(
+          "UPDATE devices SET last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3, agent_version = $4 WHERE id = $5",
+          [cpu_usage || 0, ram_usage || 0, disk_usage || 0, agentVersion, device.id]
+        );
+      } else {
+        await query(
+          'UPDATE devices SET last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3 WHERE id = $4',
+          [cpu_usage || 0, ram_usage || 0, disk_usage || 0, device.id]
+        );
+      }
+    } else if (agentVersion) {
       await query(
         "UPDATE devices SET status = 'online', last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3, agent_version = $4 WHERE id = $5",
         [cpu_usage || 0, ram_usage || 0, disk_usage || 0, agentVersion, device.id]
@@ -128,13 +146,32 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     await query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [hbId, device.id, cpu_usage || 0, ram_usage || 0, disk_usage || 0, network_in || 0, network_out || 0, active_processes || 0]);
 
-    // Get pending commands and mark as processing
-    const commands = await query("SELECT id, command_type, parameters FROM agent_commands WHERE device_id = $1 AND status = 'pending' ORDER BY created_at ASC LIMIT 10", [device.id]);
+    // Contained devices: only receive containment-related commands (isolate/unisolate/quarantine)
+    const commands = await query(
+      isContained
+        ? `SELECT id, command_type, parameters FROM agent_commands
+            WHERE device_id = $1 AND status = 'pending'
+              AND command_type IN ('isolate', 'unisolate', 'quarantine')
+            ORDER BY created_at ASC LIMIT 5`
+        : `SELECT id, command_type, parameters FROM agent_commands
+            WHERE device_id = $1 AND status = 'pending'
+            ORDER BY created_at ASC LIMIT 10`,
+      [device.id]
+    );
     for (const cmd of commands.rows) {
       await query("UPDATE agent_commands SET status = 'processing' WHERE id = $1", [cmd.id]);
     }
 
-    res.json({ success: true, data: { device_id: device.id, commands: commands.rows, agent_version: '1.1.0' } });
+    res.json({
+      success: true,
+      data: {
+        device_id: device.id,
+        commands: commands.rows,
+        agent_version: '1.1.0',
+        status: device.status,
+        contained: isContained,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -247,16 +284,29 @@ router.delete('/:id', authenticate, requirePermission('devices.manage'), async (
   }
 });
 
-// Block device
+async function queueContainmentCommand(deviceId: string, commandType: 'isolate' | 'unisolate', issuedBy: string | null, reason: string) {
+  const cmdId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  await query(
+    'INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES ($1, $2, $3, $4, $5, $6)',
+    [cmdId, deviceId, commandType, JSON.stringify({ reason, queued_at: new Date().toISOString() }), 'pending', issuedBy]
+  );
+  return cmdId;
+}
+
+// Block device (containment: status + isolate agent firewall)
 router.post('/:id/block', authenticate, requirePermission('devices.block'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await query("UPDATE devices SET status = 'blocked' WHERE id = $1", [id]);
+    await query(
+      "UPDATE devices SET status = 'blocked', quarantine_status = 'BLOCKED', trust_level = 'BLOCKED', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+    const cmdId = await queueContainmentCommand(id, 'isolate', req.user?.id || null, 'device_block');
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_block', 'device', id, 'Device blocked', req.ip]);
+      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_block', 'device', id, 'Device blocked + isolate queued', req.ip]);
 
-    res.json({ success: true, data: { message: 'Device blocked' } });
+    res.json({ success: true, data: { message: 'Device blocked', command_id: cmdId } });
   } catch (error) {
     next(error);
   }
@@ -287,31 +337,39 @@ router.post('/:id/update-agent', authenticate, requirePermission('devices.comman
   }
 });
 
-// Unblock device
+// Unblock device (lift containment)
 router.post('/:id/unblock', authenticate, requirePermission('devices.block'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await query("UPDATE devices SET status = 'online' WHERE id = $1", [id]);
+    await query(
+      "UPDATE devices SET status = 'online', quarantine_status = 'NORMAL', trust_level = CASE WHEN trust_level IN ('BLOCKED','QUARANTINED') THEN 'KNOWN' ELSE trust_level END, updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+    const cmdId = await queueContainmentCommand(id, 'unisolate', req.user?.id || null, 'device_unblock');
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_unblock', 'device', id, 'Device unblocked', req.ip]);
+      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_unblock', 'device', id, 'Device unblocked + unisolate queued', req.ip]);
 
-    res.json({ success: true, data: { message: 'Device unblocked' } });
+    res.json({ success: true, data: { message: 'Device unblocked', command_id: cmdId } });
   } catch (error) {
     next(error);
   }
 });
 
-// Quarantine device
+// Quarantine device (containment)
 router.post('/:id/quarantine', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await query("UPDATE devices SET status = 'quarantine' WHERE id = $1", [id]);
+    await query(
+      "UPDATE devices SET status = 'quarantine', quarantine_status = 'QUARANTINED', trust_level = 'QUARANTINED', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+    const cmdId = await queueContainmentCommand(id, 'isolate', req.user?.id || null, 'device_quarantine');
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_quarantine', 'device', id, 'Device quarantined', req.ip]);
+      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_quarantine', 'device', id, 'Device quarantined + isolate queued', req.ip]);
 
-    res.json({ success: true, data: { message: 'Device quarantined' } });
+    res.json({ success: true, data: { message: 'Device quarantined', command_id: cmdId } });
   } catch (error) {
     next(error);
   }

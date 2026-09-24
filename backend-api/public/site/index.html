@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="pt" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EndpointX — IAM, Endpoint Management &amp; Defense</title>
+    <meta name="description" content="EndpointX — plataforma de IAM, endpoint management e segurança defensiva com HERMES. Gerir dispositivos, alertas, conformidade e inteligência de risco." />
+    <meta property="og:title" content="EndpointX — IAM, Endpoint Management &amp; Defense" />
+    <meta property="og:description" content="Defensive IAM, endpoint management, and HERMES security intelligence." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://endpointx.onrender.com/" />
+    <link rel="canonical" href="https://endpointx.onrender.com/" />
+    <link rel="icon" type="image/png" href="/logotipo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img src="/logotipo.png" alt="EndpointX" width="36" height="36" />
+          <span>EndpointX</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="#how" data-i18n="nav.how">Como funciona</a>
+          <a href="#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="#docs" data-i18n="nav.docs">Documentação</a>
+          <a href="https://github.com/Masukulmiguel/endpointx" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Language">
+            <button type="button" data-lang-btn="pt">PT</button>
+            <button type="button" data-lang-btn="en">EN</button>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Theme" aria-pressed="true" title="System / Light / Dark">◐</button>
+          <a class="btn btn-ghost" href="/login.html" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register.html" data-i18n="nav.register">Começar grátis</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <div class="eyebrow" data-i18n="hero.eyebrow">IAM + Endpoint Management + Defesa</div>
+            <h1 data-i18n="hero.title">Veja, proteja e governe cada endpoint da sua rede</h1>
+            <p class="hero-lead" data-i18n="hero.lead">
+              EndpointX é uma plataforma defensiva de gestão de identidade, acesso e endpoints — com inventário em tempo real, políticas de conformidade e o motor de inteligência de segurança HERMES.
+            </p>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="/register.html" data-i18n="hero.cta1">Criar conta grátis</a>
+              <a class="btn btn-ghost" href="/login.html" data-i18n="hero.cta2">Entrar na demo</a>
+            </div>
+            <div class="trust-row">
+              <span><i class="dot" aria-hidden="true"></i><span data-i18n="hero.trust1">Defensivo por desenho</span></span>
+              <span data-i18n="hero.trust2">PT | EN</span>
+              <span data-i18n="hero.trust3">Open source no GitHub</span>
+            </div>
+          </div>
+
+          <div class="mock-panel" aria-hidden="true">
+            <div class="mock-bar">
+              <div class="mock-dots"><i></i><i></i><i></i></div>
+              <span>endpointx · dashboard preview</span>
+            </div>
+            <div class="mock-body">
+              <div class="stat-grid">
+                <div class="stat-tile"><strong>128</strong><span data-i18n="mock.devices">Dispositivos</span></div>
+                <div class="stat-tile"><strong>112</strong><span data-i18n="mock.online">Online</span></div>
+                <div class="stat-tile"><strong>7</strong><span data-i18n="mock.alerts">Alertas</span></div>
+                <div class="stat-tile"><strong>2</strong><span>HERMES</span></div>
+              </div>
+              <div class="bar-list">
+                <div class="bar-row"><span data-i18n="mock.cpu">CPU</span><div class="bar-track"><div class="bar-fill" style="width:42%"></div></div><span>42%</span></div>
+                <div class="bar-row"><span data-i18n="mock.ram">RAM</span><div class="bar-track"><div class="bar-fill" style="width:61%"></div></div><span>61%</span></div>
+                <div class="bar-row"><span data-i18n="mock.disk">Disco</span><div class="bar-track"><div class="bar-fill" style="width:54%"></div></div><span>54%</span></div>
+              </div>
+              <div class="event-lines">
+                <div><b>high</b> · open port 3389 · host-finance-02 · evidence</div>
+                <div><b>medium</b> · agent outdated · lab-win-11 · recommend update</div>
+                <div><span>info</span> · baseline drift · srv-db-01 · reviewed</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="how" class="section-alt">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="how.title">Como funciona</h2>
+            <p data-i18n="how.sub">Do agente ao painel em quatro passos.</p>
+          </div>
+          <div class="steps">
+            <article class="step">
+              <h3 data-i18n="how.1.t">Instale o agente</h3>
+              <p data-i18n="how.1.d">Instale o agente nos PCs autorizados. O registo é rápido e auditado.</p>
+            </article>
+            <article class="step">
+              <h3 data-i18n="how.2.t">Monitorize em tempo real</h3>
+              <p data-i18n="how.2.d">Heartbeats, inventário, processos e estado de rede num só painel.</p>
+            </article>
+            <article class="step">
+              <h3 data-i18n="how.3.t">Aplique políticas</h3>
+              <p data-i18n="how.3.d">Grupos, conformidade e controlo de acesso com permissões por função.</p>
+            </article>
+            <article class="step">
+              <h3 data-i18n="how.4.t">Defenda com HERMES</h3>
+              <p data-i18n="how.4.d">Descoberta de activos, análise de portas e recomendações com evidência.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="arch.title">Arquitectura da plataforma</h2>
+            <p data-i18n="arch.sub">Agentes → API → Base de dados → Painel. Claro e auditável.</p>
+          </div>
+          <div class="arch-diagram" role="img" aria-label="Architecture diagram">
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Endpoints  │───▶│ Backend API  │───▶│  PostgreSQL  │◀───│   Dashboard  │
+│   + Agent    │    │ (Express)    │    │      DB      │    │  (React SPA) │
+└──────────────┘    └──────┬───────┘    └──────────────┘    └──────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │    HERMES    │
+                    │  (defensive) │
+                    └──────────────┘
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section-alt">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="feat.title">Funcionalidades</h2>
+            <p data-i18n="feat.sub">Tudo o que precisa para operar segurança defensiva de ponta a ponta.</p>
+          </div>
+          <div class="cards cards-4">
+            <article class="card">
+              <div class="icon">01</div>
+              <span class="badge badge-available" data-i18n="s.available">Disponível</span>
+              <h3 data-i18n="feat.1.t">Gestão de dispositivos</h3>
+              <p data-i18n="feat.1.d">Inventário, estados online/offline, comandos remotos e isolamento.</p>
+            </article>
+            <article class="card">
+              <div class="icon">02</div>
+              <span class="badge badge-available" data-i18n="s.available">Disponível</span>
+              <h3 data-i18n="feat.2.t">IAM e permissões</h3>
+              <p data-i18n="feat.2.d">Funções, permissões granulares, MFA e sessões auditadas.</p>
+            </article>
+            <article class="card">
+              <div class="icon">03</div>
+              <span class="badge badge-available" data-i18n="s.available">Disponível</span>
+              <h3 data-i18n="feat.3.t">Alertas e eventos</h3>
+              <p data-i18n="feat.3.d">Severidade, filtros, resolução e registos de auditoria.</p>
+            </article>
+            <article class="card">
+              <div class="icon">04</div>
+              <span class="badge badge-available" data-i18n="s.available">Disponível</span>
+              <h3 data-i18n="feat.4.t">Conformidade e software</h3>
+              <p data-i18n="feat.4.d">Políticas de compliance, grupos e deploy de software controlado.</p>
+            </article>
+            <article class="card">
+              <div class="icon">05</div>
+              <span class="badge badge-available" data-i18n="s.available">Disponível</span>
+              <h3 data-i18n="feat.5.t">HERMES</h3>
+              <p data-i18n="feat.5.d">Motor defensivo de avaliação de risco, portas e vulnerabilidades correlacionadas.</p>
+            </article>
+            <article class="card">
+              <div class="icon">06</div>
+              <span class="badge badge-dev" data-i18n="s.dev">Em desenvolvimento</span>
+              <h3 data-i18n="feat.6.t">NetSentinel / NAC</h3>
+              <p data-i18n="feat.6.d">Descoberta de rede e decisões de acesso de rede controladas.</p>
+            </article>
+            <article class="card">
+              <div class="icon">07</div>
+              <span class="badge badge-available" data-i18n="s.available">Disponível</span>
+              <h3 data-i18n="feat.7.t">Relatórios</h3>
+              <p data-i18n="feat.7.d">Exportações e visões operacionais para equipas de segurança.</p>
+            </article>
+            <article class="card">
+              <div class="icon">08</div>
+              <span class="badge badge-planned" data-i18n="s.planned">Planeado</span>
+              <h3 data-i18n="feat.8.t">Integrações e conectores</h3>
+              <p data-i18n="feat.8.d">Ligação a SIEM e ferramentas externas em evolução.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="hermes">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="hermes.title">HERMES — inteligência defensiva</h2>
+            <p data-i18n="hermes.sub">
+              Host Evaluation Risk Monitoring Engine Security. Observa, analisa e recomenda — nunca explora hosts de forma ofensiva.
+            </p>
+          </div>
+          <div class="cards cards-3">
+            <article class="card">
+              <div class="icon">A</div>
+              <h3 data-i18n="hermes.1.t">Descoberta de activos</h3>
+              <p data-i18n="hermes.1.d">Sincroniza endpoints autorizados e sinaliza activos desconhecidos para revisão.</p>
+            </article>
+            <article class="card">
+              <div class="icon">B</div>
+              <h3 data-i18n="hermes.2.t">Análise de portas e serviços</h3>
+              <p data-i18n="hermes.2.d">Sondagens TCP não destrutivas, identificação de serviços com confiança e evidência.</p>
+            </article>
+            <article class="card">
+              <div class="icon">C</div>
+              <h3 data-i18n="hermes.3.t">Correlação de vulnerabilidades</h3>
+              <p data-i18n="hermes.3.d">Cruza inventário e superfície de ataque com recomendações accionáveis.</p>
+            </article>
+          </div>
+          <p style="margin-top: 1.25rem">
+            <a class="btn btn-ghost" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/hermes-architecture.md" target="_blank" rel="noopener noreferrer" data-i18n="hermes.link">Ver documentação HERMES</a>
+          </p>
+        </div>
+      </section>
+
+      <section id="privacy" class="section-alt">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="priv.title">Princípios de privacidade e segurança</h2>
+            <p data-i18n="priv.sub">Desenhado para equipas que levam a sério a defesa de endpoints.</p>
+          </div>
+          <div class="principles">
+            <div class="principle">
+              <div class="check">✓</div>
+              <div>
+                <strong data-i18n="priv.1.t">Só endpoints autorizados</strong>
+                <span data-i18n="priv.1.d">Só dispositivos registados, com agente e ranges CIDR configurados pelo admin.</span>
+              </div>
+            </div>
+            <div class="principle">
+              <div class="check">✓</div>
+              <div>
+                <strong data-i18n="priv.2.t">Sem recolha invasiva</strong>
+                <span data-i18n="priv.2.d">Sem palavras-passe, keystrokes ou conteúdo de ficheiros.</span>
+              </div>
+            </div>
+            <div class="principle">
+              <div class="check">✓</div>
+              <div>
+                <strong data-i18n="priv.3.t">Evidência e auditoria</strong>
+                <span data-i18n="priv.3.d">Cada conclusão tem fonte, confiança, timestamp e rasto em audit logs.</span>
+              </div>
+            </div>
+            <div class="principle">
+              <div class="check">✓</div>
+              <div>
+                <strong data-i18n="priv.4.t">Aprovação humana</strong>
+                <span data-i18n="priv.4.d">Remediação disruptiva requer aprovação de administrador.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="docs">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="docs.title">Documentação</h2>
+            <p data-i18n="docs.sub">Guias técnicos, API e operação.</p>
+          </div>
+          <div class="docs-grid">
+            <a class="doc-link" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/architecture.md" target="_blank" rel="noopener noreferrer">
+              <strong data-i18n="docs.arch">Arquitectura</strong>
+              <span>docs/architecture.md</span>
+            </a>
+            <a class="doc-link" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/api.md" target="_blank" rel="noopener noreferrer">
+              <strong data-i18n="docs.api">API</strong>
+              <span>docs/api.md</span>
+            </a>
+            <a class="doc-link" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/INSTALL-GUIDE.md" target="_blank" rel="noopener noreferrer">
+              <strong data-i18n="docs.install">Guia de instalação</strong>
+              <span>docs/INSTALL-GUIDE.md</span>
+            </a>
+            <a class="doc-link" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/deployment.md" target="_blank" rel="noopener noreferrer">
+              <strong data-i18n="docs.deploy">Deploy</strong>
+              <span>docs/deployment.md</span>
+            </a>
+            <a class="doc-link" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/security.md" target="_blank" rel="noopener noreferrer">
+              <strong data-i18n="docs.security">Segurança</strong>
+              <span>docs/security.md</span>
+            </a>
+            <a class="doc-link" href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/hermes-architecture.md" target="_blank" rel="noopener noreferrer">
+              <strong data-i18n="docs.hermes">HERMES</strong>
+              <span>docs/hermes-architecture.md</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="container">
+          <div class="cta-band">
+            <h2 data-i18n="cta.title">Comece com a free early access</h2>
+            <p data-i18n="cta.sub">Crie a sua conta gratuita e ligue o primeiro endpoint em minutos.</p>
+            <div class="cta-actions">
+              <a class="btn btn-primary" href="/register.html" data-i18n="cta.primary">Criar conta grátis</a>
+              <a class="btn btn-ghost" href="/login.html" data-i18n="cta.secondary">Já tenho conta</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/logotipo.png" alt="" width="36" height="36" />
+              <span>EndpointX</span>
+            </a>
+            <p style="margin-top: 0.75rem; color: var(--text-muted)" data-i18n="meta.description">
+              EndpointX — plataforma de IAM, endpoint management e segurança defensiva com HERMES.
+            </p>
+          </div>
+          <div>
+            <h4 data-i18n="footer.product">Produto</h4>
+            <a href="#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/login.html" data-i18n="nav.login">Entrar</a>
+            <a href="/register.html" data-i18n="nav.register">Começar grátis</a>
+          </div>
+          <div>
+            <h4 data-i18n="footer.company">Projecto</h4>
+            <a href="https://github.com/Masukulmiguel/endpointx" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="nav.creator">Criador</a>
+            <a href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/security.md" target="_blank" rel="noopener noreferrer" data-i18n="footer.privacy">Privacidade</a>
+            <a href="https://github.com/Masukulmiguel/endpointx/blob/main/docs/api.md" target="_blank" rel="noopener noreferrer" data-i18n="footer.docs">Documentação</a>
+          </div>
+        </div>
+        <div class="creator">
+          <div>
+            <span data-i18n="footer.creator">Criado por</span>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer">Masukulu Miguel</a>
+            ·
+            <a href="https://github.com/Masukulmiguel/endpointx" target="_blank" rel="noopener noreferrer">GitHub</a>
+          </div>
+          <div>© <span id="year">2026</span> EndpointX. <span data-i18n="footer.rights">Todos os direitos reservados.</span></div>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/js/i18n.js"></script>
+    <script>
+      document.getElementById('year').textContent = String(new Date().getFullYear());
+    </script>
+  </body>
+</html>

@@ -16,6 +16,9 @@ const ALLOWED_COMMAND_TYPES = [
   'scan',
   'get_info',
   'uninstall_agent',
+  'isolate',
+  'unisolate',
+  'quarantine',
 ];
 
 // List commands

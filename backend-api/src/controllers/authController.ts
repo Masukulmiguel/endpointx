@@ -6,7 +6,75 @@ import { hashPassword, comparePassword, generateToken, generateRefreshToken, has
 import { JWT, AUTH } from '../config/constants';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { sendWelcomeEmail } from '../services/emailService';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService';
+
+function hexId(): string {
+  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+}
+
+async function recordFailedLogin(
+  req: Request,
+  email: string,
+  userId: string | null,
+  reason: 'invalid_credentials' | 'account_locked' | 'unknown_user'
+): Promise<void> {
+  const ip = req.ip || null;
+  const ua = (req.headers['user-agent'] as string) || null;
+
+  await query(
+    `INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address, user_agent, metadata)
+     VALUES ($1, $2, $3, 'login_failed', 'user', $4, $5, $6, $7, $8)`,
+    [hexId(), userId, email, userId, `Login failed: ${reason}`, ip, ua, JSON.stringify({ reason })]
+  );
+
+  const windowMin = 15;
+  const recent = await query(
+    `SELECT COUNT(*) as c FROM audit_logs
+     WHERE action = 'login_failed' AND created_at > NOW() - INTERVAL '${windowMin} minutes'
+       AND (ip_address::text = $1 OR user_email = $2)`,
+    [ip || '', email]
+  );
+  const failCount = parseInt(recent.rows[0]?.c || '0', 10);
+
+  const lockout = reason === 'account_locked' || failCount >= 5;
+  const severity = lockout ? 'critical' : failCount >= 3 ? 'high' : 'medium';
+  const eventType = lockout ? 'brute_force' : 'failed_login';
+
+  await query(
+    `INSERT INTO security_events (id, device_id, event_type, severity, title, description, source, raw_data)
+     VALUES ($1, NULL, $2, $3, $4, $5, 'auth', $6)`,
+    [
+      hexId(),
+      eventType,
+      severity,
+      lockout ? 'Possible brute-force login attempts' : 'Failed login attempt',
+      `${failCount} failed login(s) in last ${windowMin} min for ${email} from ${ip || 'unknown'}`,
+      JSON.stringify({ email, ip, fail_count: failCount, reason }),
+    ]
+  );
+
+  if (lockout) {
+    const existing = await query(
+      `SELECT id FROM alerts WHERE alert_type = $1 AND is_dismissed = false
+         AND created_at > NOW() - INTERVAL '15 minutes' AND title = $2 LIMIT 1`,
+      [eventType, `Brute force suspected: ${email}`]
+    );
+    if (existing.rows.length === 0) {
+      await query(
+        `INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6)`,
+        [
+          hexId(),
+          eventType,
+          severity,
+          `Brute force suspected: ${email}`,
+          `${failCount} failed login(s) from ${ip || 'unknown'} in ${windowMin} minutes`,
+          JSON.stringify({ email, ip, fail_count: failCount, reason }),
+        ]
+      );
+    }
+  }
+}
 
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -16,12 +84,14 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
     const userResult = await query(
       `SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.email = $1 AND u.is_active = true`,
-      [email.toLowerCase().trim()]
+      [normalizedEmail]
     );
 
     if (userResult.rows.length === 0) {
+      await recordFailedLogin(req, normalizedEmail, null, 'unknown_user').catch(() => undefined);
       res.status(401).json({ success: false, error: { message: 'Invalid email or password.' } });
       return;
     }
@@ -29,6 +99,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     const user = userResult.rows[0];
 
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      await recordFailedLogin(req, normalizedEmail, user.id, 'account_locked').catch(() => undefined);
       res.status(423).json({ success: false, error: { message: 'Account is locked. Try again later.' } });
       return;
     }
@@ -39,6 +110,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       const lockout = attempts >= AUTH.MAX_LOGIN_ATTEMPTS;
       await query('UPDATE users SET failed_login_attempts = $1, locked_until = $2 WHERE id = $3',
         [attempts, lockout ? new Date(Date.now() + AUTH.LOCKOUT_DURATION_MS).toISOString() : null, user.id]);
+      await recordFailedLogin(req, normalizedEmail, user.id, lockout ? 'account_locked' : 'invalid_credentials').catch(() => undefined);
       res.status(401).json({ success: false, error: { message: 'Invalid email or password.' } });
       return;
     }
@@ -110,6 +182,181 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     });
   } catch (error) {
     logger.error('Login error', { error: (error as Error).message });
+    next(error);
+  }
+};
+
+export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { email, password, full_name, username } = req.body;
+    if (!email || !password || !full_name) {
+      res.status(400).json({ success: false, error: { message: 'Email, password and full name are required.' } });
+      return;
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existing.rows.length > 0) {
+      res.status(409).json({ success: false, error: { message: 'An account with this email already exists.' } });
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    const freeRole = await query("SELECT id FROM roles WHERE name = 'user'");
+    const roleId = freeRole.rows[0]?.id || null;
+
+    const baseUsername = (username || normalizedEmail.split('@')[0]).replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase().slice(0, 50) || 'user';
+    let uniqueUsername = baseUsername;
+    for (let i = 0; i < 20; i++) {
+      const clash = await query('SELECT id FROM users WHERE username = $1', [uniqueUsername]);
+      if (clash.rows.length === 0) break;
+      uniqueUsername = `${baseUsername}${Math.floor(Math.random() * 9000 + 1000)}`;
+    }
+
+    const result = await query(
+      `INSERT INTO users (email, username, full_name, password_hash, role_id, is_active, must_change_password)
+       VALUES ($1, $2, $3, $4, $5, true, false) RETURNING id`,
+      [normalizedEmail, uniqueUsername, full_name.trim(), passwordHash, roleId]
+    );
+    const userId = result.rows[0].id;
+
+    await query(
+      'INSERT INTO audit_logs (user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [userId, normalizedEmail, 'user_register', 'user', userId, 'Self-registration (free early access)', req.ip]
+    );
+
+    logger.info('User self-registered', { userId, email: normalizedEmail });
+
+    const permissionsResult = await query(
+      'SELECT p.code FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id WHERE rp.role_id = $1',
+      [roleId]
+    );
+    const permissions = permissionsResult.rows.map((r: any) => r.code);
+
+    const accessToken = generateToken(
+      { id: userId, email: normalizedEmail, role_id: roleId, role_name: 'user', permissions },
+      JWT.ACCESS_SECRET,
+      JWT.ACCESS_EXPIRES_IN
+    );
+    const refreshTokenStr = generateRefreshToken();
+    const refreshTokenHash = hashToken(refreshTokenStr);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await query(
+      'INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)',
+      [userId, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]
+    );
+    await query('UPDATE users SET last_login = NOW() WHERE id = $1', [userId]);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        accessToken,
+        refreshToken: refreshTokenStr,
+        user: {
+          id: userId,
+          email: normalizedEmail,
+          username: uniqueUsername,
+          full_name: full_name.trim(),
+          role_id: roleId,
+          role_name: 'user',
+          permissions,
+        },
+        message: 'Account created. Free early access activated.',
+      },
+    });
+  } catch (error) {
+    logger.error('Register error', { error: (error as Error).message });
+    next(error);
+  }
+};
+
+export const forgotPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = (email || '').toLowerCase().trim();
+
+    // Always return the same message to avoid account enumeration
+    const generic = {
+      success: true,
+      data: { message: 'If an account exists for this email, a reset link has been sent.' },
+    };
+
+    if (!normalizedEmail) {
+      res.json(generic);
+      return;
+    }
+
+    const userResult = await query('SELECT id, email, full_name FROM users WHERE email = $1 AND is_active = true', [normalizedEmail]);
+    if (userResult.rows.length === 0) {
+      res.json(generic);
+      return;
+    }
+
+    const user = userResult.rows[0];
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = hashToken(resetToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await query(
+      'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [user.id, tokenHash, expiresAt.toISOString()]
+    );
+
+    const dashboardUrl = process.env.FRONTEND_URL || 'https://endpointx-dashboard.onrender.com';
+    const resetUrl = `${dashboardUrl}/reset-password?token=${resetToken}`;
+
+    const emailed = await sendPasswordResetEmail(user.email, user.full_name || user.email, resetUrl);
+    if (!emailed) {
+      logger.warn('Password reset email could not be sent (SMTP not configured or failed)', { email: user.email });
+    }
+
+    res.json(generic);
+  } catch (error) {
+    logger.error('Forgot password error', { error: (error as Error).message });
+    next(error);
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      res.status(400).json({ success: false, error: { message: 'Token and password are required.' } });
+      return;
+    }
+
+    const tokenHash = hashToken(token);
+    const tokenResult = await query(
+      `SELECT id, user_id, expires_at, used FROM password_reset_tokens
+       WHERE token_hash = $1 AND used = false AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [tokenHash]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'Invalid or expired reset token.' } });
+      return;
+    }
+
+    const resetRow = tokenResult.rows[0];
+    const passwordHash = await hashPassword(password);
+
+    await query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL, must_change_password = false, password_changed_at = NOW() WHERE id = $2',
+      [passwordHash, resetRow.user_id]);
+    await query('UPDATE password_reset_tokens SET used = true WHERE id = $1', [resetRow.id]);
+    await query('DELETE FROM user_sessions WHERE user_id = $1', [resetRow.user_id]);
+
+    await query(
+      'INSERT INTO audit_logs (user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ((SELECT id FROM users WHERE id = $1), (SELECT email FROM users WHERE id = $1), $2, $3, $1, $4, $5)',
+      [resetRow.user_id, 'password_reset', 'user', 'Password reset via token', req.ip]
+    );
+
+    logger.info('Password reset completed', { userId: resetRow.user_id });
+    res.json({ success: true, data: { message: 'Password has been reset. You can now sign in.' } });
+  } catch (error) {
+    logger.error('Reset password error', { error: (error as Error).message });
     next(error);
   }
 };

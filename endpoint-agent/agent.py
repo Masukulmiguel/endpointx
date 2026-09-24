@@ -38,6 +38,7 @@ from system_info import (
     get_running_services,
     collect_inventory,
     get_firewall_status,
+    get_suspicious_connections,
     get_antivirus_status,
     get_system_uptime,
 )
@@ -698,6 +699,9 @@ class EndpointAgent:
             "scan": self.handle_scan,
             "get_info": self.handle_get_info,
             "uninstall_agent": self.handle_uninstall_agent,
+            "isolate": self.handle_isolate,
+            "unisolate": self.handle_unisolate,
+            "quarantine": self.handle_isolate,
         }
 
         handler = handlers.get(cmd_type)
@@ -713,6 +717,126 @@ class EndpointAgent:
         except Exception as exc:
             logger.error("Command %s failed: %s", cmd_id, exc)
             self.report_command_result(cmd_id, "failed", error_message=str(exc))
+
+    def _management_hosts(self) -> list[str]:
+        hosts: list[str] = []
+        url = str(self.config.get("server_url") or "")
+        if "://" in url:
+            host = url.split("://", 1)[1].split("/", 1)[0].split("@")[-1].split(":")[0]
+            if host:
+                hosts.append(host)
+        try:
+            import socket
+            for info in socket.getaddrinfo(hosts[0] if hosts else "endpointx.onrender.com", None):
+                addr = info[4][0]
+                if addr and addr not in hosts:
+                    hosts.append(addr)
+        except Exception:
+            pass
+        return hosts
+
+    def handle_isolate(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Network containment: allow only management server, block other traffic.
+
+        Defensive isolation — does not delete data or run exploits.
+        """
+        reason = params.get("reason", "containment")
+        logger.warning("Isolate/containment command received (%s)", reason)
+        system = platform.system()
+        hosts = self._management_hosts()
+        allowed = hosts or ["endpointx.onrender.com"]
+
+        if system == "Windows":
+            rules = [
+                ["netsh", "advfirewall", "set", "allprofiles", "firewallpolicy", "blockinbound,blockoutbound"],
+            ]
+            for host in allowed:
+                rules.append([
+                    "netsh", "advfirewall", "firewall", "add", "rule",
+                    f"name=EndpointX Isolate Allow {host}",
+                    "dir=out", "action=allow", f"remoteip={host}", "enable=yes",
+                ])
+                rules.append([
+                    "netsh", "advfirewall", "firewall", "add", "rule",
+                    f"name=EndpointX Isolate Allow In {host}",
+                    "dir=in", "action=allow", f"remoteip={host}", "enable=yes",
+                ])
+            for cmd in rules:
+                try:
+                    subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=20,
+                        creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+                    )
+                except Exception as exc:
+                    logger.warning("Isolate step failed: %s", exc)
+            return {"mode": "isolated", "platform": "windows", "allowed_hosts": allowed, "reason": reason}
+
+        if system == "Linux":
+            try:
+                subprocess.run(["ufw", "default", "deny", "outgoing"], capture_output=True, timeout=15)
+                subprocess.run(["ufw", "default", "deny", "incoming"], capture_output=True, timeout=15)
+                for host in allowed:
+                    subprocess.run(["ufw", "allow", "out", "to", host], capture_output=True, timeout=15)
+                    subprocess.run(["ufw", "allow", "in", "from", host], capture_output=True, timeout=15)
+                subprocess.run(["ufw", "--force", "enable"], capture_output=True, timeout=15)
+            except Exception as exc:
+                logger.warning("Isolate failed: %s", exc)
+                return {"mode": "error", "error": str(exc)}
+            return {"mode": "isolated", "platform": "linux", "allowed_hosts": allowed, "reason": reason}
+
+        return {"mode": "unsupported", "platform": system, "reason": reason}
+
+    def handle_unisolate(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Lift containment and restore normal firewall policy."""
+        logger.warning("Unisolate command received")
+        system = platform.system()
+
+        if system == "Windows":
+            try:
+                subprocess.run(
+                    ["netsh", "advfirewall", "set", "allprofiles", "firewallpolicy", "blockinbound,allowoutbound"],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+                )
+                listing = subprocess.run(
+                    ["netsh", "advfirewall", "firewall", "show", "rule", "name=all"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+                )
+                current = None
+                for line in (listing.stdout or "").splitlines():
+                    if "Rule Name" in line or "Nome" in line:
+                        current = line.split(":", 1)[-1].strip()
+                    if current and current.startswith("EndpointX Isolate"):
+                        subprocess.run(
+                            ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={current}"],
+                            capture_output=True,
+                            timeout=15,
+                            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+                        )
+                        current = None
+            except Exception as exc:
+                logger.warning("Unisolate cleanup failed: %s", exc)
+            return {"mode": "normal", "platform": "windows"}
+
+        if system == "Linux":
+            try:
+                subprocess.run(["ufw", "default", "allow", "outgoing"], capture_output=True, timeout=15)
+                subprocess.run(["ufw", "default", "allow", "incoming"], capture_output=True, timeout=15)
+                subprocess.run(["ufw", "--force", "enable"], capture_output=True, timeout=15)
+            except Exception as exc:
+                logger.warning("Unisolate failed: %s", exc)
+                return {"mode": "error", "error": str(exc)}
+            return {"mode": "normal", "platform": "linux"}
+
+        return {"mode": "unsupported", "platform": system}
 
     def handle_reboot(self, params: dict[str, Any]) -> dict[str, Any]:
         delay = params.get("delay", 5)
@@ -841,6 +965,17 @@ class EndpointAgent:
                 "details": [p["name"] for p in high_cpu[:10]],
             })
 
+        suspicious = get_suspicious_connections()
+        scan_results["suspicious_connections"] = suspicious
+        if suspicious:
+            scan_results["findings"].append({
+                "severity": "critical",
+                "title": "Suspicious Outbound Connections",
+                "description": f"{len(suspicious)} unusual outbound connection(s) detected",
+                "type": "suspicious_network",
+                "details": [f"{c.get('process')} -> {c.get('remote_ip')}:{c.get('remote_port')}" for c in suspicious[:10]],
+            })
+
         scan_results["findings_count"] = len(scan_results["findings"])
 
         # Send scan results to server for event/alert generation
@@ -851,6 +986,7 @@ class EndpointAgent:
                 "firewall": scan_results["firewall"],
                 "antivirus": scan_results["antivirus"],
                 "high_cpu_processes": high_cpu[:10],
+                "suspicious_connections": suspicious,
                 "findings": scan_results["findings"],
             })
         except Exception as exc:
@@ -865,6 +1001,7 @@ class EndpointAgent:
         antivirus = get_antivirus_status()
         processes = get_running_processes()
         high_cpu = [p for p in processes if p.get("cpu_percent", 0) > 80][:10]
+        suspicious = get_suspicious_connections()
 
         findings = []
         if not firewall.get("enabled"):
@@ -888,6 +1025,13 @@ class EndpointAgent:
                 "description": f"{len(high_cpu)} processes using high CPU",
                 "type": "high_cpu_usage",
             })
+        if suspicious:
+            findings.append({
+                "severity": "critical",
+                "title": "Suspicious Outbound Connections",
+                "description": f"{len(suspicious)} unusual outbound connection(s)",
+                "type": "suspicious_network",
+            })
 
         self._make_request("POST", "/devices/security-scan", {
             "agent_id": self.config.get("agent_id", get_hostname()),
@@ -895,6 +1039,7 @@ class EndpointAgent:
             "firewall": firewall,
             "antivirus": antivirus,
             "high_cpu_processes": high_cpu,
+            "suspicious_connections": suspicious,
             "findings": findings,
         })
 

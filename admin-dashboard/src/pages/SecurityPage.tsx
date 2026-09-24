@@ -56,6 +56,12 @@ interface Stats {
   medium: number;
   low: number;
   resolved: number;
+  by_type?: { event_type: string; count: number | string }[];
+}
+
+interface EventsResponse {
+  events: SecurityEvent[];
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
 }
 
 export default function SecurityPage() {
@@ -76,24 +82,31 @@ export default function SecurityPage() {
     return p;
   }, [page, search, severityFilter, typeFilter, dateRange]);
 
-  const { data, loading, error, refetch } = useApi<{ events: SecurityEvent[] }>('/security/events', { params });
-  const { data: statsData } = useApi<Stats>('/security/events/stats');
+  const { data, loading, error, refetch } = useApi<EventsResponse>('/security/events', { params });
+  const { data: statsData, refetch: refetchStats } = useApi<Stats>('/security/events/stats');
   const { loading: resolving, mutate: resolveEvent } = useApiMutation('', 'POST');
 
   const events = Array.isArray(data?.events) ? data.events : [];
-  const totalPages = 1;
+  const totalPages = data?.pagination?.totalPages || 1;
   const stats = statsData;
+
+  const typeOptions = useMemo(() => {
+    const byType = statsData?.by_type;
+    if (!Array.isArray(byType) || byType.length === 0) return [];
+    return byType.map((t) => String(t.event_type));
+  }, [statsData]);
 
   const handleResolve = useCallback(
     async (eventId: string) => {
       const result = await resolveEvent(`/security/events/${eventId}/resolve`);
       if (result) {
         refetch();
+        refetchStats();
         setToast({ type: 'success', message: 'Event resolved successfully' });
         setSelectedEvent(null);
       }
     },
-    [resolveEvent, refetch]
+    [resolveEvent, refetch, refetchStats]
   );
 
   const columns = [
@@ -266,11 +279,9 @@ export default function SecurityPage() {
           className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Types</option>
-          <option value="malware">Malware</option>
-          <option value="intrusion">Intrusion</option>
-          <option value="policy_violation">Policy Violation</option>
-          <option value="anomaly">Anomaly</option>
-          <option value="authentication">Authentication</option>
+          {typeOptions.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </select>
         <select
           value={dateRange}

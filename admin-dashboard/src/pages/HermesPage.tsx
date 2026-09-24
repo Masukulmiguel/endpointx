@@ -101,6 +101,98 @@ const severityBadge = (s: string) => {
   }
 };
 
+const attackSurfaceLabels: Record<string, string> = {
+  total_assets: 'hermes.attackSurface.totalAssets',
+  assets: 'hermes.attackSurface.totalAssets',
+  open_ports: 'hermes.attackSurface.openPorts',
+  high_risk_services: 'hermes.attackSurface.highRiskServices',
+  unknown_assets: 'hermes.attackSurface.unknownAssets',
+  internet_exposed: 'hermes.attackSurface.internetExposed',
+  critical: 'hermes.attackSurface.criticalFindings',
+  critical_findings: 'hermes.attackSurface.criticalFindings',
+};
+
+function formatScanStats(stats: any, status: string, t: (key: string) => string): React.ReactNode {
+  if (status === 'pending') return <span className="text-gray-500">{t('hermes.scanResult.pending')}</span>;
+  if (status === 'running') return <span className="text-blue-500">{t('hermes.scanResult.running')}</span>;
+  if (status === 'failed') return <span className="text-red-500">{t('hermes.scanResult.failed')}</span>;
+  if (status === 'stopped') return <span className="text-amber-500">{t('hermes.scanResult.stopped')}</span>;
+
+  if (!stats || typeof stats !== 'object') {
+    return <span className="text-gray-500">{t('hermes.scanResult.noStats')}</span>;
+  }
+
+  const assets = Number(stats.assets ?? stats.assetsScanned ?? 0);
+  const ports = Number(stats.ports_found ?? stats.portsFound ?? 0);
+  const services = Number(stats.services_found ?? stats.servicesFound ?? 0);
+
+  const lines: React.ReactNode[] = [];
+  lines.push(
+    <span key="assets" className="block">
+      <strong className="text-gray-900 dark:text-white">{assets}</strong> {t('hermes.scanResult.devices')}
+    </span>
+  );
+  lines.push(
+    <span key="ports" className="block">
+      <strong className="text-gray-900 dark:text-white">{ports}</strong>{' '}
+      {ports === 0 ? t('hermes.scanResult.nonePorts') : t('hermes.scanResult.ports')}
+    </span>
+  );
+  lines.push(
+    <span key="services" className="block">
+      <strong className="text-gray-900 dark:text-white">{services}</strong>{' '}
+      {services === 0 ? t('hermes.scanResult.noneServices') : t('hermes.scanResult.services')}
+    </span>
+  );
+
+  return <div className="space-y-0.5 leading-snug">{lines}</div>;
+}
+
+function formatEvidence(evidence: any, t: (key: string) => string): React.ReactNode {
+  if (evidence == null || (typeof evidence === 'object' && !Array.isArray(evidence) && Object.keys(evidence).length === 0)) {
+    return <span className="text-gray-500 italic">{t('hermes.evidenceNone')}</span>;
+  }
+
+  const toEntries = (obj: Record<string, unknown>): [string, unknown][] => Object.entries(obj);
+
+  if (Array.isArray(evidence)) {
+    if (evidence.length === 0) return <span className="text-gray-500 italic">{t('hermes.evidenceNone')}</span>;
+    return (
+      <ul className="space-y-1">
+        {evidence.map((item, idx) => (
+          <li key={idx} className="rounded bg-gray-50 dark:bg-gray-800/70 px-2 py-1">
+            {typeof item === 'object' && item !== null
+              ? toEntries(item as Record<string, unknown>).map(([k, v]) => (
+                  <div key={k}>
+                    <span className="text-gray-500">{k.replace(/_/g, ' ')}:</span>{' '}
+                    <span className="text-gray-800 dark:text-gray-200">{String(v ?? '—')}</span>
+                  </div>
+                ))
+              : String(item)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (typeof evidence === 'object') {
+    return (
+      <ul className="space-y-1">
+        {toEntries(evidence as Record<string, unknown>).map(([k, v]) => (
+          <li key={k}>
+            <span className="text-gray-500 capitalize">{k.replace(/_/g, ' ')}:</span>{' '}
+            <span className="text-gray-800 dark:text-gray-200">
+              {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '—')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return <span>{String(evidence)}</span>;
+}
+
 export default function HermesPage() {
   const [tab, setTab] = useState<'overview' | 'findings' | 'assets' | 'scans' | 'recommendations' | 'ai'>('overview');
   const [toast, setToast] = useState<string | null>(null);
@@ -345,9 +437,19 @@ export default function HermesPage() {
               <ul className="space-y-2">
                 {status.active_scans.map((s) => (
                   <li key={s.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-700 dark:text-gray-300 capitalize">{s.scan_type.replace('_', ' ')}</span>
+                    <span className="text-gray-700 dark:text-gray-300">
+                      {(() => {
+                        const typeKey = `hermes.scanType.${s.scan_type}`;
+                        const label = t(typeKey);
+                        return label === typeKey ? s.scan_type.replace('_', ' ') : label;
+                      })()}
+                    </span>
                     <span className={`badge ${s.status === 'running' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>
-                      {s.status.toUpperCase()}
+                      {(() => {
+                        const statusKey = `hermes.status.${s.status}`;
+                        const label = t(statusKey);
+                        return label === statusKey ? s.status.toUpperCase() : label;
+                      })()}
                     </span>
                   </li>
                 ))}
@@ -386,23 +488,56 @@ export default function HermesPage() {
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">{t('hermes.attackSurface')}</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {surface &&
-                Object.entries(surface).map(([key, val]) => (
-                  <div key={key} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{key.replace(/_/g, ' ')}</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">{String(val)}</p>
-                  </div>
-                ))}
+                Object.entries(surface).map(([key, val]) => {
+                  const labelKey = attackSurfaceLabels[key];
+                  const label = labelKey ? t(labelKey) : key.replace(/_/g, ' ');
+                  return (
+                    <div key={key} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{label}</p>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white">{String(val)}</p>
+                    </div>
+                  );
+                })}
             </div>
-            <pre className="mt-4 text-xs text-gray-500 dark:text-gray-400 overflow-x-auto">{`Internet
-   │
-Firewall
-   │
-Network
-${assets
-  .filter((a) => a.is_authorized)
-  .slice(0, 8)
-  .map((a) => `   ├── ${a.hostname || a.ip_address || 'asset'}`)
-  .join('\n')}`}</pre>
+            <div className="mt-4 rounded-lg bg-gray-50 dark:bg-gray-800/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
+                {t('hermes.attackSurface.diagram')}
+              </p>
+              <div className="flex flex-col gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    {t('hermes.attackSurface.internet')}
+                  </span>
+                  <span className="text-gray-400">↓</span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    {t('hermes.attackSurface.firewall')}
+                  </span>
+                  <span className="text-gray-400">↓</span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    {t('hermes.attackSurface.network')}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t('hermes.attackSurface.devicesIn')}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {assets
+                      .filter((a) => a.is_authorized)
+                      .slice(0, 8)
+                      .map((a) => (
+                        <span
+                          key={a.id}
+                          className="px-2 py-0.5 rounded bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
+                        >
+                          {a.hostname || a.ip_address || 'asset'}
+                        </span>
+                      ))}
+                    {assets.filter((a) => a.is_authorized).length === 0 && (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -446,7 +581,7 @@ ${assets
                     <td className="py-3 pr-3 text-xs text-gray-500 dark:text-gray-400 max-w-[280px]">
                       <details>
                         <summary className="cursor-pointer text-blue-500">{t('common.view')}</summary>
-                        <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(f.evidence, null, 2)}</pre>
+                        <div className="mt-1">{formatEvidence(f.evidence, t)}</div>
                       </details>
                     </td>
                   </tr>
@@ -518,7 +653,13 @@ ${assets
               ) : (
                 scans.map((s) => (
                   <tr key={s.id} className="table-row">
-                    <td className="py-3 pr-3 capitalize">{s.scan_type}</td>
+                    <td className="py-3 pr-3 capitalize">
+                      {(() => {
+                        const typeKey = `hermes.scanType.${s.scan_type}`;
+                        const label = t(typeKey);
+                        return label === typeKey ? s.scan_type.replace('_', ' ') : label;
+                      })()}
+                    </td>
                     <td className="py-3 pr-3">
                       <span
                         className={`badge ${
@@ -531,12 +672,18 @@ ${assets
                             : 'badge-gray'
                         }`}
                       >
-                        {s.status}
+                        {(() => {
+                          const statusKey = `hermes.status.${s.status}`;
+                          const label = t(statusKey);
+                          return label === statusKey ? s.status : label;
+                        })()}
                       </span>
                     </td>
                     <td className="py-3 pr-3 text-xs text-gray-500">{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
                     <td className="py-3 pr-3 text-xs text-gray-500">{s.completed_at ? new Date(s.completed_at).toLocaleString() : '—'}</td>
-                    <td className="py-3 pr-3 text-xs font-mono">{s.stats ? JSON.stringify(s.stats) : '—'}</td>
+                    <td className="py-3 pr-3 text-xs max-w-[220px]">
+                      {formatScanStats(s.stats, s.status, t)}
+                    </td>
                   </tr>
                 ))
               )}

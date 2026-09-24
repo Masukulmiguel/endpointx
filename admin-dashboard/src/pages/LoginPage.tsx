@@ -161,12 +161,9 @@ export default function LoginPage() {
             </div>
 
             <div className="flex items-center justify-end">
-              <button
-                type="button"
-                className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                Forgot password?
-              </button>
+              <a href="https://endpointx.onrender.com/forgot-password.html" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
+                {t('login.forgotPassword') || 'Forgot password?'}
+              </a>
             </div>
 
             <button
@@ -190,6 +187,11 @@ export default function LoginPage() {
           </p>
           <p className="mt-1 text-center text-xs text-gray-400">
             by Masukulu Miguel
+          </p>
+          <p className="mt-3 text-center text-xs">
+            <a href="https://endpointx.onrender.com/register" className="text-blue-400 hover:text-blue-300 transition-colors">
+              {t('login.createAccount')}
+            </a>
           </p>
         </div>
       </div>

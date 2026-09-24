@@ -554,6 +554,86 @@ def get_running_processes() -> list[dict[str, Any]]:
     return processes
 
 
+_COMMON_OUTBOUND_PORTS = {
+    53, 80, 123, 443, 465, 587, 853, 993, 995, 8080, 8443,
+}
+
+
+def _is_private_ip(ip: str) -> bool:
+    if not ip:
+        return True
+    ip = ip.split("%")[0]
+    if ip in ("127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    if ":" in ip:
+        return ip.startswith("fe80:") or ip.startswith("fc") or ip.startswith("fd")
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return True
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        return True
+    if a == 10 or a == 127:
+        return True
+    if a == 192 and b == 168:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    if a == 169 and b == 254:
+        return True
+    return False
+
+
+def get_suspicious_connections() -> list[dict[str, Any]]:
+    """Return outbound connections that look unusual (defensive heuristics only).
+
+    Flags established outbound TCP to public IPs on non-common ports, or
+    processes running from temporary/user download locations.
+    """
+    findings: list[dict[str, Any]] = []
+    temp_markers = ("\\temp\\", "/temp/", "\\appdata\\local\\temp", "/tmp/", "\\downloads\\", "/downloads/")
+
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, PermissionError):
+        return findings
+
+    for conn in conns:
+        if conn.status != "ESTABLISHED" or not conn.raddr:
+            continue
+        remote_ip = conn.raddr.ip
+        remote_port = conn.raddr.port
+        if _is_private_ip(remote_ip):
+            continue
+
+        exe = ""
+        pid = conn.pid
+        if pid:
+            try:
+                p = psutil.Process(pid)
+                exe = p.exe() or p.cmdline()[0] if p.cmdline() else ""
+            except (psutil.NoSuchProcess, psutil.AccessDenied, IndexError):
+                exe = ""
+
+        suspicious_path = any(m in exe.lower() for m in temp_markers)
+        unusual_port = remote_port not in _COMMON_OUTBOUND_PORTS
+        if not (suspicious_path or unusual_port):
+            continue
+
+        findings.append({
+            "local_ip": conn.laddr.ip if conn.laddr else None,
+            "local_port": conn.laddr.port if conn.laddr else None,
+            "remote_ip": remote_ip,
+            "remote_port": remote_port,
+            "pid": pid,
+            "process": exe or "unknown",
+            "reason": "temp_path_process" if suspicious_path else "uncommon_outbound_port",
+        })
+
+    return findings[:50]
+
+
 def get_firewall_status() -> dict[str, Any]:
     """Return firewall status.
 

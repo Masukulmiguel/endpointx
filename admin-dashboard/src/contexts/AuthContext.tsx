@@ -53,6 +53,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initAuth();
   }, [fetchProfile]);
 
+  useEffect(() => {
+    const onForcedLogout = () => {
+      setUser(null);
+      setLoading(false);
+    };
+    window.addEventListener('auth:logout', onForcedLogout);
+    return () => window.removeEventListener('auth:logout', onForcedLogout);
+  }, []);
+
   const login = useCallback(async (email: string, password: string) => {
     const response = await api.login(email, password) as {
       data: { accessToken: string; refreshToken: string; user: any };

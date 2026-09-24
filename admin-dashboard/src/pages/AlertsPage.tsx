@@ -34,6 +34,12 @@ interface AlertStats {
   medium: number;
   low: number;
   unresolved: number;
+  by_type?: { alert_type: string; count: number | string }[];
+}
+
+interface AlertsResponse {
+  alerts: Alert[];
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
 }
 
 export default function AlertsPage() {
@@ -54,20 +60,27 @@ export default function AlertsPage() {
     return p;
   }, [page, search, severityFilter, typeFilter, statusFilter]);
 
-  const { data, loading, error, refetch } = useApi<{ alerts: Alert[] }>('/alerts', { params });
-  const { data: statsData } = useApi<AlertStats>('/alerts/stats');
+  const { data, loading, error, refetch } = useApi<AlertsResponse>('/alerts', { params });
+  const { data: statsData, refetch: refetchStats } = useApi<AlertStats>('/alerts/stats');
   const { loading: dismissing, mutate: dismissAlert } = useApiMutation('', 'POST');
   const { loading: bulkDismissing, mutate: bulkDismiss } = useApiMutation('/alerts/dismiss', 'POST');
 
   const alerts = Array.isArray(data?.alerts) ? data.alerts : [];
-  const totalPages = 1;
+  const totalPages = data?.pagination?.totalPages || 1;
   const stats = statsData;
+
+  const typeOptions = useMemo(() => {
+    const byType = statsData?.by_type;
+    if (!Array.isArray(byType) || byType.length === 0) return [];
+    return byType.map((t) => String(t.alert_type));
+  }, [statsData]);
 
   const handleDismiss = useCallback(
     async (alertId: string) => {
       const result = await dismissAlert(`/alerts/${alertId}/dismiss`);
       if (result) {
         refetch();
+        refetchStats();
         setToast({ type: 'success', message: 'Alert dismissed' });
         setSelectedIds((prev) => {
           const next = new Set(prev);
@@ -76,7 +89,7 @@ export default function AlertsPage() {
         });
       }
     },
-    [dismissAlert, refetch]
+    [dismissAlert, refetch, refetchStats]
   );
 
   const handleBulkDismiss = useCallback(async () => {
@@ -84,10 +97,11 @@ export default function AlertsPage() {
     const result = await bulkDismiss({ ids: Array.from(selectedIds) });
     if (result) {
       refetch();
+      refetchStats();
       setToast({ type: 'success', message: `${selectedIds.size} alert(s) dismissed` });
       setSelectedIds(new Set());
     }
-  }, [selectedIds, bulkDismiss, refetch]);
+  }, [selectedIds, bulkDismiss, refetch, refetchStats]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -265,11 +279,9 @@ export default function AlertsPage() {
           className="px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
         >
           <option value="">All Types</option>
-          <option value="performance">Performance</option>
-          <option value="security">Security</option>
-          <option value="hardware">Hardware</option>
-          <option value="software">Software</option>
-          <option value="network">Network</option>
+          {typeOptions.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </select>
         <select
           value={statusFilter}

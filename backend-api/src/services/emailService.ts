@@ -125,3 +125,18 @@ export async function sendWelcomeEmail(email: string, name: string, tempPassword
   `;
   await sendEmail(email, 'Welcome to EndpointX - Your Account', html);
 }
+
+export async function sendPasswordResetEmail(email: string, name: string, resetUrl: string): Promise<boolean> {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+      <h2>Reset your EndpointX password</h2>
+      <p>Hi ${name},</p>
+      <p>Click the link below to choose a new password. This link expires in 1 hour.</p>
+      <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#0080ff;color:#fff;text-decoration:none;border-radius:6px;">Reset password</a></p>
+      <p style="color:#6b7280;font-size:12px;">If you did not request this, you can ignore this email.</p>
+      <hr/>
+      <p style="color: #6b7280; font-size: 12px;">EndpointX Security</p>
+    </div>
+  `;
+  return sendEmail(email, 'EndpointX - Reset your password', html);
+}
