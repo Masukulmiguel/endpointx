@@ -72,6 +72,7 @@ const routeTitleKeys: Record<string, string> = {
   '/notifications': 'nav.notifications',
   '/network': 'nav.network',
   '/audit-logs': 'nav.audit',
+  '/profile': 'nav.profile',
   '/agents': 'nav.agents',
   '/settings': 'nav.settings',
 };

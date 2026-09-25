@@ -12,6 +12,7 @@ interface User {
   role_name: string;
   permissions: string[];
   is_active: boolean;
+  mfa_enabled?: boolean;
   last_login: string | null;
   created_at: string;
 }

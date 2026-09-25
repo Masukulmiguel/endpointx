@@ -166,7 +166,7 @@ class ApiClient {
     });
   }
 
-  async changePassword(data: { current_password: string; new_password: string }) {
+  async changePassword(data: { currentPassword: string; newPassword: string }) {
     return this.request('/auth/change-password', {
       method: 'PUT',
       body: JSON.stringify(data),

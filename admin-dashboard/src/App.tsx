@@ -26,6 +26,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import HermesPage from './pages/HermesPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import ProfilePage from './pages/ProfilePage';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -236,6 +237,7 @@ export default function App() {
             </PermissionGate>
           }
         />
+        <Route path="profile" element={<ProfilePage />} />
         <Route
           path="settings"
           element={
