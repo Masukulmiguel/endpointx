@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { canViewAllDevices, ownsDevice } from '../utils/tenant';
+import { canViewAllDevices, ownsDevice, moderateDeviceAccess } from '../utils/tenant';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -307,11 +307,16 @@ router.get('/unknown', authenticate, requirePermission('devices.view'), async (r
 });
 
 // Asset approval workflow
-router.post('/devices/:id/approve', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/devices/:id/approve', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+    const access = await moderateDeviceAccess(req.user?.id, id, canViewAllDevices(req.user));
+    if (access === 'not_found') {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    if (access === 'forbidden') {
+      res.status(403).json({ success: false, error: { message: 'Only the account that created this device can approve or reject it.', code: 'FORBIDDEN' } });
       return;
     }
     const r = await query(
@@ -335,11 +340,16 @@ router.post('/devices/:id/approve', authenticate, requirePermission('devices.man
   }
 });
 
-router.post('/devices/:id/reject', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/devices/:id/reject', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+    const access = await moderateDeviceAccess(req.user?.id, id, canViewAllDevices(req.user));
+    if (access === 'not_found') {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    if (access === 'forbidden') {
+      res.status(403).json({ success: false, error: { message: 'Only the account that created this device can approve or reject it.', code: 'FORBIDDEN' } });
       return;
     }
     const r = await query(

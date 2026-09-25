@@ -12,8 +12,20 @@ import {
   MemoryStick,
   Globe,
   Clock,
+  Smartphone,
+  Tablet,
+  Laptop,
+  Server,
+  MapPin,
+  BatteryMedium,
+  CheckCircle2,
+  XCircle,
+  User,
+  Wifi,
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
 import SearchInput from '../components/SearchInput';
 import StatusBadge from '../components/StatusBadge';
 import Pagination from '../components/Pagination';
@@ -34,13 +46,15 @@ function formatTimeAgo(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
-function getOsIcon(osType: string) {
-  const lower = osType?.toLowerCase() || '';
-  if (lower.includes('windows')) return '🪟';
-  if (lower.includes('mac') || lower.includes('darwin')) return '🍎';
-  if (lower.includes('linux')) return '🐧';
-  if (lower.includes('android') || lower.includes('ios') || lower.includes('ipad')) return '📱';
-  return '💻';
+function getDeviceIcon(device: Device): React.ElementType {
+  const type = (device.device_type || '').toUpperCase();
+  if (type === 'MOBILE') return Smartphone;
+  if (type === 'TABLET') return Tablet;
+  if (type === 'SERVER') return Server;
+  const os = (device.os_type || '').toLowerCase();
+  if (os.includes('android') || os.includes('ios') || os.includes('ipad')) return Smartphone;
+  if (type === 'LAPTOP' || os.includes('mac') || os.includes('darwin')) return Laptop;
+  return Monitor;
 }
 
 function isMobileDevice(device: Device): boolean {
@@ -75,29 +89,41 @@ function UsageBar({ label, value, icon: Icon }: { label: string; value: number |
   );
 }
 
-function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }) {
+function DeviceCard({ device, onClick, onModerate }: { device: Device; onClick: () => void; onModerate: (device: Device, action: 'approve' | 'reject') => void }) {
+  const { user } = useAuth();
   const hasTelemetry = device.cpu_usage != null || device.ram_usage != null || device.disk_usage != null;
   const mobile = isMobileDevice(device);
   const model = [device.manufacturer, device.model].filter(Boolean).join(' · ');
-  const owner = device.notes?.match(/owner=([^;]+)/)?.[1] || null;
+  const owner = device.owner_email || device.notes?.match(/owner=([^;]+)/)?.[1] || null;
   const pending = device.approval_status === 'pending';
+  const canModerate = pending && (!device.created_by || device.created_by === user?.id);
+  const Icon = getDeviceIcon(device);
 
   return (
     <button
       onClick={onClick}
       className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 text-left hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all w-full"
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">{getOsIcon(device.os_type)}</span>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <span
+            className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
+              mobile
+                ? 'bg-violet-50 dark:bg-violet-900/25 text-violet-600 dark:text-violet-400'
+                : 'bg-blue-50 dark:bg-blue-900/25 text-blue-600 dark:text-blue-400'
+            }`}
+          >
+            <Icon className="w-5 h-5" />
+          </span>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
               {device.display_name || device.hostname}
             </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+              {[device.os_type, device.os_version].filter(Boolean).join(' ')}
+              {model ? ` · ${model}` : ''}
+            </p>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-            {device.hostname}
-          </p>
         </div>
         <StatusBadge status={device.status} />
       </div>
@@ -109,31 +135,71 @@ function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }
           <UsageBar label="Disk" value={device.disk_usage} icon={HardDrive} />
         </div>
       ) : (
-        <div className="mb-4 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700 p-3 space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium text-gray-600 dark:text-gray-300">Sem telemetria</span>
-            <span className="text-gray-400 dark:text-gray-500">{mobile ? 'registo móvel' : 'sem dados'}</span>
+        <div className="mb-4 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700 p-3.5 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+            <Wifi className="w-3.5 h-3.5" />
+            <span>{mobile ? 'Dispositivo móvel' : 'Sem telemetria'}</span>
+            <span className="ml-auto font-normal text-gray-400 dark:text-gray-500">
+              {mobile ? 'registo móvel' : 'sem dados'}
+            </span>
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 leading-snug">
+          <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
             {mobile
-              ? 'Dispositivo registado sem agente — presença apenas com a página de registo aberta.'
-              : 'Agente instalado mas ainda sem heartbeat.'}
+              ? 'A presença é atualizada enquanto a página de registo estiver aberta.'
+              : 'O agente ainda não enviou dados de heartbeat.'}
           </p>
           {model && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{model}</p>}
           {(owner || device.battery_level != null) && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-              {[owner, device.battery_level != null ? `🔋 ${device.battery_level}%` : null].filter(Boolean).join(' · ')}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              {owner && (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <User className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{owner}</span>
+                </span>
+              )}
+              {device.battery_level != null && (
+                <span className="inline-flex items-center gap-1">
+                  <BatteryMedium className="w-3 h-3" />
+                  {device.battery_level}%
+                </span>
+              )}
+            </div>
           )}
-          {pending && (
-            <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-[11px] font-medium">
-              Aguarda aprovação
+        </div>
+      )}
+
+      {pending && (
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40">
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Aguarda aprovação</span>
+          {canModerate && (
+            <span className="ml-auto flex items-center gap-1.5">
+              <span
+                role="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onModerate(device, 'reject');
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer"
+              >
+                <XCircle className="w-3.5 h-3.5" /> Rejeitar
+              </span>
+              <span
+                role="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onModerate(device, 'approve');
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> Aprovar
+              </span>
             </span>
           )}
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 pt-3">
+      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-3">
         <span className="flex items-center gap-1">
           <Globe className="w-3 h-3" />
           {device.ip_address || 'N/A'}
@@ -157,7 +223,8 @@ function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }
           onClick={(e) => e.stopPropagation()}
           className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline mt-2"
         >
-          📍 {device.latitude.toFixed(4)}, {device.longitude.toFixed(4)}
+          <MapPin className="w-3 h-3" />
+          {device.latitude.toFixed(4)}, {device.longitude.toFixed(4)}
         </a>
       )}
     </button>
@@ -207,6 +274,17 @@ export default function DevicesPage() {
   }, [page, search, statusFilter, osFilter]);
 
   const { data, loading, error, refetch } = useApi<{ devices: Device[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/devices', { params, refreshInterval: 30000 });
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleModerate = async (device: Device, action: 'approve' | 'reject') => {
+    try {
+      await api.request(`/netsentinel/devices/${device.id}/${action}`, { method: 'POST' });
+      setActionError(null);
+      refetch();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed');
+    }
+  };
 
   const devices = Array.isArray(data?.devices) ? data.devices : [];
   const totalPages = data?.pagination?.totalPages || 1;
@@ -217,17 +295,20 @@ export default function DevicesPage() {
       key: 'hostname',
       label: 'Device',
       sortable: true,
-      render: (row: Device) => (
-        <div className="flex items-center gap-2">
-          <span className="text-base">{getOsIcon(row.os_type)}</span>
-          <div>
-            <p className="font-medium text-gray-900 dark:text-white">
-              {row.display_name || row.hostname}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{row.hostname}</p>
+      render: (row: Device) => {
+        const Icon = getDeviceIcon(row);
+        return (
+          <div className="flex items-center gap-2">
+            <Icon className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {row.display_name || row.hostname}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{row.hostname}</p>
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: 'os_type',
@@ -402,6 +483,11 @@ export default function DevicesPage() {
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
       )}
+      {actionError && (
+        <div className="px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+        </div>
+      )}
 
       {viewMode === 'grid' ? (
         <>
@@ -413,6 +499,7 @@ export default function DevicesPage() {
                     key={device.id}
                     device={device}
                     onClick={() => navigate(`/devices/${device.id}`)}
+                    onModerate={handleModerate}
                   />
                 ))}
           </div>

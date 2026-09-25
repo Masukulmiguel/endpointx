@@ -181,7 +181,7 @@ function handlePostgresError(err: Error, res: Response): void {
         error: {
           message: 'A database error occurred.',
           code: 'DATABASE_ERROR',
-          ...(isProduction() ? {} : { details: pgErr.message }),
+          details: isProduction() ? { sqlState: pgErr.code } : pgErr.message,
         },
       };
       res.status(500).json(response);

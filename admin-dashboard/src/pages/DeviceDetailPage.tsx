@@ -29,6 +29,10 @@ import {
   Info,
   MapPin,
   BatteryCharging,
+  Smartphone,
+  Laptop,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import {
   LineChart,
@@ -40,6 +44,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import DataTable from '../components/DataTable';
@@ -141,11 +146,14 @@ export default function DeviceDetailPage() {
   };
 
   const { data: deviceData, loading, error, refetch } = useApi<{ device: DeviceDetail }>(`/devices/${id}`, { refreshInterval: 15000 });
+  const { user } = useAuth();
   const blockMutation = useApiMutation(`/devices/${id}/block`, 'POST');
   const unblockMutation = useApiMutation(`/devices/${id}/unblock`, 'POST');
   const quarantineMutation = useApiMutation(`/devices/${id}/quarantine`, 'POST');
   const deleteMutation = useApiMutation(`/devices/${id}`, 'DELETE');
   const commandMutation = useApiMutation('/commands', 'POST');
+  const approveMutation = useApiMutation(`/netsentinel/devices/${id}/approve`, 'POST');
+  const rejectMutation = useApiMutation(`/netsentinel/devices/${id}/reject`, 'POST');
 
   const device = deviceData?.device;
   const isMobileDevice = !!(
@@ -155,6 +163,16 @@ export default function DeviceDetailPage() {
   );
   const hasTelemetry =
     device?.cpu_usage != null || device?.ram_usage != null || device?.disk_usage != null;
+  const HeaderIcon = isMobileDevice
+    ? Smartphone
+    : (device?.device_type || '').toUpperCase() === 'SERVER'
+      ? Server
+      : (device?.os_type || '').toLowerCase().includes('mac') ||
+          (device?.os_type || '').toLowerCase().includes('darwin')
+        ? Laptop
+        : Monitor;
+  const pendingApproval = device?.approval_status === 'pending';
+  const canModerate = pendingApproval && (!device?.created_by || device?.created_by === user?.id);
 
   if (loading) {
     return (
@@ -211,6 +229,27 @@ export default function DeviceDetailPage() {
       showToast('success', 'Device unblocked successfully');
     } else {
       showToast('error', 'Failed to unblock device');
+    }
+    refetch();
+  };
+
+  const handleApprove = async () => {
+    const result = await approveMutation.mutate();
+    if (result) {
+      showToast('success', 'Device approved');
+    } else {
+      showToast('error', 'Failed to approve device');
+    }
+    refetch();
+  };
+
+  const handleReject = async () => {
+    if (!window.confirm('Reject this device? It will be blocked.')) return;
+    const result = await rejectMutation.mutate();
+    if (result) {
+      showToast('success', 'Device rejected and blocked');
+    } else {
+      showToast('error', 'Failed to reject device');
     }
     refetch();
   };
@@ -287,7 +326,7 @@ export default function DeviceDetailPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="flex items-center justify-center w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
-              <Monitor className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              <HeaderIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <div className="flex items-center gap-3">
@@ -295,6 +334,12 @@ export default function DeviceDetailPage() {
                   {device.display_name || device.hostname}
                 </h1>
                 <StatusBadge status={device.status} />
+                {pendingApproval && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    <ShieldCheck className="w-3 h-3" />
+                    Pending approval
+                  </span>
+                )}
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{device.hostname}</p>
               <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -321,6 +366,26 @@ export default function DeviceDetailPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {pendingApproval && canModerate && (
+              <>
+                <button
+                  onClick={handleReject}
+                  disabled={rejectMutation.loading}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Reject
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={approveMutation.loading}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Approve
+                </button>
+              </>
+            )}
             {device.status === 'blocked' || device.status === 'quarantine' ? (
               <button
                 onClick={handleUnblock}

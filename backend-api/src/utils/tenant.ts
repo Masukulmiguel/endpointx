@@ -12,3 +12,21 @@ export async function ownsDevice(userId: string | undefined, deviceId: string): 
   if (r.rows.length === 0) return false;
   return r.rows[0].created_by === userId;
 }
+
+// Who may approve/reject a device: the account that created it (or anyone, when the
+// device has no owner). Admin (view_all) can see other accounts' devices but must not
+// moderate them — super-admin observes, the owning account decides.
+export type DeviceModeration = 'allow' | 'forbidden' | 'not_found';
+
+export async function moderateDeviceAccess(
+  userId: string | undefined,
+  deviceId: string,
+  viewAll: boolean
+): Promise<DeviceModeration> {
+  if (!deviceId) return 'not_found';
+  const r = await query('SELECT created_by FROM devices WHERE id = $1', [deviceId]);
+  if (r.rows.length === 0) return 'not_found';
+  const owner = r.rows[0].created_by as string | null;
+  if (!owner || owner === userId) return 'allow';
+  return viewAll ? 'forbidden' : 'not_found';
+}
