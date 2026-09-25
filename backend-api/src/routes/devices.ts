@@ -213,6 +213,70 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
   }
 });
 
+// Map locations: mobile GPS + IP geolocation fallback for PCs
+const geoCache = new Map<string, { lat: number; lng: number; expires: number }>();
+
+function isPrivateIp(ip: string): boolean {
+  if (!ip) return true;
+  if (ip.startsWith('10.') || ip.startsWith('127.') || ip.startsWith('169.254.')) return true;
+  if (ip.startsWith('192.168.')) return true;
+  const m = ip.match(/^172\.(\d+)\./);
+  if (m) {
+    const octet = parseInt(m[1], 10);
+    if (octet >= 16 && octet <= 31) return true;
+  }
+  return false;
+}
+
+router.get('/map', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    updateOfflineDevices();
+    const result = await query(
+      `SELECT id, hostname, display_name, os_type, device_type, status, latitude, longitude,
+              battery_level, last_heartbeat, ip_address, location_updated_at, approval_status
+         FROM devices
+        ORDER BY last_heartbeat DESC NULLS LAST`
+    );
+    const devices = result.rows as Array<Record<string, unknown> & { latitude: number | null; longitude: number | null; ip_address: string | null }>;
+    for (const d of devices) {
+      d.geo_source = d.latitude != null && d.longitude != null ? 'gps' : null;
+    }
+
+    // IP geolocation for devices without GPS (public IPs only, cached 6h)
+    const needsIpGeo = devices
+      .filter((d) => d.latitude == null && d.ip_address && !isPrivateIp(d.ip_address))
+      .slice(0, 25);
+    await Promise.all(
+      needsIpGeo.map(async (d) => {
+        const now = Date.now();
+        const cached = geoCache.get(d.ip_address!);
+        if (cached && cached.expires > now) {
+          d.latitude = cached.lat;
+          d.longitude = cached.lng;
+          d.geo_source = 'ip';
+          return;
+        }
+        try {
+          const resp = await fetch(`http://ip-api.com/json/${encodeURIComponent(d.ip_address!)}?fields=status,lat,lon`);
+          const body = (await resp.json()) as { status?: string; lat?: number; lon?: number };
+          if (body?.status === 'success' && typeof body.lat === 'number' && typeof body.lon === 'number') {
+            geoCache.set(d.ip_address!, { lat: body.lat, lng: body.lon, expires: now + 6 * 60 * 60 * 1000 });
+            d.latitude = body.lat;
+            d.longitude = body.lon;
+            d.geo_source = 'ip';
+          }
+        } catch {
+          // ignore lookup failures
+        }
+      })
+    );
+
+    res.json({ success: true, data: { devices } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get single device
 router.get('/:id', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

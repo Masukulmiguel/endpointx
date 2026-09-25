@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import DevicesPage from './pages/DevicesPage';
 import DeviceDetailPage from './pages/DeviceDetailPage';
+import MapPage from './pages/MapPage';
 import UsersPage from './pages/UsersPage';
 import RolesPage from './pages/RolesPage';
 import SecurityPage from './pages/SecurityPage';
@@ -111,6 +112,14 @@ export default function App() {
           element={
             <PermissionGate permission="devices.view">
               <DeviceDetailPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="map"
+          element={
+            <PermissionGate permission="devices.view">
+              <MapPage />
             </PermissionGate>
           }
         />

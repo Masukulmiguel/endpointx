@@ -26,6 +26,7 @@ import {
   ChartBar,
   UsersRound,
   Radar,
+  Map,
 } from 'lucide-react';
 import api from '../services/api';
 import { useI18n, type Locale } from '../i18n';
@@ -35,6 +36,7 @@ const navItems = [
   { key: 'nav.dashboard', path: '/dashboard', icon: LayoutDashboard },
   { key: 'nav.hermes', path: '/hermes', icon: Radar, permission: 'hermes.view' },
   { key: 'nav.devices', path: '/devices', icon: Monitor, permission: 'devices.view' },
+  { key: 'nav.map', path: '/map', icon: Map, permission: 'devices.view' },
   { key: 'nav.install', path: '/install', icon: Download, permission: 'devices.view' },
   { key: 'nav.users', path: '/users', icon: Users, permission: 'users.view' },
   { key: 'nav.roles', path: '/roles', icon: Shield, permission: 'roles.view' },
@@ -56,6 +58,7 @@ const routeTitleKeys: Record<string, string> = {
   '/dashboard': 'nav.dashboard',
   '/hermes': 'page.hermes.title',
   '/devices': 'nav.devices',
+  '/map': 'nav.map',
   '/install': 'page.install.title',
   '/users': 'nav.users',
   '/roles': 'nav.roles',
