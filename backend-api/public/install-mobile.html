@@ -180,12 +180,24 @@
         });
       }
 
+      function getNetworkInfo() {
+        var info = { online: navigator.onLine !== false };
+        var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (c) {
+          if (c.effectiveType) info.effective_type = c.effectiveType;
+          if (typeof c.downlink === 'number') info.downlink = c.downlink;
+          if (typeof c.rtt === 'number') info.rtt = c.rtt;
+          if (c.type && c.type !== 'unknown') info.type = c.type;
+        }
+        return info;
+      }
+
       function sendHeartbeat() {
         var id = localStorage.getItem(AGENT_KEY);
         if (!id) return;
         var loc = shareCb.checked ? getPosition() : Promise.resolve(null);
         Promise.all([getBatteryLevel(), loc]).then(function (parts) {
-          var payload = { agent_id: id, battery_level: parts[0] };
+          var payload = { agent_id: id, battery_level: parts[0], network: getNetworkInfo() };
           if (parts[1]) {
             payload.latitude = parts[1].latitude;
             payload.longitude = parts[1].longitude;
@@ -211,7 +223,7 @@
           fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_id: id }),
+            body: JSON.stringify({ agent_id: id, network: getNetworkInfo() }),
             keepalive: true
           }).catch(function () {});
         } catch (e) { /* ignore */ }

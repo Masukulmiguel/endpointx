@@ -1108,6 +1108,69 @@ router.get('/public/manifest.webmanifest', async (_req: AuthRequest, res: Respon
   }
 });
 
+function parseBrowserFromUA(ua: string): { name: string; version: string } | null {
+  const s = ua || '';
+  const pick = (re: RegExp, name: string): { name: string; version: string } | null => {
+    const m = s.match(re);
+    return m ? { name, version: m[1] } : null;
+  };
+  return (
+    pick(/Edg(?:e|A|iOS)?\/([\d.]+)/, 'Edge') ||
+    pick(/OPR\/([\d.]+)/, 'Opera') ||
+    pick(/SamsungBrowser\/([\d.]+)/, 'Samsung Internet') ||
+    pick(/Firefox\/([\d.]+)/, 'Firefox') ||
+    pick(/CriOS\/([\d.]+)/, 'Chrome') ||
+    pick(/FxiOS\/([\d.]+)/, 'Firefox') ||
+    pick(/Chrome\/([\d.]+)/, 'Chrome') ||
+    pick(/Version\/([\d.]+)[\s\S]*Safari\//, 'Safari')
+  );
+}
+
+function sanitizeIp(raw: string | null): string | null {
+  const ip = (raw || '').trim();
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip) && ip.split('.').every((o) => Number(o) <= 255)) return ip;
+  if (ip.includes(':') && /^[0-9a-fA-F:]+$/.test(ip)) return ip;
+  return null;
+}
+
+// Mobile (PWA) inventory: what a browser can honestly report — the PWA itself and the browser.
+async function syncMobileSoftware(deviceId: string, ua: string): Promise<void> {
+  const browser = parseBrowserFromUA(ua);
+  await query('DELETE FROM device_software WHERE device_id = $1', [deviceId]);
+  const rows: Array<[string, string, string]> = [
+    ['EndpointX Mobile (PWA)', process.env.APP_VERSION || '1.2.0', 'EndpointX'],
+  ];
+  if (browser) rows.push([browser.name, browser.version, 'Web browser']);
+  for (const [name, version, publisher] of rows) {
+    await query(
+      `INSERT INTO device_software (device_id, name, version, publisher, install_date)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE)`,
+      [deviceId, name, version, publisher]
+    );
+  }
+}
+
+// Mobile (PWA) network: one interface row from Network Information API + observed client IP.
+async function syncMobileNetworkInterface(
+  deviceId: string,
+  ip: string | null,
+  network: Record<string, unknown>
+): Promise<void> {
+  const effType = typeof network.effective_type === 'string' ? network.effective_type.slice(0, 16) : '';
+  const connType = typeof network.type === 'string' ? network.type.slice(0, 16) : '';
+  const downlink = typeof network.downlink === 'number' && Number.isFinite(network.downlink)
+    ? network.downlink
+    : null;
+  const label = (connType && connType !== 'unknown' ? connType : effType || 'observed').replace(/[()]/g, '');
+  const speed = downlink != null && downlink >= 1 ? Math.round(downlink) : null;
+  await query('DELETE FROM device_network_interfaces WHERE device_id = $1', [deviceId]);
+  await query(
+    `INSERT INTO device_network_interfaces (device_id, name, ipv4_address, is_connected, speed_mbps)
+     VALUES ($1, $2, $3, TRUE, $4)`,
+    [deviceId, `Connection (${label})`.slice(0, 100), ip, speed]
+  );
+}
+
 // PUBLIC - Mobile self-registration (device identity only, no private content)
 router.post('/mobile/register', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -1182,6 +1245,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
           ownerUserId || null,
         ]
       );
+      await syncMobileSoftware(deviceId, String(user_agent || req.headers['user-agent'] || ''));
       res.json({
         success: true,
         data: {
@@ -1221,6 +1285,8 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
       ]
     );
 
+    await syncMobileSoftware(deviceId, String(user_agent || req.headers['user-agent'] || ''));
+
     logger.info('Mobile device enrolled', { deviceId, agentId, ownership: ownershipValue });
     res.status(201).json({
       success: true,
@@ -1239,7 +1305,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
 // PUBLIC - Mobile presence heartbeat (page open => device online; no agent telemetry)
 router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id: clientAgentId, battery_level, latitude, longitude } = req.body as Record<string, unknown>;
+    const { agent_id: clientAgentId, battery_level, latitude, longitude, network } = req.body as Record<string, unknown>;
     const agentId = String(clientAgentId || '').trim().slice(0, 64);
     if (!agentId.startsWith('mobile-')) {
       res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
@@ -1270,6 +1336,18 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
        WHERE id = $6`,
       [nextStatus, ip, battery, lat, lng, existing.rows[0].id]
     );
+    const deviceId = existing.rows[0].id;
+    const ua = String(req.headers['user-agent'] || '');
+    const swCount = await query(
+      'SELECT COUNT(*)::int AS count FROM device_software WHERE device_id = $1',
+      [deviceId]
+    );
+    if (Number(swCount.rows[0]?.count || 0) === 0 && ua) {
+      await syncMobileSoftware(deviceId, ua);
+    }
+    if (network && typeof network === 'object') {
+      await syncMobileNetworkInterface(deviceId, sanitizeIp(ip), network as Record<string, unknown>);
+    }
     res.json({
       success: true,
       data: {

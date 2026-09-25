@@ -581,7 +581,11 @@ export default function DeviceDetailPage() {
               { key: 'install_date', label: 'Install Date', sortable: true, render: (row) => row.install_date ? new Date(row.install_date).toLocaleDateString() : '-' },
             ]}
             data={device.software || []}
-            emptyMessage="No software data available"
+            emptyMessage={
+              isMobileDevice
+                ? 'No software reported yet — the mobile app reports its browser and PWA on the next heartbeat'
+                : 'No software data available'
+            }
           />
         </div>
       )}
@@ -608,7 +612,11 @@ export default function DeviceDetailPage() {
               { key: 'startup_type', label: 'Startup Type', sortable: true, render: (row) => row.startup_type || '-' },
             ]}
             data={device.services || []}
-            emptyMessage="No services data available"
+            emptyMessage={
+              isMobileDevice
+                ? 'Not available — browsers cannot expose system services'
+                : 'No services data available'
+            }
           />
         </div>
       )}
@@ -624,7 +632,11 @@ export default function DeviceDetailPage() {
               { key: 'user_name', label: 'User', sortable: true, render: (row) => row.user_name || '-' },
             ]}
             data={device.processes || []}
-            emptyMessage="No process data available"
+            emptyMessage={
+              isMobileDevice
+                ? 'Not available — browsers cannot expose system processes'
+                : 'No process data available'
+            }
           />
         </div>
       )}
@@ -633,7 +645,9 @@ export default function DeviceDetailPage() {
         <div className="space-y-4">
           {(device.network_interfaces || []).length === 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center text-gray-500 dark:text-gray-400">
-              No network interface data available
+              {isMobileDevice
+                ? 'Waiting for the first heartbeat with network data'
+                : 'No network interface data available'}
             </div>
           ) : (
             (device.network_interfaces || []).map((iface) => (
