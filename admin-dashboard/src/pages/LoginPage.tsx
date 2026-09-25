@@ -76,7 +76,6 @@ export default function LoginPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4">
               <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
             </div>
-            <h1 className="text-2xl font-bold text-white">{t('login.title')}</h1>
             <p className="text-gray-400 text-sm mt-1">{t('login.subtitle')}</p>
             <div className="mt-3 flex justify-center gap-1 rounded-lg bg-gray-800 p-0.5 text-xs w-fit mx-auto">
               {(['pt', 'en'] as const).map((code) => (
@@ -187,10 +186,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-gray-500">
-            EndpointX v1.1.0 - Endpoint Management System
-          </p>
-          <p className="mt-1 text-center text-xs text-gray-400">
+          <p className="mt-6 text-center text-xs text-gray-400">
             by Masukulu Miguel
           </p>
           <p className="mt-3 text-center text-xs">

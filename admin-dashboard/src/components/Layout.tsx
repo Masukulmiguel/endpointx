@@ -185,7 +185,6 @@ export default function Layout() {
         <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
           <img src="/logotipo-fundo-branco.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain dark:hidden" />
           <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain hidden dark:block" />
-          <span className="text-xl font-bold text-gray-900 dark:text-white">EndpointX</span>
           <button
             onClick={() => setSidebarOpen(false)}
             className="ml-auto p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 lg:hidden"
