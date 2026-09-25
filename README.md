@@ -254,6 +254,15 @@ endpointx/
 └── docker-compose.yml
 ```
 
+## Roadmap & Contributing
+
+We are building **v1.2.0** — reliable observability for endpoints (threshold alerting, notifications, metric retention, deeper HERMES).
+
+| Document | Description |
+| -------- | ----------- |
+| [Roadmap](ROADMAP.md) | v1.2.0 milestones, status vs Zabbix-like tools, how to pick up tasks |
+| [Contributing](CONTRIBUTING.md) | Dev setup, conventions, PR checklist |
+
 ## Documentation
 
 | Document          | Description                           |

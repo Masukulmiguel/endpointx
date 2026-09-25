@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Roadmap & contribution guide
+    url: https://github.com/Masukulmiguel/endpointx/blob/main/ROADMAP.md
+    about: Check v1.2.0 scope before opening an issue
+  - name: Security vulnerability
+    url: https://github.com/Masukulmiguel/endpointx/blob/main/SECURITY.md
+    about: Report vulnerabilities privately — do not open a public issue
