@@ -98,9 +98,9 @@ input {
 }
 
 .brand img {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
+  width: 48px;
+  height: 48px;
+  border-radius: 11px;
   object-fit: contain;
 }
 
@@ -114,10 +114,6 @@ html[data-theme='light'] .brand img.logo-dark {
 
 html[data-theme='light'] .brand img.logo-light {
   display: block;
-}
-
-.brand span {
-  font-size: 1.05rem;
 }
 
 .nav {

@@ -66,13 +66,15 @@ function Terminal(props: React.SVGProps<SVGSVGElement>) {
 }
 
 function CircularGauge({ label, value, icon: Icon }: { label: string; value: number | null; icon: React.ElementType }) {
-  const pct = Math.min(100, Math.max(0, value || 0));
+  const hasValue = typeof value === 'number' && Number.isFinite(value);
+  const pct = hasValue ? Math.min(100, Math.max(0, value)) : 0;
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (pct / 100) * circumference;
 
   let strokeColor = '#10b981';
-  if (pct > 80) strokeColor = '#ef4444';
+  if (!hasValue) strokeColor = '#9ca3af';
+  else if (pct > 80) strokeColor = '#ef4444';
   else if (pct > 60) strokeColor = '#f59e0b';
 
   return (
@@ -95,7 +97,7 @@ function CircularGauge({ label, value, icon: Icon }: { label: string; value: num
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <Icon className="w-4 h-4 text-gray-400 dark:text-gray-500 mb-0.5" />
-          <span className="text-lg font-bold text-gray-900 dark:text-white">{pct}%</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white">{hasValue ? `${pct}%` : '—'}</span>
         </div>
       </div>
       <span className="mt-2 text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
@@ -383,12 +385,17 @@ export default function DeviceDetailPage() {
                   ['Agent ID', device.agent_id],
                   ['Agent Version', device.agent_version || 'N/A'],
                   ['OS', `${device.os_type} ${device.os_version || ''} ${device.os_build || ''}`.trim()],
+                  ...((device.manufacturer || device.model)
+                    ? [['Model', [device.manufacturer, device.model].filter(Boolean).join(' ')]]
+                    : []),
                   ['CPU', device.cpu_model || 'N/A', device.cpu_cores ? `${device.cpu_cores} cores` : undefined],
                   ['RAM', device.ram_total ? `${(device.ram_total / 1073741824).toFixed(1)} GB` : 'N/A'],
                   ['Disk', device.disk_total ? `${(device.disk_total / 1073741824).toFixed(1)} GB` : 'N/A'],
                   ['IP Address', device.ip_address || 'N/A'],
                   ['MAC Address', device.mac_address || 'N/A'],
                   ['Registered', new Date(device.registered_at).toLocaleDateString()],
+                  ...(device.approval_status ? [['Approval', device.approval_status.toUpperCase()]] : []),
+                  ...(device.battery_level != null ? [['Battery', `${device.battery_level}%`]] : []),
                   ['Last Heartbeat', device.last_heartbeat ? new Date(device.last_heartbeat).toLocaleString() : 'Never'],
                 ].map(([label, value, sub]) => (
                   <div key={label as string} className="flex items-start justify-between">

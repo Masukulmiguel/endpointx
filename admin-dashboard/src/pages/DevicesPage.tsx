@@ -39,13 +39,24 @@ function getOsIcon(osType: string) {
   if (lower.includes('windows')) return '🪟';
   if (lower.includes('mac') || lower.includes('darwin')) return '🍎';
   if (lower.includes('linux')) return '🐧';
+  if (lower.includes('android') || lower.includes('ios') || lower.includes('ipad')) return '📱';
   return '💻';
 }
 
+function isMobileDevice(device: Device): boolean {
+  if (device.agent_id?.startsWith('mobile-')) return true;
+  const os = (device.os_type || '').toLowerCase();
+  if (os === 'android' || os === 'ios' || os === 'ipados') return true;
+  const type = (device.device_type || '').toUpperCase();
+  return type === 'MOBILE' || type === 'TABLET';
+}
+
 function UsageBar({ label, value, icon: Icon }: { label: string; value: number | null; icon: React.ElementType }) {
-  const pct = Math.min(100, Math.max(0, value || 0));
+  const hasValue = typeof value === 'number' && Number.isFinite(value);
+  const pct = hasValue ? Math.min(100, Math.max(0, value)) : 0;
   let barColor = 'bg-emerald-500';
-  if (pct > 80) barColor = 'bg-red-500';
+  if (!hasValue) barColor = 'bg-gray-300 dark:bg-gray-600';
+  else if (pct > 80) barColor = 'bg-red-500';
   else if (pct > 60) barColor = 'bg-amber-500';
 
   return (
@@ -55,16 +66,22 @@ function UsageBar({ label, value, icon: Icon }: { label: string; value: number |
           <Icon className="w-3 h-3" />
           {label}
         </span>
-        <span className="text-gray-700 dark:text-gray-300 font-medium">{pct}%</span>
+        <span className="text-gray-700 dark:text-gray-300 font-medium">{hasValue ? `${pct}%` : '—'}</span>
       </div>
       <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: hasValue ? `${pct}%` : '0%' }} />
       </div>
     </div>
   );
 }
 
 function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }) {
+  const hasTelemetry = device.cpu_usage != null || device.ram_usage != null || device.disk_usage != null;
+  const mobile = isMobileDevice(device);
+  const model = [device.manufacturer, device.model].filter(Boolean).join(' · ');
+  const owner = device.notes?.match(/owner=([^;]+)/)?.[1] || null;
+  const pending = device.approval_status === 'pending';
+
   return (
     <button
       onClick={onClick}
@@ -85,11 +102,36 @@ function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }
         <StatusBadge status={device.status} />
       </div>
 
-      <div className="space-y-2.5 mb-4">
-        <UsageBar label="CPU" value={device.cpu_usage} icon={Cpu} />
-        <UsageBar label="RAM" value={device.ram_usage} icon={MemoryStick} />
-        <UsageBar label="Disk" value={device.disk_usage} icon={HardDrive} />
-      </div>
+      {hasTelemetry ? (
+        <div className="space-y-2.5 mb-4">
+          <UsageBar label="CPU" value={device.cpu_usage} icon={Cpu} />
+          <UsageBar label="RAM" value={device.ram_usage} icon={MemoryStick} />
+          <UsageBar label="Disk" value={device.disk_usage} icon={HardDrive} />
+        </div>
+      ) : (
+        <div className="mb-4 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700 p-3 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium text-gray-600 dark:text-gray-300">Sem telemetria</span>
+            <span className="text-gray-400 dark:text-gray-500">{mobile ? 'registo móvel' : 'sem dados'}</span>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 leading-snug">
+            {mobile
+              ? 'Dispositivo registado sem agente — presença apenas com a página de registo aberta.'
+              : 'Agente instalado mas ainda sem heartbeat.'}
+          </p>
+          {model && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{model}</p>}
+          {(owner || device.battery_level != null) && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              {[owner, device.battery_level != null ? `🔋 ${device.battery_level}%` : null].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          {pending && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-[11px] font-medium">
+              Aguarda aprovação
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 pt-3">
         <span className="flex items-center gap-1">
@@ -308,6 +350,8 @@ export default function DevicesPage() {
           <option value="windows">Windows</option>
           <option value="macos">macOS</option>
           <option value="linux">Linux</option>
+          <option value="android">Android</option>
+          <option value="ios">iOS</option>
         </select>
         <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 ml-auto">
           <button

@@ -124,6 +124,39 @@
         return null;
       }
 
+      var AGENT_KEY = 'endpointx_mobile_agent';
+      var hbTimer = null;
+
+      function getBatteryLevel() {
+        return new Promise(function (resolve) {
+          if (navigator.getBattery) {
+            navigator.getBattery().then(function (b) { resolve(Math.round(b.level * 100)); }).catch(function () { resolve(null); });
+          } else {
+            resolve(null);
+          }
+        });
+      }
+
+      function sendHeartbeat() {
+        var id = localStorage.getItem(AGENT_KEY);
+        if (!id) return;
+        getBatteryLevel().then(function (battery) {
+          fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent_id: id, battery_level: battery })
+          }).catch(function () {});
+        });
+      }
+
+      function startHeartbeat() {
+        if (hbTimer) return;
+        sendHeartbeat();
+        hbTimer = setInterval(sendHeartbeat, 60000);
+      }
+
+      if (localStorage.getItem(AGENT_KEY)) startHeartbeat();
+
       document.getElementById('regForm').addEventListener('submit', async function (e) {
         e.preventDefault();
         var btn = document.getElementById('submitBtn');
@@ -159,7 +192,9 @@
           }
           ok.style.display = 'block';
           ok.textContent = 'Registo enviado! Dispositivo: ' + (data.data.device_id || 'ok') +
-            ' — estado PENDING até aprovação do administrador.';
+            ' — estado PENDING até aprovação do administrador. Presença activa enquanto esta página estiver aberta.';
+          localStorage.setItem(AGENT_KEY, data.data.agent_id);
+          startHeartbeat();
           document.getElementById('regForm').reset();
         } catch (ex) {
           err.style.display = 'block';

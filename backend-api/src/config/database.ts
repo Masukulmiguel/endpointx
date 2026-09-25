@@ -656,6 +656,7 @@ const createInlineSchema = async (): Promise<void> => {
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_patch_level VARCHAR(50);
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS department VARCHAR(100);
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20) DEFAULT 'approved';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS battery_level INTEGER;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ DEFAULT NOW();
 
     CREATE TABLE IF NOT EXISTS network_discovery_runs (
@@ -787,6 +788,7 @@ const createInlineSchema = async (): Promise<void> => {
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS security_patch_level VARCHAR(50);
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS department VARCHAR(100);
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20) DEFAULT 'approved';
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS battery_level INTEGER;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ DEFAULT NOW();
 
     CREATE TABLE IF NOT EXISTS network_discovery_runs (

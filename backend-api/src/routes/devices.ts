@@ -1043,4 +1043,38 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
   }
 });
 
+// PUBLIC - Mobile presence heartbeat (page open => device online; no agent telemetry)
+router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { agent_id: clientAgentId, battery_level } = req.body as Record<string, unknown>;
+    const agentId = String(clientAgentId || '').trim().slice(0, 64);
+    if (!agentId.startsWith('mobile-')) {
+      res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
+      return;
+    }
+    const existing = await query('SELECT id, status FROM devices WHERE agent_id = $1', [agentId]);
+    if (existing.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not enrolled' } });
+      return;
+    }
+    const rawBattery = typeof battery_level === 'number' ? battery_level : NaN;
+    const battery = Number.isFinite(rawBattery) ? Math.min(100, Math.max(0, Math.round(rawBattery))) : null;
+    const fwd = req.headers['x-forwarded-for'];
+    const ip = (Array.isArray(fwd) ? fwd[0] : fwd || '').split(',')[0].trim() || req.ip || null;
+    const currentStatus = String(existing.rows[0].status || 'offline');
+    // Preserve blocked/quarantine/alert; only an offline device flips to online
+    const nextStatus = currentStatus === 'offline' ? 'online' : currentStatus;
+    await query(
+      `UPDATE devices
+         SET status = $1, last_heartbeat = NOW(), ip_address = COALESCE($2, ip_address),
+             battery_level = COALESCE($3, battery_level), updated_at = NOW()
+       WHERE id = $4`,
+      [nextStatus, ip, battery, existing.rows[0].id]
+    );
+    res.json({ success: true, data: { status: nextStatus, last_heartbeat: new Date().toISOString() } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

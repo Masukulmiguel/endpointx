@@ -41,6 +41,12 @@ export interface Device {
   registered_at: string;
   is_authorized: boolean;
   notes: string | null;
+  device_type?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  ownership?: string | null;
+  approval_status?: string | null;
+  battery_level?: number | null;
 }
 
 export interface DeviceDetail extends Device {
