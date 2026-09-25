@@ -43,7 +43,7 @@ export default function InstallPage() {
           No PC remoto, abra o PowerShell e cole (não fecha a shell):
         </p>
         <div className="bg-gray-900 rounded p-3 flex items-center justify-between">
-          <code className="text-cyan-400 text-sm font-mono break-all">{installScript}</code>
+          <code className="text-cyan-400 text-sm font-mono whitespace-nowrap overflow-x-auto min-w-0">{installScript}</code>
           <button
             onClick={() => copyToClipboard(installScript, 'quick')}
             className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
@@ -57,7 +57,7 @@ export default function InstallPage() {
         </p>
 
         <div className="mt-4 bg-gray-900 rounded p-3 flex items-center justify-between">
-          <code className="text-yellow-400 text-sm font-mono break-all">{updateScript}</code>
+          <code className="text-yellow-400 text-sm font-mono whitespace-nowrap overflow-x-auto min-w-0">{updateScript}</code>
           <button
             onClick={() => copyToClipboard(updateScript, 'update')}
             className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"

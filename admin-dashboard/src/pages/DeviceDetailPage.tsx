@@ -72,9 +72,10 @@ function Terminal(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function CircularGauge({ label, value, icon: Icon }: { label: string; value: number | null; icon: React.ElementType }) {
-  const hasValue = typeof value === 'number' && Number.isFinite(value);
-  const pct = hasValue ? Math.min(100, Math.max(0, value)) : 0;
+function CircularGauge({ label, value, icon: Icon }: { label: string; value: number | string | null; icon: React.ElementType }) {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  const hasValue = typeof num === 'number' && Number.isFinite(num);
+  const pct = hasValue ? Math.min(100, Math.max(0, num)) : 0;
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (pct / 100) * circumference;
@@ -627,8 +628,8 @@ export default function DeviceDetailPage() {
             columns={[
               { key: 'pid', label: 'PID', sortable: true },
               { key: 'name', label: 'Name', sortable: true, render: (row) => row.name || '-' },
-              { key: 'cpu_usage', label: 'CPU %', sortable: true, render: (row) => `${(row.cpu_usage || 0).toFixed(1)}%` },
-              { key: 'memory_usage', label: 'Memory', sortable: true, render: (row) => row.memory_usage ? `${(row.memory_usage / 1048576).toFixed(1)} MB` : '-' },
+              { key: 'cpu_usage', label: 'CPU %', sortable: true, render: (row) => `${(Number(row.cpu_usage) || 0).toFixed(1)}%` },
+              { key: 'memory_usage', label: 'Memory', sortable: true, render: (row) => Number(row.memory_usage) ? `${(Number(row.memory_usage) / 1048576).toFixed(1)} MB` : '-' },
               { key: 'user_name', label: 'User', sortable: true, render: (row) => row.user_name || '-' },
             ]}
             data={device.processes || []}

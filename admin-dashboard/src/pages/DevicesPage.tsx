@@ -65,9 +65,10 @@ function isMobileDevice(device: Device): boolean {
   return type === 'MOBILE' || type === 'TABLET';
 }
 
-function UsageBar({ label, value, icon: Icon }: { label: string; value: number | null; icon: React.ElementType }) {
-  const hasValue = typeof value === 'number' && Number.isFinite(value);
-  const pct = hasValue ? Math.min(100, Math.max(0, value)) : 0;
+function UsageBar({ label, value, icon: Icon }: { label: string; value: number | string | null; icon: React.ElementType }) {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  const hasValue = typeof num === 'number' && Number.isFinite(num);
+  const pct = hasValue ? Math.min(100, Math.max(0, num)) : 0;
   let barColor = 'bg-emerald-500';
   if (!hasValue) barColor = 'bg-gray-300 dark:bg-gray-600';
   else if (pct > 80) barColor = 'bg-red-500';
