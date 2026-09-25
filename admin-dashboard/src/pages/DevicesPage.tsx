@@ -149,6 +149,17 @@ function DeviceCard({ device, onClick }: { device: Device; onClick: () => void }
           User: {device.user_name}
         </p>
       )}
+      {device.latitude != null && device.longitude != null && (
+        <a
+          href={`https://www.openstreetmap.org/?mlat=${device.latitude}&mlon=${device.longitude}#map=16/${device.latitude}/${device.longitude}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline mt-2"
+        >
+          📍 {device.latitude.toFixed(4)}, {device.longitude.toFixed(4)}
+        </a>
+      )}
     </button>
   );
 }
@@ -195,7 +206,7 @@ export default function DevicesPage() {
     return p;
   }, [page, search, statusFilter, osFilter]);
 
-  const { data, loading, error, refetch } = useApi<{ devices: Device[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/devices', { params });
+  const { data, loading, error, refetch } = useApi<{ devices: Device[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/devices', { params, refreshInterval: 30000 });
 
   const devices = Array.isArray(data?.devices) ? data.devices : [];
   const totalPages = data?.pagination?.totalPages || 1;

@@ -4,6 +4,7 @@ import api from '../services/api';
 interface UseApiOptions {
   immediate?: boolean;
   params?: Record<string, any>;
+  refreshInterval?: number;
 }
 
 interface UseApiResult<T> {
@@ -17,7 +18,7 @@ export function useApi<T = unknown>(
   endpoint: string,
   options: UseApiOptions = {}
 ): UseApiResult<T> {
-  const { immediate = true, params } = options;
+  const { immediate = true, params, refreshInterval } = options;
   const paramsRef = useRef(params);
   paramsRef.current = params;
   const paramsKey = JSON.stringify(params ?? {});
@@ -26,9 +27,11 @@ export function useApi<T = unknown>(
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchData = useCallback(async (background = false) => {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const currentParams = paramsRef.current;
       const query = currentParams && Object.keys(currentParams).length > 0
@@ -39,15 +42,17 @@ export function useApi<T = unknown>(
         setData(response?.success !== undefined && response?.data !== undefined ? response.data : response);
       }
     } catch (err) {
-      if (mountedRef.current) {
+      if (!background && mountedRef.current) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       }
     } finally {
-      if (mountedRef.current) {
+      if (!background && mountedRef.current) {
         setLoading(false);
       }
     }
   }, [endpoint, paramsKey]);
+
+  const refetch = useCallback(() => fetchData(false), [fetchData]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -58,6 +63,14 @@ export function useApi<T = unknown>(
       mountedRef.current = false;
     };
   }, [fetchData, immediate]);
+
+  useEffect(() => {
+    if (!refreshInterval || refreshInterval <= 0) return;
+    const id = setInterval(() => {
+      fetchData(true);
+    }, refreshInterval);
+    return () => clearInterval(id);
+  }, [fetchData, refreshInterval]);
 
   return { data, loading, error, refetch: fetchData };
 }

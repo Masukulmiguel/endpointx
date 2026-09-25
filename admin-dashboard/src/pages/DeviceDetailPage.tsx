@@ -27,6 +27,7 @@ import {
   User,
   Hash,
   Info,
+  MapPin,
 } from 'lucide-react';
 import {
   LineChart,
@@ -138,7 +139,7 @@ export default function DeviceDetailPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const { data: deviceData, loading, error, refetch } = useApi<{ device: DeviceDetail }>(`/devices/${id}`);
+  const { data: deviceData, loading, error, refetch } = useApi<{ device: DeviceDetail }>(`/devices/${id}`, { refreshInterval: 15000 });
   const blockMutation = useApiMutation(`/devices/${id}/block`, 'POST');
   const unblockMutation = useApiMutation(`/devices/${id}/unblock`, 'POST');
   const quarantineMutation = useApiMutation(`/devices/${id}/quarantine`, 'POST');
@@ -396,6 +397,12 @@ export default function DeviceDetailPage() {
                   ['Registered', new Date(device.registered_at).toLocaleDateString()],
                   ...(device.approval_status ? [['Approval', device.approval_status.toUpperCase()]] : []),
                   ...(device.battery_level != null ? [['Battery', `${device.battery_level}%`]] : []),
+                  ...(device.latitude != null && device.longitude != null
+                    ? [['Location', `${device.latitude.toFixed(5)}, ${device.longitude.toFixed(5)}`]]
+                    : []),
+                  ...(device.location_updated_at
+                    ? [['Location Updated', new Date(device.location_updated_at).toLocaleString()]]
+                    : []),
                   ['Last Heartbeat', device.last_heartbeat ? new Date(device.last_heartbeat).toLocaleString() : 'Never'],
                 ].map(([label, value, sub]) => (
                   <div key={label as string} className="flex items-start justify-between">
@@ -407,6 +414,17 @@ export default function DeviceDetailPage() {
                   </div>
                 ))}
               </dl>
+              {device.latitude != null && device.longitude != null && (
+                <a
+                  href={`https://www.openstreetmap.org/?mlat=${device.latitude}&mlon=${device.longitude}#map=16/${device.latitude}/${device.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-4 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  <MapPin className="w-4 h-4" />
+                  Ver no mapa (OpenStreetMap)
+                </a>
+              )}
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">

@@ -36,6 +36,8 @@
     .ok { background: #0d3b22; border: 1px solid #1f8a4c; color: #7dffb2; border-radius: 12px; padding: 14px; margin-top: 14px; display: none; }
     .err { background: #3b1212; border: 1px solid #a33; color: #ff9b9b; border-radius: 12px; padding: 14px; margin-top: 14px; display: none; }
     .privacy { font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
+    .check-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--text); font-size: 0.9rem; }
+    .check-row input[type='checkbox'] { width: 20px; height: 20px; accent-color: var(--blue); }
     .tag { display: inline-block; background: #0a2f5c; color: #7ec1ff; border-radius: 999px; padding: 4px 10px; font-size: 0.75rem; margin: 0 6px 6px 0; }
     footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 18px; }
   </style>
@@ -81,6 +83,11 @@
         <label for="department">Departamento (opcional)</label>
         <input id="department" name="department" placeholder="ex.: Comercial" maxlength="80" />
 
+        <label class="check-row" for="shareLocation">
+          <input id="shareLocation" type="checkbox" checked />
+          Partilhar localização em tempo real (GPS)
+        </label>
+
         <button type="submit" id="submitBtn">Registar neste telemóvel</button>
       </form>
       <div class="ok" id="okBox"></div>
@@ -125,7 +132,15 @@
       }
 
       var AGENT_KEY = 'endpointx_mobile_agent';
+      var LOC_KEY = 'endpointx_mobile_location';
       var hbTimer = null;
+      var shareCb = document.getElementById('shareLocation');
+
+      if (localStorage.getItem(LOC_KEY) === '0') shareCb.checked = false;
+      if (localStorage.getItem(LOC_KEY) === '1') shareCb.checked = true;
+      shareCb.addEventListener('change', function () {
+        localStorage.setItem(LOC_KEY, shareCb.checked ? '1' : '0');
+      });
 
       function getBatteryLevel() {
         return new Promise(function (resolve) {
@@ -137,14 +152,31 @@
         });
       }
 
+      function getPosition() {
+        return new Promise(function (resolve) {
+          if (!navigator.geolocation) { resolve(null); return; }
+          navigator.geolocation.getCurrentPosition(
+            function (pos) { resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); },
+            function () { resolve(null); },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+          );
+        });
+      }
+
       function sendHeartbeat() {
         var id = localStorage.getItem(AGENT_KEY);
         if (!id) return;
-        getBatteryLevel().then(function (battery) {
+        var loc = shareCb.checked ? getPosition() : Promise.resolve(null);
+        Promise.all([getBatteryLevel(), loc]).then(function (parts) {
+          var payload = { agent_id: id, battery_level: parts[0] };
+          if (parts[1]) {
+            payload.latitude = parts[1].latitude;
+            payload.longitude = parts[1].longitude;
+          }
           fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_id: id, battery_level: battery })
+            body: JSON.stringify(payload)
           }).catch(function () {});
         });
       }
@@ -190,12 +222,25 @@
           if (!res.ok || data.success === false) {
             throw new Error((data && data.error && data.error.message) || ('HTTP ' + res.status));
           }
-          ok.style.display = 'block';
-          ok.textContent = 'Registo enviado! Dispositivo: ' + (data.data.device_id || 'ok') +
+          var base = 'Registo enviado! Dispositivo: ' + (data.data.device_id || 'ok') +
             ' — estado PENDING até aprovação do administrador. Presença activa enquanto esta página estiver aberta.';
+          ok.style.display = 'block';
+          ok.textContent = base;
           localStorage.setItem(AGENT_KEY, data.data.agent_id);
-          startHeartbeat();
+          localStorage.setItem(LOC_KEY, document.getElementById('shareLocation').checked ? '1' : '0');
           document.getElementById('regForm').reset();
+          document.getElementById('shareLocation').checked = localStorage.getItem(LOC_KEY) === '1';
+          if (document.getElementById('shareLocation').checked) {
+            getPosition().then(function (pos) {
+              ok.textContent = base + (pos
+                ? ' GPS activo — localização em tempo real partilhada.'
+                : ' GPS indisponível (permissão negada ou sem sinal).');
+              startHeartbeat();
+            });
+          } else {
+            ok.textContent = base + ' Localização desactivada.';
+            startHeartbeat();
+          }
         } catch (ex) {
           err.style.display = 'block';
           err.textContent = 'Falha no registo: ' + (ex.message || ex);

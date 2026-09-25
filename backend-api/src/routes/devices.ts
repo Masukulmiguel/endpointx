@@ -1046,7 +1046,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
 // PUBLIC - Mobile presence heartbeat (page open => device online; no agent telemetry)
 router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id: clientAgentId, battery_level } = req.body as Record<string, unknown>;
+    const { agent_id: clientAgentId, battery_level, latitude, longitude } = req.body as Record<string, unknown>;
     const agentId = String(clientAgentId || '').trim().slice(0, 64);
     if (!agentId.startsWith('mobile-')) {
       res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
@@ -1059,6 +1059,8 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
     }
     const rawBattery = typeof battery_level === 'number' ? battery_level : NaN;
     const battery = Number.isFinite(rawBattery) ? Math.min(100, Math.max(0, Math.round(rawBattery))) : null;
+    const lat = typeof latitude === 'number' && Number.isFinite(latitude) && Math.abs(latitude) <= 90 ? latitude : null;
+    const lng = typeof longitude === 'number' && Number.isFinite(longitude) && Math.abs(longitude) <= 180 ? longitude : null;
     const fwd = req.headers['x-forwarded-for'];
     const ip = (Array.isArray(fwd) ? fwd[0] : fwd || '').split(',')[0].trim() || req.ip || null;
     const currentStatus = String(existing.rows[0].status || 'offline');
@@ -1067,11 +1069,22 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
     await query(
       `UPDATE devices
          SET status = $1, last_heartbeat = NOW(), ip_address = COALESCE($2, ip_address),
-             battery_level = COALESCE($3, battery_level), updated_at = NOW()
-       WHERE id = $4`,
-      [nextStatus, ip, battery, existing.rows[0].id]
+             battery_level = COALESCE($3, battery_level),
+             latitude = COALESCE($4, latitude),
+             longitude = COALESCE($5, longitude),
+             location_updated_at = CASE WHEN $4::double precision IS NOT NULL THEN NOW() ELSE location_updated_at END,
+             updated_at = NOW()
+       WHERE id = $6`,
+      [nextStatus, ip, battery, lat, lng, existing.rows[0].id]
     );
-    res.json({ success: true, data: { status: nextStatus, last_heartbeat: new Date().toISOString() } });
+    res.json({
+      success: true,
+      data: {
+        status: nextStatus,
+        last_heartbeat: new Date().toISOString(),
+        location: lat != null && lng != null ? { latitude: lat, longitude: lng } : null,
+      },
+    });
   } catch (error) {
     next(error);
   }

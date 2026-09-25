@@ -47,6 +47,9 @@ export interface Device {
   ownership?: string | null;
   approval_status?: string | null;
   battery_level?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_updated_at?: string | null;
 }
 
 export interface DeviceDetail extends Device {
