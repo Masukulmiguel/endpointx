@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Download, Copy, Check, Monitor, Wifi, Smartphone, QrCode } from 'lucide-react';
+import { Download, Copy, Check, Monitor, Wifi, Smartphone } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 const API_URL = 'https://endpointx.onrender.com';
 
@@ -84,7 +85,7 @@ export default function InstallPage() {
           </button>
         </div>
         <div className="bg-white rounded-lg p-3 w-fit">
-          <QrCode className="w-40 h-40 text-gray-900" aria-label="QR code placeholder" />
+          <QRCodeSVG value={mobileUrl} size={160} level="M" aria-label="QR code da página de registo mobile" />
         </div>
         <p className="text-gray-500 text-xs mt-2">
           Alternativa: abra a partir do QR code no telemóvel. Também disponível em{' '}
