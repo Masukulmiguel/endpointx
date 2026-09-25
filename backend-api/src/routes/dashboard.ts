@@ -19,15 +19,17 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
     updateOfflineDevices();
     const viewAll = canViewAllDevices(req.user);
     const userId = req.user?.id;
-    // Device-scoped filters (non-admin => own devices only)
-    const devWhere = (extra?: string) =>
-      `${extra ? `WHERE ${extra}${viewAll ? '' : ` AND created_by = $1`}` : viewAll ? '' : `WHERE created_by = $1`}`;
+    // Device-scoped filters (non-admin => own devices only) — leading space so callers can concatenate directly
+    const devWhere = (extra?: string) => {
+      if (viewAll) return extra ? ` WHERE ${extra}` : '';
+      return ` WHERE ${extra ? `${extra} AND ` : ''}created_by = $1`;
+    };
     const devP = viewAll ? [] : [userId];
     // Alerts/events join devices; NULL device_id = system-level, visible to everyone
     const joinWhere = (alias: string, extra?: string) => {
       const own = `(${alias}.device_id IS NULL OR d.created_by = $1)`;
-      if (viewAll) return extra ? `WHERE ${extra}` : '';
-      return `WHERE ${extra ? `${extra} AND ` : ''}${own}`;
+      if (viewAll) return extra ? ` WHERE ${extra}` : '';
+      return ` WHERE ${extra ? `${extra} AND ` : ''}${own}`;
     };
     const jP = viewAll ? [] : [userId];
     const canSeeUsers = (req.user?.permissions || []).includes('users.view');
