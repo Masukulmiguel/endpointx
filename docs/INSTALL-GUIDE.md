@@ -196,7 +196,7 @@ python agent.py
 
 1. Abre o browser no PC servidor
 2. Vai a: **http://localhost:5173**
-3. Login: `admin@endpointx.local` / `REDACTED_PASSWORD`
+3. Login: `admin@endpointx.local` / a senha definida em `SEED_ADMIN_PASSWORD`
 4. Vai a: **Devices**
 5. O novo PC deve aparecer na lista
 

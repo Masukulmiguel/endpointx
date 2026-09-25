@@ -1053,15 +1053,20 @@ const seedDefaults = async (): Promise<void> => {
       }
     }
 
-    // Default admin user (password: REDACTED_PASSWORD)
-    const bcrypt = require('bcryptjs');
-    const hash = bcrypt.hashSync('REDACTED_PASSWORD', 12);
-    await client.query(
-      `INSERT INTO users (email, username, full_name, password_hash, role_id)
-       SELECT 'admin@endpointx.local', 'admin', 'System Administrator', $1, id FROM roles WHERE name = 'admin'
-       ON CONFLICT (email) DO NOTHING`,
-      [hash]
-    );
+    // Admin account — password comes exclusively from SEED_ADMIN_PASSWORD (never hardcoded)
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (adminPassword && adminPassword.length >= 12) {
+      const bcrypt = require('bcryptjs');
+      const hash = bcrypt.hashSync(adminPassword, 12);
+      await client.query(
+        `INSERT INTO users (email, username, full_name, password_hash, role_id)
+         SELECT 'admin@endpointx.local', 'admin', 'System Administrator', $1, id FROM roles WHERE name = 'admin'
+         ON CONFLICT (email) DO NOTHING`,
+        [hash]
+      );
+    } else {
+      logger.warn('SEED_ADMIN_PASSWORD not set (min 12 chars) — skipping admin account creation');
+    }
 
     // Default settings
     const settings = [

@@ -96,13 +96,11 @@ docker compose up -d
 open http://localhost:5173
 ```
 
-### Default Credentials
+### First-run Admin Account
 
-| Email                 | Password      | Role  |
-| --------------------- | ------------- | ----- |
-| admin@endpointx.local | REDACTED_PASSWORD  | admin |
-
-> **IMPORTANT**: Change the default admin password immediately after first login.
+The admin account (`admin@endpointx.local`) is created on first startup from the
+`SEED_ADMIN_PASSWORD` environment variable (min 12 chars). No default password is
+stored in this repository — see [.env.example](.env.example).
 
 ## Configuration
 
@@ -183,9 +181,8 @@ Start-Process -FilePath "wscript.exe" -ArgumentList "C:\endpointx\endpoint-agent
 
 ## Default Credentials
 
-| Component | Email/Username          | Password      | Role  |
-| --------- | ----------------------- | ------------- | ----- |
-| Dashboard | admin@endpointx.local   | REDACTED_PASSWORD  | admin |
+Provisioned at first deployment from `SEED_ADMIN_PASSWORD` — intentionally not
+stored in this repository.
 
 ## Development Setup
 

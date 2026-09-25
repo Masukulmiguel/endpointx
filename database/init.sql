@@ -413,9 +413,5 @@ INSERT INTO app_settings (key, value, description) VALUES
     ('mfa_required', 'false', 'Require MFA for all users'),
     ('agent_min_version', '1.1.0', 'Minimum required agent version');
 
--- Default admin user (password: REDACTED_PASSWORD - change immediately!)
--- Password hash generated with bcrypt
-INSERT INTO users (email, username, full_name, password_hash, role_id)
-SELECT 'admin@endpointx.local', 'admin', 'System Administrator',
-       'REDACTED_HASH',
-       id FROM roles WHERE name = 'admin';
+-- Admin account: created by the application on first startup from SEED_ADMIN_PASSWORD.
+-- No credentials are stored in this repository.

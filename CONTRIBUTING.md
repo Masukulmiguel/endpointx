@@ -55,7 +55,7 @@ python agent.py --register
 python agent.py
 ```
 
-Default admin: `admin@endpointx.local` / `REDACTED_PASSWORD` (change immediately).
+Default admin: `admin@endpointx.local`, password from `SEED_ADMIN_PASSWORD` in your local `.env`.
 
 ## Branching & commits
 

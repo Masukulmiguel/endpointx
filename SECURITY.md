@@ -29,8 +29,8 @@ EndpointX is a **defensive** platform. Out of scope by design:
 
 - Never commit `.env`, JWT secrets, `AGENT_SECRET`, SMTP or API keys
 - Rotate any key that leaks (Render environment variables + database)
-- The default admin password (`admin@endpointx.local` / `REDACTED_PASSWORD`) must be
-  changed on first deployment
+- The admin password must be set via `SEED_ADMIN_PASSWORD` on first deployment
+  (no default credentials ship with the repository) and rotated regularly
 
 ## Hardening checklist for operators
 
