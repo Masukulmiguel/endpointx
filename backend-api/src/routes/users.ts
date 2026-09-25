@@ -25,8 +25,14 @@ router.get('/', authenticate, requirePermission('users.view'), async (req: AuthR
     const countResult = await query(`SELECT COUNT(*) as total FROM users u ${whereClause}`, params);
     const total = countResult.rows[0]?.total || 0;
 
-    const result = await query(`SELECT u.id, u.email, u.username, u.full_name, u.is_active, u.mfa_enabled, u.last_login, u.created_at, r.name as role_name
-      FROM users u LEFT JOIN roles r ON u.role_id = r.id ${whereClause} ORDER BY u.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    const result = await query(`SELECT u.id, u.email, u.username, u.full_name, u.is_active, u.mfa_enabled, u.last_login, u.created_at, u.created_by,
+      r.name as role_name,
+      cu.email as creator_email,
+      (SELECT COUNT(*) FROM devices d WHERE d.created_by = u.id) as device_count
+      FROM users u
+      LEFT JOIN roles r ON u.role_id = r.id
+      LEFT JOIN users cu ON cu.id = u.created_by
+      ${whereClause} ORDER BY u.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]);
 
     res.json({ success: true, data: { users: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
@@ -68,8 +74,8 @@ router.post('/', authenticate, requirePermission('users.manage'), async (req: Au
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     const passwordHash = await hashPassword(password);
 
-    await query('INSERT INTO users (id, email, username, full_name, password_hash, role_id) VALUES ($1, $2, $3, $4, $5, $6)',
-      [id, email, username, full_name, passwordHash, role_id || 'role_user']);
+    await query('INSERT INTO users (id, email, username, full_name, password_hash, role_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, email, username, full_name, passwordHash, role_id || 'role_user', req.user?.id || null]);
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'user_create', 'user', id, 'User created', req.ip]);

@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { Download, Copy, Check, Monitor, Wifi, Smartphone } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { useApi } from '../hooks/useApi';
 
 const API_URL = 'https://endpointx.onrender.com';
 
 export default function InstallPage() {
   const [copied, setCopied] = useState('');
+  const { data: tokenData } = useApi<{ token: string }>('/devices/enroll-token');
+  const enrollToken = tokenData?.token || '';
+  const tokenQS = enrollToken ? `?t=${enrollToken}` : '';
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -13,9 +17,9 @@ export default function InstallPage() {
     setTimeout(() => setCopied(''), 2000);
   };
 
-  const installScript = `irm ${API_URL}/api/devices/public/install.ps1 | iex`;
+  const installScript = `irm ${API_URL}/api/devices/public/install.ps1${tokenQS} | iex`;
   const updateScript = `irm ${API_URL}/api/devices/public/update.ps1 | iex`;
-  const mobileUrl = `${API_URL}/api/devices/public/mobile`;
+  const mobileUrl = `${API_URL}/api/devices/public/mobile${tokenQS}`;
 
   return (
     <div className="max-w-4xl mx-auto p-6">

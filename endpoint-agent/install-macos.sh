@@ -3,6 +3,7 @@ set -e
 
 SERVER_URL="${1:-##SERVER_URL##}"
 AGENT_SECRET="${2:-##AGENT_SECRET##}"
+ENROLL_TOKEN="##ENROLL_TOKEN##"
 INSTALL_DIR="$HOME/endpointx-agent"
 PLIST_NAME="com.endpointx.agent"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
@@ -71,6 +72,7 @@ echo "[5/7] Creating config..."
 cat > "$INSTALL_DIR/config.yaml" <<EOF
 agent_id: AUTO
 agent_secret: ${AGENT_SECRET}
+enroll_token: ${ENROLL_TOKEN}
 heartbeat_interval: 60
 log_file: endpointx-agent.log
 log_level: INFO

@@ -246,6 +246,15 @@ export default function DevicesPage() {
       render: (row: Device) => <StatusBadge status={row.status} />,
     },
     {
+      key: 'owner_email',
+      label: 'Account',
+      render: (row: Device) => (
+        <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px] block">
+          {row.owner_email || '—'}
+        </span>
+      ),
+    },
+    {
       key: 'cpu_usage',
       label: 'CPU',
       sortable: true,

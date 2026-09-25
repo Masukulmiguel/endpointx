@@ -28,6 +28,7 @@ import {
   Hash,
   Info,
   MapPin,
+  BatteryCharging,
 } from 'lucide-react';
 import {
   LineChart,
@@ -147,6 +148,13 @@ export default function DeviceDetailPage() {
   const commandMutation = useApiMutation('/commands', 'POST');
 
   const device = deviceData?.device;
+  const isMobileDevice = !!(
+    device?.agent_id?.startsWith('mobile-') ||
+    ['MOBILE', 'TABLET'].includes((device?.device_type || '').toUpperCase()) ||
+    ['android', 'ios', 'ipados'].includes((device?.os_type || '').toLowerCase())
+  );
+  const hasTelemetry =
+    device?.cpu_usage != null || device?.ram_usage != null || device?.disk_usage != null;
 
   if (loading) {
     return (
@@ -394,6 +402,7 @@ export default function DeviceDetailPage() {
                   ['Disk', device.disk_total ? `${(device.disk_total / 1073741824).toFixed(1)} GB` : 'N/A'],
                   ['IP Address', device.ip_address || 'N/A'],
                   ['MAC Address', device.mac_address || 'N/A'],
+                  ...(device.owner_email ? [['Account', device.owner_email]] : []),
                   ['Registered', new Date(device.registered_at).toLocaleDateString()],
                   ...(device.approval_status ? [['Approval', device.approval_status.toUpperCase()]] : []),
                   ...(device.battery_level != null ? [['Battery', `${device.battery_level}%`]] : []),
@@ -429,11 +438,41 @@ export default function DeviceDetailPage() {
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-6">Resource Usage</h3>
-              <div className="flex items-center justify-around">
-                <CircularGauge label="CPU" value={device.cpu_usage} icon={Cpu} />
-                <CircularGauge label="RAM" value={device.ram_usage} icon={MemoryStick} />
-                <CircularGauge label="Disk" value={device.disk_usage} icon={HardDrive} />
-              </div>
+              {hasTelemetry ? (
+                <div className="flex items-center justify-around">
+                  <CircularGauge label="CPU" value={device.cpu_usage} icon={Cpu} />
+                  <CircularGauge label="RAM" value={device.ram_usage} icon={MemoryStick} />
+                  <CircularGauge label="Disk" value={device.disk_usage} icon={HardDrive} />
+                </div>
+              ) : isMobileDevice ? (
+                <div>
+                  <div className="flex items-center justify-around">
+                    <CircularGauge
+                      label="Battery"
+                      value={device.battery_level ?? null}
+                      icon={BatteryCharging}
+                    />
+                  </div>
+                  <p className="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center leading-relaxed">
+                    Dispositivo móvel — CPU/RAM/Disk indisponíveis (o browser não expõe estas
+                    métricas). Presença activa enquanto a página/app instalada estiver aberta.
+                    <br />
+                    Últ.:{' '}
+                    {device.last_heartbeat ? new Date(device.last_heartbeat).toLocaleString() : '—'}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-around">
+                    <CircularGauge label="CPU" value={device.cpu_usage} icon={Cpu} />
+                    <CircularGauge label="RAM" value={device.ram_usage} icon={MemoryStick} />
+                    <CircularGauge label="Disk" value={device.disk_usage} icon={HardDrive} />
+                  </div>
+                  <p className="mt-4 text-xs text-gray-400 dark:text-gray-500 text-center">
+                    Aguarda o primeiro heartbeat do agente.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

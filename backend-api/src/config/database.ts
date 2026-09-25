@@ -661,6 +661,9 @@ const createInlineSchema = async (): Promise<void> => {
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_devices_created_by ON devices(created_by);
 
     CREATE TABLE IF NOT EXISTS network_discovery_runs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -796,6 +799,9 @@ const createInlineSchema = async (): Promise<void> => {
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS first_seen TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_devices_created_by ON devices(created_by);
 
     CREATE TABLE IF NOT EXISTS network_discovery_runs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -916,6 +922,7 @@ const seedDefaults = async (): Promise<void> => {
   // Full permission catalog (safe for existing DBs)
   const allPerms: Array<[string, string, string, string]> = [
     ['devices.view', 'View Devices', 'View device list and details', 'devices'],
+    ['devices.view_all', 'View All Devices (All Accounts)', 'View devices across every account (super admin scope)', 'devices'],
     ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
     ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
     ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],

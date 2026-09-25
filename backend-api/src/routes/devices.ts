@@ -6,8 +6,32 @@ import { Response, NextFunction } from 'express';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import logger from '../utils/logger';
+import jwt from 'jsonwebtoken';
+import { JWT } from '../config/constants';
+import { canViewAllDevices, ownsDevice } from '../utils/tenant';
 
 const router = Router();
+
+// Enrollment token (JWT, 30d) embedded in install script / mobile link — ties devices to the installing account
+function verifyEnrollToken(raw: unknown): string | null {
+  const token = typeof raw === 'string' ? raw.trim() : '';
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT.ACCESS_SECRET) as { sub?: unknown; typ?: unknown };
+    if (payload?.typ === 'enroll' && typeof payload.sub === 'string' && payload.sub) return payload.sub;
+  } catch {
+    /* invalid/expired => unowned device */
+  }
+  return null;
+}
+
+// Non-admin accounts can only touch devices they own; others get 404 (no existence leak)
+async function denyUnlessOwns(req: AuthRequest, res: Response, deviceId: string): Promise<boolean> {
+  if (canViewAllDevices(req.user)) return true;
+  if (await ownsDevice(req.user?.id, deviceId)) return true;
+  res.status(404).json({ success: false, error: { message: 'Device not found' } });
+  return false;
+}
 
 // Mark devices as offline if no heartbeat within threshold
 // Uses configurable threshold (default 5 minutes) instead of hardcoded 2 minutes
@@ -37,9 +61,19 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
       return;
     }
 
+    const ownerUserId =
+      verifyEnrollToken(req.body?.enroll_token) || verifyEnrollToken(req.headers['x-enroll-token']);
+
     const existing = await query('SELECT id, status FROM devices WHERE agent_id = $1', [agent_id]);
     if (existing.rows.length > 0) {
-      await query("UPDATE devices SET status = 'online', last_heartbeat = NOW() WHERE id = $1", [existing.rows[0].id]);
+      if (ownerUserId) {
+        await query(
+          "UPDATE devices SET status = 'online', last_heartbeat = NOW(), created_by = COALESCE(created_by, $2) WHERE id = $1",
+          [existing.rows[0].id, ownerUserId]
+        );
+      } else {
+        await query("UPDATE devices SET status = 'online', last_heartbeat = NOW() WHERE id = $1", [existing.rows[0].id]);
+      }
       res.json({ success: true, data: { id: existing.rows[0].id, agent_id, status: 'online', is_new: false } });
       return;
     }
@@ -55,9 +89,9 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
 
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     await query(
-      `INSERT INTO devices (id, agent_id, hostname, os_type, os_version, os_build, mac_address, ip_address, status, last_heartbeat, is_authorized, device_type, ownership, trust_level, approval_status, first_seen)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, 'CORPORATE', 'KNOWN', 'approved', NOW())`,
-      [id, agent_id, hostname || '', os_type || 'unknown', os_version || '', os_build || '', mac_address || '', ip_address || '', 'online', new Date(), inferredType]
+      `INSERT INTO devices (id, agent_id, hostname, os_type, os_version, os_build, mac_address, ip_address, status, last_heartbeat, is_authorized, device_type, ownership, trust_level, approval_status, first_seen, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, 'CORPORATE', 'KNOWN', 'approved', NOW(), $12)`,
+      [id, agent_id, hostname || '', os_type || 'unknown', os_version || '', os_build || '', mac_address || '', ip_address || '', 'online', new Date(), inferredType, ownerUserId || null]
     );
 
     logger.info('New device registered', { deviceId: id, agent_id });
@@ -177,6 +211,21 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
   }
 });
 
+// Enrollment token for the logged-in account (embedded in install script / mobile QR link)
+router.get('/enroll-token', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
+      return;
+    }
+    const token = jwt.sign({ sub: userId, typ: 'enroll' }, JWT.ACCESS_SECRET, { expiresIn: '30d' });
+    res.json({ success: true, data: { token, expires_in: '30d' } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // List devices
 router.get('/', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -186,26 +235,40 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
     const search = req.query.search as string || '';
     const status = req.query.status as string || '';
     const offset = (page - 1) * limit;
+    const viewAll = canViewAllDevices(req.user);
 
-    let whereClause = '';
+    const conditions: string[] = [];
     const params: any[] = [];
     let paramIdx = 1;
 
     if (search) {
-      whereClause = `WHERE (hostname LIKE $${paramIdx} OR agent_id LIKE $${paramIdx + 1} OR ip_address::text LIKE $${paramIdx + 2})`;
+      conditions.push(`(d.hostname LIKE $${paramIdx} OR d.agent_id LIKE $${paramIdx + 1} OR d.ip_address::text LIKE $${paramIdx + 2})`);
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
       paramIdx += 3;
     }
     if (status) {
-      whereClause += whereClause ? ` AND status = $${paramIdx}` : `WHERE status = $${paramIdx}`;
+      conditions.push(`d.status = $${paramIdx}`);
       params.push(status);
       paramIdx += 1;
     }
+    if (!viewAll) {
+      conditions.push(`d.created_by = $${paramIdx}`);
+      params.push(req.user!.id);
+      paramIdx += 1;
+    }
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countResult = await query(`SELECT COUNT(*) as total FROM devices ${whereClause}`, params);
+    const countResult = await query(`SELECT COUNT(*) as total FROM devices d ${whereClause}`, params);
     const total = countResult.rows[0]?.total || 0;
 
-    const result = await query(`SELECT * FROM devices ${whereClause} ORDER BY last_heartbeat DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`, [...params, limit, offset]);
+    const result = await query(
+      `SELECT d.*, u.email as owner_email
+         FROM devices d LEFT JOIN users u ON u.id = d.created_by
+        ${whereClause}
+        ORDER BY d.last_heartbeat DESC
+        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+      [...params, limit, offset]
+    );
 
     res.json({ success: true, data: { devices: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
   } catch (error) {
@@ -231,11 +294,16 @@ function isPrivateIp(ip: string): boolean {
 router.get('/map', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     updateOfflineDevices();
+    const viewAll = canViewAllDevices(req.user);
     const result = await query(
-      `SELECT id, hostname, display_name, os_type, device_type, status, latitude, longitude,
-              battery_level, last_heartbeat, ip_address, location_updated_at, approval_status
-         FROM devices
-        ORDER BY last_heartbeat DESC NULLS LAST`
+      `SELECT d.id, d.hostname, d.display_name, d.os_type, d.device_type, d.status, d.latitude, d.longitude,
+              d.battery_level, d.last_heartbeat, d.ip_address, d.location_updated_at, d.approval_status, d.agent_id,
+              u.email as owner_email
+         FROM devices d
+         LEFT JOIN users u ON u.id = d.created_by
+        ${viewAll ? '' : 'WHERE d.created_by = $1'}
+        ORDER BY d.last_heartbeat DESC NULLS LAST`,
+      viewAll ? [] : [req.user!.id]
     );
     const devices = result.rows as Array<Record<string, unknown> & { latitude: number | null; longitude: number | null; ip_address: string | null }>;
     for (const d of devices) {
@@ -281,8 +349,15 @@ router.get('/map', authenticate, requirePermission('devices.view'), async (req: 
 router.get('/:id', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const deviceResult = await query('SELECT * FROM devices WHERE id = $1', [id]);
+    const deviceResult = await query(
+      'SELECT d.*, u.email as owner_email FROM devices d LEFT JOIN users u ON u.id = d.created_by WHERE d.id = $1',
+      [id]
+    );
     if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    if (!canViewAllDevices(req.user) && deviceResult.rows[0].created_by !== req.user?.id) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -319,6 +394,7 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
 router.put('/:id', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     const { display_name, user_id, notes, is_authorized } = req.body;
 
     await query('UPDATE devices SET display_name = COALESCE($1, display_name), user_id = COALESCE($2, user_id), notes = COALESCE($3, notes), is_authorized = COALESCE($4, is_authorized) WHERE id = $5',
@@ -337,6 +413,7 @@ router.put('/:id', authenticate, requirePermission('devices.manage'), async (req
 router.delete('/:id', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     await query('DELETE FROM devices WHERE id = $1', [id]);
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
@@ -361,6 +438,7 @@ async function queueContainmentCommand(deviceId: string, commandType: 'isolate' 
 router.post('/:id/block', authenticate, requirePermission('devices.block'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     await query(
       "UPDATE devices SET status = 'blocked', quarantine_status = 'BLOCKED', trust_level = 'BLOCKED', updated_at = NOW() WHERE id = $1",
       [id]
@@ -380,6 +458,7 @@ router.post('/:id/block', authenticate, requirePermission('devices.block'), asyn
 router.post('/:id/update-agent', authenticate, requirePermission('devices.commands'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     const deviceResult = await query('SELECT agent_id FROM devices WHERE id = $1', [id]);
     if (deviceResult.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
@@ -405,6 +484,7 @@ router.post('/:id/update-agent', authenticate, requirePermission('devices.comman
 router.post('/:id/unblock', authenticate, requirePermission('devices.block'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     await query(
       "UPDATE devices SET status = 'online', quarantine_status = 'NORMAL', trust_level = CASE WHEN trust_level IN ('BLOCKED','QUARANTINED') THEN 'KNOWN' ELSE trust_level END, updated_at = NOW() WHERE id = $1",
       [id]
@@ -424,6 +504,7 @@ router.post('/:id/unblock', authenticate, requirePermission('devices.block'), as
 router.post('/:id/quarantine', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     await query(
       "UPDATE devices SET status = 'quarantine', quarantine_status = 'QUARANTINED', trust_level = 'QUARANTINED', updated_at = NOW() WHERE id = $1",
       [id]
@@ -443,6 +524,7 @@ router.post('/:id/quarantine', authenticate, requirePermission('devices.quaranti
 router.get('/:id/history', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!(await denyUnlessOwns(req, res, id))) return;
     const heartbeats = await query('SELECT * FROM device_heartbeats WHERE device_id = $1 ORDER BY recorded_at DESC LIMIT 100', [id]);
     res.json({ success: true, data: { heartbeats: heartbeats.rows } });
   } catch (error) {
@@ -704,6 +786,9 @@ router.get('/download/installer', authenticate, async (req: AuthRequest, res: Re
     const serverUrl = `${req.protocol}://${req.get('host')}/api`;
     const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
     const platform = (req.query.platform as string) || 'windows';
+    const enrollToken = req.user?.id
+      ? jwt.sign({ sub: req.user.id, typ: 'enroll' }, JWT.ACCESS_SECRET, { expiresIn: '30d' })
+      : '';
 
     if (platform === 'linux') {
       const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-linux.sh');
@@ -714,6 +799,7 @@ router.get('/download/installer', authenticate, async (req: AuthRequest, res: Re
       let script = readFileSync(filePath, 'utf-8');
       script = script.replace(/##SERVER_URL##/g, serverUrl.replace('/api', ''));
       script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+      script = script.replace(/##ENROLL_TOKEN##/g, enrollToken);
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-linux.sh"');
       res.send(script);
@@ -729,6 +815,7 @@ router.get('/download/installer', authenticate, async (req: AuthRequest, res: Re
       let script = readFileSync(filePath, 'utf-8');
       script = script.replace(/##SERVER_URL##/g, serverUrl.replace('/api', ''));
       script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+      script = script.replace(/##ENROLL_TOKEN##/g, enrollToken);
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-macos.sh"');
       res.send(script);
@@ -766,6 +853,7 @@ Write-Host "[3/5] Creating config..." -ForegroundColor Green
 @"
 agent_id: AUTO
 agent_secret: ${agentSecret}
+enroll_token: ${enrollToken}
 heartbeat_interval: 60
 log_file: endpointx-agent.log
 log_level: INFO
@@ -849,6 +937,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+    script = script.replace(/##ENROLL_TOKEN##/g, verifyEnrollToken(req.query.t) || '');
 
     // text/plain (no attachment) so `irm ... | iex` receives a clean string
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -876,6 +965,7 @@ router.get('/public/install-linux.sh', async (req: AuthRequest, res: Response, n
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+    script = script.replace(/##ENROLL_TOKEN##/g, verifyEnrollToken(req.query.t) || '');
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-linux.sh"');
@@ -902,6 +992,7 @@ router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, n
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
+    script = script.replace(/##ENROLL_TOKEN##/g, verifyEnrollToken(req.query.t) || '');
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-macos.sh"');
@@ -985,6 +1076,38 @@ router.get('/public/mobile', async (_req: AuthRequest, res: Response, next: Next
   }
 });
 
+// PUBLIC - PWA service worker (keeps enrollment reachable + background sync heartbeats)
+router.get('/public/sw.js', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const filePath = join(__dirname, '..', '..', 'public', 'sw.js');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'Service worker not found' } });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(readFileSync(filePath, 'utf-8'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUBLIC - PWA manifest (install to home screen; persists until uninstall/factory reset)
+router.get('/public/manifest.webmanifest', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const filePath = join(__dirname, '..', '..', 'public', 'manifest.webmanifest');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'Manifest not found' } });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(readFileSync(filePath, 'utf-8'));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // PUBLIC - Mobile self-registration (device identity only, no private content)
 router.post('/mobile/register', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -999,7 +1122,10 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
       user_agent,
       source,
       agent_id: clientAgentId,
+      enroll_token,
     } = req.body as Record<string, string | undefined>;
+
+    const ownerUserId = verifyEnrollToken(enroll_token);
 
     const name = (device_name || '').trim().slice(0, 80);
     if (!name) {
@@ -1040,6 +1166,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
            department = COALESCE(NULLIF($7, ''), department),
            notes = COALESCE(NULLIF($8, ''), notes),
            trust_level = CASE WHEN approval_status = 'pending' THEN 'UNKNOWN' ELSE trust_level END,
+           created_by = COALESCE(created_by, $10),
            updated_at = NOW()
          WHERE id = $9`,
         [
@@ -1052,6 +1179,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
           (department || '').trim().slice(0, 80),
           `Mobile enrollment (${source || 'page'})`,
           deviceId,
+          ownerUserId || null,
         ]
       );
       res.json({
@@ -1071,11 +1199,11 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
       `INSERT INTO devices (
          id, agent_id, hostname, display_name, os_type, device_type, manufacturer, model,
          ownership, department, status, is_authorized, trust_level, approval_status,
-         managed, mdm_enrolled, quarantine_status, first_seen, registered_at, notes
+         managed, mdm_enrolled, quarantine_status, first_seen, registered_at, notes, created_by
        ) VALUES (
          $1, $2, $3, $3, $4, $5, $6, $7,
          $8, $9, 'offline', false, 'UNKNOWN', 'pending',
-         false, false, 'none', NOW(), NOW(), $10
+         false, false, 'none', NOW(), NOW(), $10, $11
        )`,
       [
         deviceId,
@@ -1089,6 +1217,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
         ownershipValue,
         (department || '').trim().slice(0, 80),
         `Mobile enrollment (${source || 'page'})${owner ? `; owner=${String(owner).slice(0, 80)}` : ''}`,
+        ownerUserId || null,
       ]
     );
 

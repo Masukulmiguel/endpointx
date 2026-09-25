@@ -1,0 +1,26 @@
+{
+  "name": "EndpointX Mobile",
+  "short_name": "EndpointX",
+  "description": "Registo e presença de dispositivo EndpointX",
+  "start_url": "/api/devices/public/mobile",
+  "scope": "/api/devices/public/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1220",
+  "theme_color": "#0080ff",
+  "lang": "pt",
+  "icons": [
+    {
+      "src": "/logotipo-fundo-escuro.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logotipo-fundo-escuro.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

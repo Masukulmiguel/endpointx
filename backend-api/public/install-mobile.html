@@ -4,6 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0080ff" />
+  <link rel="manifest" href="/api/devices/public/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/logotipo-fundo-escuro.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="EndpointX" />
   <title>EndpointX — Registo de Telemóvel</title>
   <style>
     :root { color-scheme: light dark; --blue: #0080ff; --bg: #0b1220; --card: #121a2b; --text: #e8eef8; --muted: #93a4bd; }
@@ -90,6 +96,14 @@
     </div>
 
     <div class="card">
+      <h2>Instalar no telemóvel</h2>
+      <p>Para o EndpointX ficar no sistema do telemóvel (como uma app no ecrã inicial), instale-o abaixo. O registo permanece no servidor até o administrador o remover — sobrevive a reinícios e actualizações.</p>
+      <button type="button" id="installBtn" style="display:none">Instalar app no telemóvel</button>
+      <p class="privacy" id="iosHint" style="display:none"><strong>iPhone/iPad:</strong> toque em <strong>Partilhar</strong> → <strong>Adicionar ao Ecrã Inicial</strong>.</p>
+      <p class="privacy">Presença: o dispositivo fica <strong>online</strong> enquanto a app/página estiver aberta, e volta ao online de imediato ao reabrir. Browsers não enviam heartbeats com a app totalmente fechada (limitação do sistema operativo — iOS/iPadOS não permitem execução em segundo plano). Ao reabrir, sincroniza na hora.</p>
+    </div>
+
+    <div class="card">
       <h2>Administração (MDM)</h2>
       <p>Para gestão avançada, use um MDM suportado:</p>
       <ul>
@@ -108,6 +122,15 @@
     (function () {
       var params = new URLSearchParams(window.location.search);
       var apiBase = params.get('api') || (window.location.origin + '/api');
+      var enrollToken = params.get('t') || localStorage.getItem('endpointx_enroll_token') || '';
+      if (enrollToken) {
+        localStorage.setItem('endpointx_enroll_token', enrollToken);
+        // keep ?t= in the URL so refresh/share keeps the token
+        if (!params.get('t')) {
+          params.set('t', enrollToken);
+          try { history.replaceState(null, '', window.location.pathname + '?' + params.toString()); } catch (e) {}
+        }
+      }
       var ua = navigator.userAgent || '';
       document.getElementById('uaBox').textContent = 'User-Agent detectado: ' + ua.slice(0, 160);
 
@@ -181,7 +204,70 @@
         hbTimer = setInterval(sendHeartbeat, 60000);
       }
 
-      if (localStorage.getItem(AGENT_KEY)) startHeartbeat();
+      function sendHeartbeatKeepalive() {
+        var id = localStorage.getItem(AGENT_KEY);
+        if (!id) return;
+        try {
+          fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent_id: id }),
+            keepalive: true
+          }).catch(function () {});
+        } catch (e) { /* ignore */ }
+      }
+
+      function storeAgentForSW(id) {
+        if (!('caches' in window) || !id) return;
+        caches.open('endpointx-mobile').then(function (c) {
+          c.put('/api/devices/public/__agent-id', new Response(id));
+        }).catch(function () {});
+      }
+
+      function registerSW() {
+        if (!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.register('/api/devices/public/sw.js').then(function (reg) {
+          try { if (reg.sync) reg.sync.register('endpointx-hb'); } catch (e) {}
+          try { if (reg.periodicSync) reg.periodicSync.register('endpointx-hb', { minInterval: 60000 }); } catch (e) {}
+        }).catch(function () {});
+      }
+      registerSW();
+
+      // Immediate recovery when the page/app becomes visible again; final heartbeat when hidden
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) sendHeartbeat();
+        else sendHeartbeatKeepalive();
+      });
+      window.addEventListener('online', sendHeartbeat);
+      window.addEventListener('focus', sendHeartbeat);
+      window.addEventListener('pagehide', sendHeartbeatKeepalive);
+      document.addEventListener('freeze', sendHeartbeatKeepalive);
+
+      if (localStorage.getItem(AGENT_KEY)) {
+        storeAgentForSW(localStorage.getItem(AGENT_KEY));
+        startHeartbeat();
+      }
+
+      // PWA install (Android/Chrome); iOS uses Share -> Add to Home Screen
+      var deferredPrompt = null;
+      var installBtn = document.getElementById('installBtn');
+      if (/iphone|ipad|ipod/i.test(ua)) document.getElementById('iosHint').style.display = 'block';
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.style.display = 'block';
+      });
+      installBtn.addEventListener('click', function () {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function () {
+          deferredPrompt = null;
+          installBtn.style.display = 'none';
+        }).catch(function () {});
+      });
+      window.addEventListener('appinstalled', function () {
+        installBtn.style.display = 'none';
+      });
 
       document.getElementById('regForm').addEventListener('submit', async function (e) {
         e.preventDefault();
@@ -207,6 +293,8 @@
         };
         var storedAgent = localStorage.getItem(AGENT_KEY);
         if (storedAgent) payload.agent_id = storedAgent;
+        var token = params.get('t') || localStorage.getItem('endpointx_enroll_token') || '';
+        if (token) payload.enroll_token = token;
 
         try {
           var res = await fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/register', {
@@ -219,10 +307,11 @@
             throw new Error((data && data.error && data.error.message) || ('HTTP ' + res.status));
           }
           var base = 'Registo enviado! Dispositivo: ' + (data.data.device_id || 'ok') +
-            ' — estado PENDING até aprovação do administrador. Presença activa enquanto esta página estiver aberta.';
+            ' — estado PENDING até aprovação do administrador. Instale a app (card abaixo) para o registo permanecer no telemóvel.';
           ok.style.display = 'block';
           ok.textContent = base;
           localStorage.setItem(AGENT_KEY, data.data.agent_id);
+          storeAgentForSW(data.data.agent_id);
           localStorage.setItem(LOC_KEY, document.getElementById('shareLocation').checked ? '1' : '0');
           document.getElementById('regForm').reset();
           document.getElementById('shareLocation').checked = localStorage.getItem(LOC_KEY) === '1';

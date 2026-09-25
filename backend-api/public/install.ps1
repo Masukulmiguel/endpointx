@@ -4,6 +4,7 @@
 
 $serverUrl = "##SERVER_URL##"
 $agentSecret = "##AGENT_SECRET##"
+$enrollToken = "##ENROLL_TOKEN##"
 $agentDir = "C:\endpointx\endpoint-agent"
 $github = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
 $ErrorActionPreference = "Continue"
@@ -79,6 +80,7 @@ try {
         $config = @"
 agent_id: AUTO
 agent_secret: $agentSecret
+enroll_token: $enrollToken
 heartbeat_interval: 60
 log_file: endpointx-agent.log
 log_level: INFO
@@ -111,6 +113,7 @@ server_url: $serverUrl/api
         $config = @"
 agent_id: AUTO
 agent_secret: $agentSecret
+enroll_token: $enrollToken
 heartbeat_interval: 60
 log_file: endpointx-agent.log
 log_level: INFO

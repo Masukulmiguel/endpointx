@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { canViewAllDevices, ownsDevice } from '../utils/tenant';
 
 const router = Router();
 
@@ -24,7 +25,13 @@ const ALLOWED_COMMAND_TYPES = [
 // List commands
 router.get('/', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query('SELECT ac.*, d.hostname FROM agent_commands ac LEFT JOIN devices d ON ac.device_id = d.id ORDER BY ac.created_at DESC LIMIT 100', []);
+    const viewAll = canViewAllDevices(req.user);
+    const result = await query(
+      `SELECT ac.*, d.hostname FROM agent_commands ac LEFT JOIN devices d ON ac.device_id = d.id
+       ${viewAll ? '' : 'WHERE d.created_by = $1'}
+       ORDER BY ac.created_at DESC LIMIT 100`,
+      viewAll ? [] : [req.user!.id]
+    );
     res.json({ success: true, data: { commands: result.rows } });
   } catch (error) { next(error); }
 });
@@ -40,6 +47,11 @@ router.post('/', authenticate, requirePermission('devices.commands'), async (req
 
     if (!ALLOWED_COMMAND_TYPES.includes(command_type)) {
       res.status(400).json({ success: false, error: { message: `Invalid command type: ${command_type}` } });
+      return;
+    }
+
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, device_id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
 
@@ -81,15 +93,33 @@ router.post('/', authenticate, requirePermission('devices.commands'), async (req
 // Get single command
 router.get('/:id', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await query('SELECT * FROM agent_commands WHERE id = $1', [req.params.id]);
+    const result = await query(
+      'SELECT ac.*, d.created_by as device_created_by FROM agent_commands ac LEFT JOIN devices d ON ac.device_id = d.id WHERE ac.id = $1',
+      [req.params.id]
+    );
     if (result.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Command not found' } }); return; }
-    res.json({ success: true, data: { command: result.rows[0] } });
+    const cmd = result.rows[0];
+    if (!canViewAllDevices(req.user) && cmd.device_created_by !== req.user?.id) {
+      res.status(404).json({ success: false, error: { message: 'Command not found' } });
+      return;
+    }
+    delete cmd.device_created_by;
+    res.json({ success: true, data: { command: cmd } });
   } catch (error) { next(error); }
 });
 
 // Cancel command
 router.post('/:id/cancel', authenticate, requirePermission('devices.commands'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const existing = await query(
+      'SELECT ac.device_id, d.created_by as device_created_by FROM agent_commands ac LEFT JOIN devices d ON ac.device_id = d.id WHERE ac.id = $1',
+      [req.params.id]
+    );
+    if (existing.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Command not found' } }); return; }
+    if (!canViewAllDevices(req.user) && existing.rows[0].device_created_by !== req.user?.id) {
+      res.status(404).json({ success: false, error: { message: 'Command not found' } });
+      return;
+    }
     await query("UPDATE agent_commands SET status = 'failed' WHERE id = $1 AND status = 'pending'", [req.params.id]);
     res.json({ success: true, data: { message: 'Command cancelled' } });
   } catch (error) { next(error); }

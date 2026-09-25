@@ -11,6 +11,9 @@ export interface User {
   created_at: string;
   updated_at: string;
   permissions?: string[];
+  created_by?: string | null;
+  creator_email?: string | null;
+  device_count?: number | string;
 }
 
 export interface Device {
@@ -50,6 +53,8 @@ export interface Device {
   latitude?: number | null;
   longitude?: number | null;
   location_updated_at?: string | null;
+  created_by?: string | null;
+  owner_email?: string | null;
 }
 
 export interface DeviceDetail extends Device {

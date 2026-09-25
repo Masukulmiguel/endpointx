@@ -502,6 +502,11 @@ class EndpointAgent:
             "mac_address": mac_address,
             "ip_address": ip_address,
         }
+        enroll_token = str(self.config.get("enroll_token") or "").strip() or os.environ.get(
+            "ENDPOINTX_ENROLL_TOKEN", ""
+        )
+        if enroll_token:
+            payload["enroll_token"] = enroll_token
 
         resp = self._make_request("POST", "/devices/register", payload)
         if resp is None:

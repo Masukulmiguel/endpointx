@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { canViewAllDevices, ownsDevice } from '../utils/tenant';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -90,16 +91,22 @@ export function evaluateNacPolicy(device: any, policies: any[]): { decision: str
 }
 
 // Inventory summary (universal device inventory)
-router.get('/inventory/summary', authenticate, requirePermission('devices.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/inventory/summary', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const viewAll = canViewAllDevices(req.user);
+    const devWhere = viewAll ? '' : ' WHERE created_by = $1';
+    const devParams = viewAll ? [] : [req.user!.id];
     const byType = await query(
-      `SELECT COALESCE(device_type, 'UNKNOWN') as type, COUNT(*) as c FROM devices GROUP BY 1 ORDER BY c DESC`
+      `SELECT COALESCE(device_type, 'UNKNOWN') as type, COUNT(*) as c FROM devices${devWhere} GROUP BY 1 ORDER BY c DESC`,
+      devParams
     );
     const byOwnership = await query(
-      `SELECT COALESCE(ownership, 'CORPORATE') as ownership, COUNT(*) as c FROM devices GROUP BY 1`
+      `SELECT COALESCE(ownership, 'CORPORATE') as ownership, COUNT(*) as c FROM devices${devWhere} GROUP BY 1`,
+      devParams
     );
     const byTrust = await query(
-      `SELECT COALESCE(trust_level, 'UNKNOWN') as trust, COUNT(*) as c FROM devices GROUP BY 1`
+      `SELECT COALESCE(trust_level, 'UNKNOWN') as trust, COUNT(*) as c FROM devices${devWhere} GROUP BY 1`,
+      devParams
     );
     const totals = await query(`
       SELECT
@@ -117,8 +124,8 @@ router.get('/inventory/summary', authenticate, requirePermission('devices.view')
         COUNT(*) FILTER (WHERE device_type = 'SERVER') as servers,
         COUNT(*) FILTER (WHERE device_type IN ('SWITCH','ROUTER','ACCESS_POINT','FIREWALL')) as network_devices,
         COUNT(*) FILTER (WHERE device_type = 'IOT' OR device_type = 'CAMERA' OR device_type = 'PRINTER') as iot
-      FROM devices
-    `);
+      FROM devices${devWhere}
+    `, devParams);
     const findings = await query(`
       SELECT
         COUNT(*) FILTER (WHERE severity = 'critical') as critical,
@@ -127,9 +134,21 @@ router.get('/inventory/summary', authenticate, requirePermission('devices.view')
       FROM hermes_findings WHERE status = 'open'
     `);
     const anomalies = await query(
-      `SELECT COUNT(*) as c FROM device_events WHERE event_type IN ('anomaly','anomalous_network_change') AND created_at > NOW() - INTERVAL '7 days'`
+      viewAll
+        ? `SELECT COUNT(*) as c FROM device_events WHERE event_type IN ('anomaly','anomalous_network_change') AND created_at > NOW() - INTERVAL '7 days'`
+        : `SELECT COUNT(*) as c FROM device_events de
+           JOIN devices d ON d.id = de.device_id
+           WHERE de.event_type IN ('anomaly','anomalous_network_change') AND de.created_at > NOW() - INTERVAL '7 days' AND d.created_by = $1`,
+      viewAll ? [] : [req.user!.id]
     );
-    const alerts = await query(`SELECT COUNT(*) as c FROM alerts WHERE is_dismissed = false`);
+    const alerts = await query(
+      viewAll
+        ? `SELECT COUNT(*) as c FROM alerts WHERE is_dismissed = false`
+        : `SELECT COUNT(*) as c FROM alerts a
+           LEFT JOIN devices d ON a.device_id = d.id
+           WHERE a.is_dismissed = false AND (a.device_id IS NULL OR d.created_by = $1)`,
+      viewAll ? [] : [req.user!.id]
+    );
 
     const map = (rows: any[], key: string) => {
       const o: Record<string, number> = {};
@@ -202,6 +221,10 @@ router.get('/inventory', authenticate, requirePermission('devices.view'), async 
       params.push(`%${search}%`);
       clauses.push(`(hostname ILIKE $${params.length} OR ip_address::text ILIKE $${params.length} OR mac_address ILIKE $${params.length})`);
     }
+    if (!canViewAllDevices(req.user)) {
+      params.push(req.user!.id);
+      clauses.push(`created_by = $${params.length}`);
+    }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const count = await query(`SELECT COUNT(*) as total FROM devices ${where}`, params);
     const total = count.rows[0]?.total || 0;
@@ -232,16 +255,18 @@ router.get('/inventory', authenticate, requirePermission('devices.view'), async 
 });
 
 // Mobile devices dashboard data
-router.get('/mobile', authenticate, requirePermission('devices.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/mobile', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const viewAll = canViewAllDevices(req.user);
     const devices = await query(
       `SELECT id, hostname, display_name, device_type, os_type, os_version, manufacturer, model,
               ownership, trust_level, quarantine_status, security_score, managed, mdm_enrolled,
               encryption_status, security_patch_level, vlan, ssid, ip_address, status, last_heartbeat,
               department, approval_status
        FROM devices
-       WHERE device_type IN ('MOBILE', 'TABLET') OR os_type IN ('android', 'ios')
-       ORDER BY last_heartbeat DESC NULLS LAST`
+       WHERE (device_type IN ('MOBILE', 'TABLET') OR os_type IN ('android', 'ios'))${viewAll ? '' : ' AND created_by = $1'}
+       ORDER BY last_heartbeat DESC NULLS LAST`,
+      viewAll ? [] : [req.user!.id]
     );
     const summary = {
       android: devices.rows.filter((d: any) => (d.os_type || '').toLowerCase() === 'android').length,
@@ -262,16 +287,18 @@ router.get('/mobile', authenticate, requirePermission('devices.view'), async (_r
 });
 
 // Unknown / pending devices
-router.get('/unknown', authenticate, requirePermission('devices.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/unknown', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const viewAll = canViewAllDevices(req.user);
     const unknown = await query(
       `SELECT id, hostname, device_type, mac_address, ip_address, status, trust_level, approval_status,
               manufacturer, location, vlan, first_seen, last_heartbeat, notes
        FROM devices
-       WHERE trust_level = 'UNKNOWN' OR device_type = 'UNKNOWN' OR approval_status = 'pending'
-          OR is_authorized = false
+       WHERE (trust_level = 'UNKNOWN' OR device_type = 'UNKNOWN' OR approval_status = 'pending'
+          OR is_authorized = false)${viewAll ? '' : ' AND created_by = $1'}
        ORDER BY last_heartbeat DESC NULLS LAST
-       LIMIT 100`
+       LIMIT 100`,
+      viewAll ? [] : [req.user!.id]
     );
     res.json({ success: true, data: { devices: unknown.rows } });
   } catch (error) {
@@ -283,6 +310,10 @@ router.get('/unknown', authenticate, requirePermission('devices.view'), async (_
 router.post('/devices/:id/approve', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const r = await query(
       `UPDATE devices
        SET approval_status = 'approved', is_authorized = true,
@@ -307,6 +338,10 @@ router.post('/devices/:id/approve', authenticate, requirePermission('devices.man
 router.post('/devices/:id/reject', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const r = await query(
       `UPDATE devices SET approval_status = 'rejected', trust_level = 'BLOCKED', is_authorized = false, quarantine_status = 'BLOCKED', updated_at = NOW()
        WHERE id = $1 RETURNING id`,
@@ -328,6 +363,10 @@ router.post('/devices/:id/reject', authenticate, requirePermission('devices.mana
 router.post('/devices/:id/quarantine', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const r = await query(
       `UPDATE devices SET quarantine_status = 'QUARANTINED', trust_level = 'QUARANTINED', status = 'quarantine', updated_at = NOW()
        WHERE id = $1 RETURNING id`,
@@ -348,6 +387,10 @@ router.post('/devices/:id/quarantine', authenticate, requirePermission('devices.
 router.post('/devices/:id/release', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const r = await query(
       `UPDATE devices SET quarantine_status = 'NORMAL', trust_level = CASE WHEN trust_level = 'QUARANTINED' THEN 'KNOWN' ELSE trust_level END, status = 'online', updated_at = NOW()
        WHERE id = $1 RETURNING id`,
@@ -369,6 +412,10 @@ router.post('/devices/:id/release', authenticate, requirePermission('devices.qua
 router.put('/devices/:id', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const b = req.body || {};
     const allowed = [
       'device_type', 'manufacturer', 'model', 'vlan', 'ssid', 'switch_name', 'switch_port',
@@ -607,6 +654,10 @@ router.get('/nac/decisions', authenticate, requirePermission('policies.view'), a
 // Device trust / posture detail
 router.get('/devices/:id/trust', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, req.params.id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const dev = await query(
       `SELECT id, hostname, device_type, ownership, trust_level, quarantine_status, security_score, security_posture,
               mdm_enrolled, managed, encryption_status, security_patch_level, os_type, os_version, vlan, status, last_heartbeat, approval_status
@@ -702,6 +753,10 @@ router.post('/incidents/:id/status', authenticate, requirePermission('alerts.man
 // Device events
 router.get('/devices/:id/events', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, req.params.id))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
     const r = await query(
       `SELECT * FROM device_events WHERE device_id = $1 ORDER BY created_at DESC LIMIT 100`,
       [req.params.id]

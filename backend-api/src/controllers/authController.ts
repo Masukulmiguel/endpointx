@@ -387,9 +387,9 @@ export const inviteUser = async (req: AuthRequest, res: Response, next: NextFunc
     const passwordHash = await hashPassword(tempPassword);
 
     const result = await query(
-      `INSERT INTO users (email, username, full_name, password_hash, role_id, must_change_password)
-       VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
-      [email.toLowerCase().trim(), username || email.split('@')[0], full_name || '', passwordHash, role_id || null]
+      `INSERT INTO users (email, username, full_name, password_hash, role_id, must_change_password, created_by)
+       VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id`,
+      [email.toLowerCase().trim(), username || email.split('@')[0], full_name || '', passwordHash, role_id || null, req.user?.id || null]
     );
 
     const userId = result.rows[0].id;

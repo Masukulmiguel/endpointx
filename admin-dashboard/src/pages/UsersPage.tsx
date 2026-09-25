@@ -187,6 +187,27 @@ export default function UsersPage() {
       ),
     },
     {
+      key: 'creator_email',
+      label: 'Created By',
+      sortable: true,
+      render: (row: User) =>
+        row.creator_email ? (
+          <span className="text-gray-700 dark:text-gray-300">{row.creator_email}</span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">Auto-registo</span>
+        ),
+    },
+    {
+      key: 'device_count',
+      label: 'Devices',
+      sortable: true,
+      render: (row: User) => (
+        <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+          {Number(row.device_count || 0)}
+        </span>
+      ),
+    },
+    {
       key: 'is_active',
       label: 'Status',
       sortable: true,
