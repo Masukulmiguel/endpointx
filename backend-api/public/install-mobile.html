@@ -211,6 +211,8 @@
           user_agent: ua.slice(0, 500),
           source: 'mobile_enrollment_page'
         };
+        var storedAgent = localStorage.getItem(AGENT_KEY);
+        if (storedAgent) payload.agent_id = storedAgent;
 
         try {
           var res = await fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/register', {
