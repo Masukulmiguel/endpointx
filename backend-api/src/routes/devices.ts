@@ -35,11 +35,20 @@ async function denyUnlessOwns(req: AuthRequest, res: Response, deviceId: string)
 
 // Mark devices as offline if no heartbeat within threshold
 // Uses configurable threshold (default 5 minutes) instead of hardcoded 2 minutes
+// Mobile (PWA) presence uses a longer threshold: browsers freeze page timers when the
+// screen locks / the app is backgrounded, so a phone legitimately misses heartbeats.
 export async function updateOfflineDevices() {
   try {
     const offlineThresholdSeconds = parseInt(process.env.OFFLINE_THRESHOLD || '300', 10);
-    const thresholdMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
-    await query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < NOW() - INTERVAL '${thresholdMinutes} minutes'`);
+    const mobileThresholdSeconds = parseInt(process.env.MOBILE_OFFLINE_THRESHOLD || '1800', 10);
+    const agentMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
+    const mobileMinutes = Math.max(agentMinutes, Math.ceil(mobileThresholdSeconds / 60));
+    await query(
+      `UPDATE devices SET status = 'offline'
+        WHERE status = 'online'
+          AND last_heartbeat < NOW() - (CASE WHEN agent_id LIKE 'mobile-%' THEN $1 ELSE $2 END * INTERVAL '1 minute')`,
+      [mobileMinutes, agentMinutes]
+    );
   } catch (e) {
     // ignore
   }

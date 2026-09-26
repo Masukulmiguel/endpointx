@@ -100,7 +100,7 @@
       <p>Para o EndpointX ficar no sistema do telemóvel (como uma app no ecrã inicial), instale-o abaixo. O registo permanece no servidor até o administrador o remover — sobrevive a reinícios e actualizações.</p>
       <button type="button" id="installBtn" style="display:none">Instalar app no telemóvel</button>
       <p class="privacy" id="iosHint" style="display:none"><strong>iPhone/iPad:</strong> toque em <strong>Partilhar</strong> → <strong>Adicionar ao Ecrã Inicial</strong>.</p>
-      <p class="privacy">Presença: o dispositivo fica <strong>online</strong> enquanto a app/página estiver aberta, e volta ao online de imediato ao reabrir. Browsers não enviam heartbeats com a app totalmente fechada (limitação do sistema operativo — iOS/iPadOS não permitem execução em segundo plano). Ao reabrir, sincroniza na hora.</p>
+      <p class="privacy">Presença: o dispositivo fica <strong>online</strong> enquanto a app/página estiver aberta e sincroniza de imediato ao reabrir, ao mudar a rede ou ao voltar a ter ligação. Com o ecrã bloqueado o sistema suspende a página, por isso o estado é mantido durante <strong>30 minutos</strong> antes de passar a offline (configurável no servidor: <code>MOBILE_OFFLINE_THRESHOLD</code>). Apps totalmente fechadas não enviam heartbeats (limitação do iOS/Android).</p>
     </div>
 
     <div class="card">
@@ -150,7 +150,10 @@
 
       var AGENT_KEY = 'endpointx_mobile_agent';
       var LOC_KEY = 'endpointx_mobile_location';
+      var SW_CACHE = 'endpointx-mobile-v1'; // must match CACHE in sw.js
       var hbTimer = null;
+      var hbRetryTimer = null;
+      var hbInFlight = false;
       var shareCb = document.getElementById('shareLocation');
 
       if (localStorage.getItem(LOC_KEY) === '0') shareCb.checked = false;
@@ -194,7 +197,8 @@
 
       function sendHeartbeat() {
         var id = localStorage.getItem(AGENT_KEY);
-        if (!id) return;
+        if (!id || hbInFlight) return;
+        hbInFlight = true;
         var loc = shareCb.checked ? getPosition() : Promise.resolve(null);
         Promise.all([getBatteryLevel(), loc]).then(function (parts) {
           var payload = { agent_id: id, battery_level: parts[0], network: getNetworkInfo() };
@@ -202,12 +206,33 @@
             payload.latitude = parts[1].latitude;
             payload.longitude = parts[1].longitude;
           }
-          fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
+          return fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
+          }).then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            if (hbRetryTimer) { clearTimeout(hbRetryTimer); hbRetryTimer = null; }
+          });
+        }).catch(function () {
+          // offline or throttled: retry shortly and let the service worker sync on reconnect
+          scheduleHeartbeatRetry();
+          registerBackgroundSync();
+        }).then(function () { hbInFlight = false; });
+      }
+
+      function scheduleHeartbeatRetry() {
+        if (hbRetryTimer) return;
+        hbRetryTimer = setTimeout(function () { hbRetryTimer = null; sendHeartbeat(); }, 15000);
+      }
+
+      function registerBackgroundSync() {
+        if (!('serviceWorker' in navigator)) return;
+        try {
+          navigator.serviceWorker.getRegistration().then(function (reg) {
+            if (reg && reg.sync) reg.sync.register('endpointx-hb');
           }).catch(function () {});
-        });
+        } catch (e) { /* ignore */ }
       }
 
       function startHeartbeat() {
@@ -231,7 +256,7 @@
 
       function storeAgentForSW(id) {
         if (!('caches' in window) || !id) return;
-        caches.open('endpointx-mobile').then(function (c) {
+        caches.open(SW_CACHE).then(function (c) {
           c.put('/api/devices/public/__agent-id', new Response(id));
         }).catch(function () {});
       }
@@ -248,12 +273,14 @@
       // Immediate recovery when the page/app becomes visible again; final heartbeat when hidden
       document.addEventListener('visibilitychange', function () {
         if (!document.hidden) sendHeartbeat();
-        else sendHeartbeatKeepalive();
+        else { sendHeartbeatKeepalive(); registerBackgroundSync(); }
       });
       window.addEventListener('online', sendHeartbeat);
       window.addEventListener('focus', sendHeartbeat);
       window.addEventListener('pagehide', sendHeartbeatKeepalive);
       document.addEventListener('freeze', sendHeartbeatKeepalive);
+      var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (conn && conn.addEventListener) conn.addEventListener('change', sendHeartbeat);
 
       if (localStorage.getItem(AGENT_KEY)) {
         storeAgentForSW(localStorage.getItem(AGENT_KEY));

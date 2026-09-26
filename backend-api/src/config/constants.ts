@@ -140,6 +140,8 @@ export const RATE_LIMIT = {
   WINDOW_MS: 15 * 60 * 1000,
   MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX || '500', 10),
   AUTH_MAX_REQUESTS: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '20', 10),
+  HEARTBEAT_MAX_REQUESTS: parseInt(process.env.HEARTBEAT_RATE_LIMIT_MAX || '300', 10),
+  HEARTBEAT_IP_MAX_REQUESTS: parseInt(process.env.HEARTBEAT_RATE_LIMIT_IP_MAX || '1000', 10),
   SKIP_SUCCESSFUL: false,
   STANDARD_HEADERS: true,
   LEGACY_HEADERS: false,

@@ -17,6 +17,10 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://endpointx-dashboard.onrender.com
+      - key: OFFLINE_THRESHOLD
+        value: "300"
+      - key: MOBILE_OFFLINE_THRESHOLD
+        value: "1800"
       - key: OPENCODE_SERVER_URL
         sync: false
       - key: OPENCODE_SERVER_USERNAME

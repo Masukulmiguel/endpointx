@@ -26,6 +26,9 @@ try {
 }
 
 const app: Express = express();
+// Behind Render's reverse proxy: trust exactly 1 hop so req.ip (and rate-limit keys)
+// resolve to the real client instead of the proxy — without this every client shares one bucket
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 export const io = new SocketIOServer(server, {
@@ -60,16 +63,45 @@ const authLimiter = rateLimit({
   legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
 });
 
+// Presence heartbeats run forever from many devices; they must not consume the shared /api bucket
+const isHeartbeatPath = (reqPath: string) =>
+  reqPath === '/devices/heartbeat' || reqPath === '/devices/mobile/heartbeat';
+
 const apiLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOW_MS,
   max: RATE_LIMIT.MAX_REQUESTS,
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
   legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
+  skip: (req) => isHeartbeatPath(req.path),
+});
+
+// Heartbeat limiter keyed by the agent (device), so devices behind the same NAT never share a bucket
+const heartbeatLimiter = rateLimit({
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.HEARTBEAT_MAX_REQUESTS,
+  message: { error: 'Too many heartbeat requests, please try again later.' },
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
+  keyGenerator: (req) => {
+    const agentId = typeof req.body?.agent_id === 'string' ? req.body.agent_id.trim() : '';
+    return `heartbeat:${agentId.slice(0, 64) || req.ip || 'unknown'}`;
+  },
+});
+
+// Safety net on the source IP so fake agent ids cannot be used to flood the endpoint
+const heartbeatIpLimiter = rateLimit({
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.HEARTBEAT_IP_MAX_REQUESTS,
+  message: { error: 'Too many heartbeat requests, please try again later.' },
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
 });
 
 app.use('/api/auth', authLimiter);
 app.use('/api', apiLimiter);
+app.use('/api/devices/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
+app.use('/api/devices/mobile/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => {

@@ -9,7 +9,35 @@ self.addEventListener('install', function () {
 });
 
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    self.clients.claim().then(function () {
+      // drop stale caches (older builds used 'endpointx-mobile' without the -v1 suffix),
+      // carrying the stored agent id over so presence keeps working without a page reload
+      return caches.keys().then(function (keys) {
+        var stale = keys.filter(function (key) {
+          return key.indexOf('endpointx-mobile') === 0 && key !== CACHE;
+        });
+        if (stale.length === 0) return null;
+        return caches.open(CACHE).then(function (target) {
+          return Promise.all(
+            stale.map(function (key) {
+              return caches
+                .open(key)
+                .then(function (oldCache) {
+                  return oldCache.match(AGENT_KEY_URL).then(function (res) {
+                    if (res) return target.put(AGENT_KEY_URL, res);
+                    return null;
+                  });
+                })
+                .then(function () {
+                  return caches.delete(key);
+                });
+            })
+          );
+        });
+      });
+    })
+  );
 });
 
 function readAgentId() {
@@ -29,14 +57,13 @@ function readAgentId() {
 function sendHeartbeat() {
   return readAgentId().then(function (id) {
     if (!id || id.indexOf('mobile-') !== 0) return;
+    // network errors must reject so Background Sync retries once connectivity returns
     return fetch(HB_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_id: id }),
       keepalive: true,
       credentials: 'omit',
-    }).catch(function () {
-      /* offline — next sync will retry */
     });
   });
 }

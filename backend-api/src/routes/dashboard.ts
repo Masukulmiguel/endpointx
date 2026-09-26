@@ -2,17 +2,9 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { canViewAllDevices } from '../utils/tenant';
+import { updateOfflineDevices } from './devices';
 
 const router = Router();
-
-// Mark devices as offline if no heartbeat within threshold
-async function updateOfflineDevices() {
-  try {
-    const offlineThresholdSeconds = parseInt(process.env.OFFLINE_THRESHOLD || '300', 10);
-    const thresholdMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
-    await query(`UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat < NOW() - INTERVAL '${thresholdMinutes} minutes'`);
-  } catch (e) { /* ignore */ }
-}
 
 router.get('/overview', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
