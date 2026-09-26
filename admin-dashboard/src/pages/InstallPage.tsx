@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Download, Copy, Check, Monitor, Wifi, Smartphone } from 'lucide-react';
+import { Download, Copy, Check, Monitor, Wifi, Smartphone, Terminal } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApi } from '../hooks/useApi';
+import { API_ORIGIN } from '../services/api';
 
-const API_URL = 'https://endpointx.onrender.com';
+const API_URL = API_ORIGIN;
 
 export default function InstallPage() {
   const [copied, setCopied] = useState('');
@@ -20,6 +21,8 @@ export default function InstallPage() {
   const installScript = `irm ${API_URL}/api/devices/public/install.ps1${tokenQS} | iex`;
   const updateScript = `irm ${API_URL}/api/devices/public/update.ps1 | iex`;
   const mobileUrl = `${API_URL}/api/devices/public/mobile${tokenQS}`;
+  const linuxInstall = `curl -fsSL ${API_URL}/api/devices/public/install-linux.sh${tokenQS} | sudo bash`;
+  const macInstall = `curl -fsSL ${API_URL}/api/devices/public/install-macos.sh${tokenQS} | bash`;
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -67,6 +70,44 @@ export default function InstallPage() {
           </button>
         </div>
         <p className="text-gray-500 text-xs mt-1">Atualização rápida do agent já instalado.</p>
+      </div>
+
+      <div className="bg-gray-800 rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Terminal className="w-5 h-5 text-green-400" />
+          Linux e macOS — instalação rápida
+        </h2>
+        <p className="text-gray-400 text-sm mb-4">
+          No terminal do dispositivo, cole o comando do sistema (configuração e registo automáticos):
+        </p>
+
+        <p className="text-gray-500 text-xs mb-1">Linux (Debian/Ubuntu/Fedora — requer sudo)</p>
+        <div className="bg-gray-900 rounded p-3 flex items-center justify-between mb-3">
+          <code className="text-cyan-400 text-xs font-mono break-all">{linuxInstall}</code>
+          <button
+            onClick={() => copyToClipboard(linuxInstall, 'linux')}
+            className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+            title="Copiar comando"
+          >
+            {copied === 'linux' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          </button>
+        </div>
+
+        <p className="text-gray-500 text-xs mb-1">macOS (utilizador normal)</p>
+        <div className="bg-gray-900 rounded p-3 flex items-center justify-between">
+          <code className="text-cyan-400 text-xs font-mono break-all">{macInstall}</code>
+          <button
+            onClick={() => copyToClipboard(macInstall, 'mac')}
+            className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+            title="Copiar comando"
+          >
+            {copied === 'mac' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          </button>
+        </div>
+        <p className="text-gray-500 text-xs mt-2">
+          Requer Python 3.8+. O agent corre como serviço (systemd no Linux, launchd no macOS) e arranca
+          automaticamente.
+        </p>
       </div>
 
       <div className="bg-gray-800 rounded-lg p-6 mb-6">

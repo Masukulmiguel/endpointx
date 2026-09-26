@@ -8,10 +8,57 @@ INSTALL_DIR="$HOME/endpointx-agent"
 PLIST_NAME="com.endpointx.agent"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
 
-echo "========================================="
-echo "  EndpointX Agent Installer (macOS)"
-echo "========================================="
-echo ""
+BX_WIDTH=46
+BX_CYAN=$'\033[36m'
+BX_GRAY=$'\033[90m'
+BX_DARK=$'\033[2m'
+BX_RESET=$'\033[0m'
+
+bx_line() {
+    local text="$1" color="${2:-}"
+    local pad=$(( BX_WIDTH - ${#text} ))
+    if [ "$pad" -lt 0 ]; then pad=0; fi
+    local left=$(( pad / 2 ))
+    local right=$(( pad - left ))
+    printf '%s  |%*s%s%*s|%s\n' "$color" "$left" "" "$text" "$right" "" "$BX_RESET"
+}
+
+bx_banner() {
+    local logo bar line logo_w=0
+    logo=$(cat <<'EOF'
+                          \     /
+                           \   /
+                            \ /
+ .---------.               .----.
+/           \  .-------.   (  o )
+|           |  /       \___|    |
+|           |..|       |   \    /
+|           |  \       /   '----'
+\           /  '-------'
+ '---------'    /  |  \
+               /   |   \
+              /    |    \
+EOF
+)
+    while IFS= read -r line; do
+        if [ ${#line} -gt "$logo_w" ]; then logo_w=${#line}; fi
+    done <<< "$logo"
+    bar=$(printf '%*s' "$BX_WIDTH" '' | tr ' ' '-')
+    printf '%s  +%s+%s\n' "$BX_DARK" "$bar" "$BX_RESET"
+    while IFS= read -r line; do
+        bx_line "$(printf '%-*s' "$logo_w" "$line")" "$BX_CYAN"
+    done <<< "$logo"
+    bx_line "$bar" "$BX_DARK"
+    bx_line 'E N D P O I N T X' "$BX_CYAN"
+    bx_line 'AGENT INSTALLER (MACOS)  v1.1.0' "$BX_GRAY"
+    bx_line "$SERVER_URL" "$BX_DARK"
+    printf '%s  +%s+%s\n' "$BX_DARK" "$bar" "$BX_RESET"
+    echo ""
+    echo "${BX_GRAY}  The EndpointX agent will run as a background launchd service.${BX_RESET}"
+    echo ""
+}
+
+bx_banner
 
 # Check not root
 if [ "$(id -u)" -eq 0 ]; then

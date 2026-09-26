@@ -14,6 +14,7 @@ import DataTable from '../components/DataTable';
 import Pagination from '../components/Pagination';
 import Modal from '../components/Modal';
 import AlertBanner from '../components/AlertBanner';
+import { API_ORIGIN } from '../services/api';
 import type { Device, PaginatedResponse } from '../types';
 
 function formatTimeAgo(dateStr: string | null): string {
@@ -200,10 +201,15 @@ export default function AgentsPage() {
           </div>
         </div>
         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 font-mono text-sm text-gray-700 dark:text-gray-300 space-y-2">
-          <p className="text-xs text-gray-500 dark:text-gray-400"># Windows</p>
-          <p>powershell -ExecutionPolicy Bypass -File install-agent.ps1 -Token YOUR_TOKEN</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 pt-2"># macOS / Linux</p>
-          <p>curl -sSL https://agent.endpointx.com/install.sh | bash -s -- --token YOUR_TOKEN</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400"># Windows (PowerShell)</p>
+          <p className="break-all">irm {API_ORIGIN}/api/devices/public/install.ps1 | iex</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 pt-2"># Linux</p>
+          <p className="break-all">curl -fsSL {API_ORIGIN}/api/devices/public/install-linux.sh | sudo bash</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 pt-2"># macOS</p>
+          <p className="break-all">curl -fsSL {API_ORIGIN}/api/devices/public/install-macos.sh | bash</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 pt-2">
+            Full guide on the <span className="text-blue-500">Install Agent</span> page
+          </p>
         </div>
       </div>
 

@@ -14,9 +14,47 @@ function Write-Info($msg) { Write-Host $msg -ForegroundColor Yellow }
 function Write-Err($msg) { Write-Host $msg -ForegroundColor Red }
 function Write-Ok($msg) { Write-Host $msg -ForegroundColor Cyan }
 
+function Write-Banner($lines, $width) {
+    $bar = "  +" + ("-" * $width) + "+"
+    Write-Host $bar -ForegroundColor DarkCyan
+    foreach ($l in $lines) {
+        $text = [string]$l.Text
+        $pad = $width - $text.Length
+        if ($pad -lt 0) { $pad = 0 }
+        $left = [int][math]::Floor($pad / 2)
+        $right = $pad - $left
+        Write-Host ("  |" + (" " * $left) + $text + (" " * $right) + "|") -ForegroundColor $l.Color
+    }
+    Write-Host $bar -ForegroundColor DarkCyan
+}
+
+# Logotipo EndpointX (formiga) em ASCII
+$antLogo = @(
+    '                          \     /',
+    '                           \   /',
+    '                            \ /',
+    ' .---------.               .----.',
+    '/           \  .-------.   (  o )',
+    '|           |  /       \___|    |',
+    '|           |..|       |   \    /',
+    '|           |  \       /   ''----''',
+    '\           /  ''-------''',
+    ' ''---------''    /  |  \',
+    '               /   |   \',
+    '              /    |    \'
+)
+$antWidth = ($antLogo | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+
 Write-Host ""
-Write-Ok "  EndpointX v1.1.0 - Agent Installer"
-Write-Host "  Server: $serverUrl" -ForegroundColor Gray
+Write-Banner @(
+    $antLogo | ForEach-Object { @{ Text = $_.PadRight($antWidth); Color = 'Cyan' } }
+    @{ Text = ('-' * 46); Color = 'DarkCyan' }
+    @{ Text = 'E N D P O I N T X'; Color = 'Cyan' }
+    @{ Text = 'AGENT INSTALLER  v1.1.0'; Color = 'Gray' }
+    @{ Text = $serverUrl; Color = 'DarkGray' }
+) 46
+Write-Host ""
+Write-Host "  EndpointX agent will be installed in background with auto-start." -ForegroundColor DarkGray
 Write-Host ""
 
 try {

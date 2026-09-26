@@ -145,7 +145,19 @@ Complete REST API documentation is available at [docs/api.md](docs/api.md).
 irm https://your-server.com/api/devices/public/install.ps1 | iex
 ```
 
-### Option 2: Install as Windows Service (Production)
+### Option 2: Install on Linux (one line)
+
+```bash
+curl -fsSL https://your-server.com/api/devices/public/install-linux.sh | sudo bash
+```
+
+### Option 3: Install on macOS (one line)
+
+```bash
+curl -fsSL https://your-server.com/api/devices/public/install-macos.sh | bash
+```
+
+### Option 4: Install as Windows Service (Production)
 
 ```powershell
 # Install agent files
@@ -159,7 +171,7 @@ python service.py install
 python service.py start
 ```
 
-### Option 3: Install via Git
+### Option 5: Install via Git
 
 ```bash
 cd C:\

@@ -220,6 +220,38 @@ python agent.py
 
 ---
 
+## Instalação Linux e macOS (linha única)
+
+Os scripts públicos fazem download do agent, criam o `config.yaml` com o servidor/token
+automaticamente e registam o serviço (systemd no Linux, launchd no macOS):
+
+### Linux (Debian/Ubuntu/Fedora — requer sudo)
+
+```bash
+curl -fsSL https://endpointx.onrender.com/api/devices/public/install-linux.sh | sudo bash
+```
+
+### macOS (utilizador normal)
+
+```bash
+curl -fsSL https://endpointx.onrender.com/api/devices/public/install-macos.sh | bash
+```
+
+### Gestão do serviço
+
+```bash
+# Linux
+systemctl status endpointx-agent
+journalctl -u endpointx-agent -f
+
+# macOS
+tail -f ~/endpointx-agent/agent-stdout.log
+```
+
+Pré-requisito: Python 3.8+. Os comandos também estão no dashboard em **Instalar Agente**.
+
+---
+
 ## Script de Instalação Automática
 
 Cria um ficheiro `instalar.bat` no PC remoto:
