@@ -105,7 +105,7 @@ function CircularGauge({ label, value, icon: Icon }: { label: string; value: num
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <Icon className="w-4 h-4 text-gray-400 dark:text-gray-500 mb-0.5" />
-          <span className="text-lg font-bold text-gray-900 dark:text-white">{hasValue ? `${pct}%` : '—'}</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white">{hasValue ? `${pct}%` : '-'}</span>
         </div>
       </div>
       <span className="mt-2 text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
@@ -520,11 +520,11 @@ export default function DeviceDetailPage() {
                     />
                   </div>
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center leading-relaxed">
-                    Dispositivo móvel — CPU/RAM/Disk indisponíveis (o browser não expõe estas
+                    Dispositivo móvel - CPU/RAM/Disk indisponíveis (o browser não expõe estas
                     métricas). Presença activa enquanto a página/app instalada estiver aberta.
                     <br />
                     Últ.:{' '}
-                    {device.last_heartbeat ? new Date(device.last_heartbeat).toLocaleString() : '—'}
+                    {device.last_heartbeat ? new Date(device.last_heartbeat).toLocaleString() : '-'}
                   </p>
                 </div>
               ) : (
@@ -584,7 +584,7 @@ export default function DeviceDetailPage() {
             data={device.software || []}
             emptyMessage={
               isMobileDevice
-                ? 'No software reported yet — the mobile app reports its browser and PWA on the next heartbeat'
+                ? 'No software reported yet - the mobile app reports its browser and PWA on the next heartbeat'
                 : 'No software data available'
             }
           />
@@ -615,7 +615,7 @@ export default function DeviceDetailPage() {
             data={device.services || []}
             emptyMessage={
               isMobileDevice
-                ? 'Not available — browsers cannot expose system services'
+                ? 'Not available - browsers cannot expose system services'
                 : 'No services data available'
             }
           />
@@ -635,7 +635,7 @@ export default function DeviceDetailPage() {
             data={device.processes || []}
             emptyMessage={
               isMobileDevice
-                ? 'Not available — browsers cannot expose system processes'
+                ? 'Not available - browsers cannot expose system processes'
                 : 'No process data available'
             }
           />

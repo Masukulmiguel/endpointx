@@ -98,7 +98,7 @@ export function localAnalyzeSecurityContext(context: {
   const top = findings.slice(0, 5);
   const riskBullets =
     top.length > 0
-      ? top.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}${f.hostname ? ` (${f.hostname})` : ''}${f.cve_id ? ` — ${f.cve_id}` : ''}`)
+      ? top.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}${f.hostname ? ` (${f.hostname})` : ''}${f.cve_id ? ` - ${f.cve_id}` : ''}`)
       : pt
         ? ['1. Sem findings abertos com severidade elevada.']
         : ['1. No open findings at high severity.'];
@@ -135,7 +135,7 @@ export function localAnalyzeSecurityContext(context: {
 
   const lines = pt
     ? [
-        'Briefing de segurança HERMES (análise local — sem IA configurada no servidor).',
+        'Briefing de segurança HERMES (análise local - sem IA configurada no servidor).',
         '',
         '1) Principais riscos',
         ...riskBullets,
@@ -152,7 +152,7 @@ export function localAnalyzeSecurityContext(context: {
         'Nota: configure OPENROUTER_API_KEY no Render para briefing gerado por IA real (modelos grátis).',
       ]
     : [
-        'HERMES security briefing (local analysis — no AI configured on the server).',
+        'HERMES security briefing (local analysis - no AI configured on the server).',
         '',
         '1) Top risks',
         ...riskBullets,

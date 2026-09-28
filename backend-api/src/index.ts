@@ -27,7 +27,7 @@ try {
 
 const app: Express = express();
 // Behind Render's reverse proxy: trust exactly 1 hop so req.ip (and rate-limit keys)
-// resolve to the real client instead of the proxy — without this every client shares one bucket
+// resolve to the real client instead of the proxy - without this every client shares one bucket
 app.set('trust proxy', 1);
 const server = http.createServer(app);
 
@@ -154,7 +154,7 @@ app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/reports', reportsRoutes);
 
-// Public site (landing, login, register) — served before 404 handler
+// Public site (landing, login, register) - served before 404 handler
 const publicSitePath = path.join(__dirname, '..', 'public', 'site');
 app.use(express.static(publicSitePath, { index: 'index.html', extensions: ['html'] }));
 app.get('/sitemap.xml', (_req: Request, res: Response) => {

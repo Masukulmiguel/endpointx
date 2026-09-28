@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="EndpointX" />
-  <title>EndpointX — Registo de Telemóvel</title>
+  <title>EndpointX - Registo de Telemóvel</title>
   <style>
     :root { color-scheme: light dark; --blue: #0080ff; --bg: #0b1220; --card: #121a2b; --text: #e8eef8; --muted: #93a4bd; }
     * { box-sizing: border-box; }
@@ -97,7 +97,7 @@
 
     <div class="card">
       <h2>Instalar no telemóvel</h2>
-      <p>Para o EndpointX ficar no sistema do telemóvel (como uma app no ecrã inicial), instale-o abaixo. O registo permanece no servidor até o administrador o remover — sobrevive a reinícios e actualizações.</p>
+      <p>Para o EndpointX ficar no sistema do telemóvel (como uma app no ecrã inicial), instale-o abaixo. O registo permanece no servidor até o administrador o remover - sobrevive a reinícios e actualizações.</p>
       <button type="button" id="installBtn" style="display:none">Instalar app no telemóvel</button>
       <p class="privacy" id="iosHint" style="display:none"><strong>iPhone/iPad:</strong> toque em <strong>Partilhar</strong> → <strong>Adicionar ao Ecrã Inicial</strong>.</p>
       <p class="privacy">Presença: o dispositivo fica <strong>online</strong> enquanto a app/página estiver aberta e sincroniza de imediato ao reabrir, ao mudar a rede ou ao voltar a ter ligação. Com o ecrã bloqueado o sistema suspende a página, por isso o estado é mantido durante <strong>30 minutos</strong> antes de passar a offline (configurável no servidor: <code>MOBILE_OFFLINE_THRESHOLD</code>). Apps totalmente fechadas não enviam heartbeats (limitação do iOS/Android).</p>
@@ -346,7 +346,7 @@
             throw new Error((data && data.error && data.error.message) || ('HTTP ' + res.status));
           }
           var base = 'Registo enviado! Dispositivo: ' + (data.data.device_id || 'ok') +
-            ' — estado PENDING até aprovação do administrador. Instale a app (card abaixo) para o registo permanecer no telemóvel.';
+            ' - estado PENDING até aprovação do administrador. Instale a app (card abaixo) para o registo permanecer no telemóvel.';
           ok.style.display = 'block';
           ok.textContent = base;
           localStorage.setItem(AGENT_KEY, data.data.agent_id);
@@ -357,7 +357,7 @@
           if (document.getElementById('shareLocation').checked) {
             getPosition().then(function (pos) {
               ok.textContent = base + (pos
-                ? ' GPS activo — localização em tempo real partilhada.'
+                ? ' GPS activo - localização em tempo real partilhada.'
                 : ' GPS indisponível (permissão negada ou sem sinal).');
               startHeartbeat();
             });

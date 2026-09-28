@@ -61,7 +61,7 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 } catch { }
 
-# Python check (no exit — just fail soft for iex)
+# Python check (no exit - just fail soft for iex)
 $pythonCmd = $null
 foreach ($name in @('python', 'python3', 'py')) {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue

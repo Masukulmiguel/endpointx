@@ -40,7 +40,7 @@ export default function InstallPage() {
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Download className="w-5 h-5 text-green-400" />
-          Windows — Instalação rápida
+          Windows - Instalação rápida
         </h2>
         <p className="text-gray-400 text-sm mb-4">
           No PC remoto, abra o PowerShell e cole (não fecha a shell):
@@ -75,13 +75,13 @@ export default function InstallPage() {
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Terminal className="w-5 h-5 text-green-400" />
-          Linux e macOS — instalação rápida
+          Linux e macOS - instalação rápida
         </h2>
         <p className="text-gray-400 text-sm mb-4">
           No terminal do dispositivo, cole o comando do sistema (configuração e registo automáticos):
         </p>
 
-        <p className="text-gray-500 text-xs mb-1">Linux (Debian/Ubuntu/Fedora — requer sudo)</p>
+        <p className="text-gray-500 text-xs mb-1">Linux (Debian/Ubuntu/Fedora - requer sudo)</p>
         <div className="bg-gray-900 rounded p-3 flex items-center justify-between mb-3">
           <code className="text-cyan-400 text-xs font-mono break-all">{linuxInstall}</code>
           <button

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../config/database';
+import { query, getClient } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { Response, NextFunction } from 'express';
@@ -12,7 +12,25 @@ import { canViewAllDevices, ownsDevice } from '../utils/tenant';
 
 const router = Router();
 
-// Enrollment token (JWT, 30d) embedded in install script / mobile link — ties devices to the installing account
+// OS filter families sent by the dashboard select, mapped to LIKE patterns.
+// os_type stores 'Windows'/'Linux'/'Darwin' (Python platform.system()) and
+// 'android'/'ios' (mobile enrollment page), so matching is case-insensitive.
+const OS_FAMILY_PATTERNS: Record<string, string[]> = {
+  windows: ['%windows%'],
+  macos: ['%mac%', '%darwin%', '%os x%', '%osx%'],
+  linux: ['%linux%'],
+  android: ['%android%'],
+  ios: ['%ios%', '%ipad%', '%iphone%', '%ipod%'],
+};
+
+// Resolve the os_family/os_type query param into case-insensitive LIKE patterns, or null when not requested
+function osFilterPatterns(rawValue: unknown): string[] | null {
+  const value = String(rawValue || '').trim().toLowerCase();
+  if (!value) return null;
+  return OS_FAMILY_PATTERNS[value] || [`%${value}%`];
+}
+
+// Enrollment token (JWT, 30d) embedded in install script / mobile link - ties devices to the installing account
 function verifyEnrollToken(raw: unknown): string | null {
   const token = typeof raw === 'string' ? raw.trim() : '';
   if (!token) return null;
@@ -165,7 +183,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     // Store agent hash if provided; detect tamper if it changes
     if (agent_hash) {
       if (device.last_agent_hash && device.last_agent_hash !== agent_hash) {
-        // Hash mismatch — create a tamper alert
+        // Hash mismatch - create a tamper alert
         const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
         const hostname = (await query('SELECT hostname FROM devices WHERE id = $1', [device.id])).rows[0]?.hostname || device.id;
         await query(
@@ -243,6 +261,7 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
     const limit = parseInt(req.query.limit as string) || 20;
     const search = req.query.search as string || '';
     const status = req.query.status as string || '';
+    const osPatterns = osFilterPatterns(req.query.os_family ?? req.query.os_type);
     const offset = (page - 1) * limit;
     const viewAll = canViewAllDevices(req.user);
 
@@ -258,6 +277,11 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
     if (status) {
       conditions.push(`d.status = $${paramIdx}`);
       params.push(status);
+      paramIdx += 1;
+    }
+    if (osPatterns) {
+      conditions.push(`LOWER(COALESCE(d.os_type, '')) LIKE ANY($${paramIdx}::text[])`);
+      params.push(osPatterns);
       paramIdx += 1;
     }
     if (!viewAll) {
@@ -542,73 +566,119 @@ router.get('/:id/history', authenticate, requirePermission('devices.view'), asyn
 });
 
 // Agent inventory (no auth required, uses agent secret)
+// Values are sanitized to the column limits/INET syntax: a single over-long name or a
+// malformed address used to abort the whole request (500), leaving every tab empty.
+const clip = (value: unknown, max: number): string => (value == null ? '' : String(value).slice(0, max));
+const toPid = (value: unknown): number => {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) ? Math.min(Math.max(n, 0), 2147483647) : 0;
+};
+const toBoundedNumber = (value: unknown, min: number, max: number): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(Math.max(n, min), max);
+};
+const toMac = (value: unknown): string | null => {
+  const mac = clip(value, 17);
+  return /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(mac) ? mac : null;
+};
+const toInet = (value: unknown, version: 4 | 6): string | null => {
+  const raw = clip(value, 64).split('%')[0].trim(); // drop the IPv6 zone id Windows reports
+  if (!raw) return null;
+  if (version === 4) {
+    const octets = raw.split('.');
+    if (octets.length !== 4 || octets.some((o) => !/^\d{1,3}$/.test(o) || Number(o) > 255)) return null;
+    return raw;
+  }
+  return raw.includes(':') && /^[0-9a-f:]+$/i.test(raw) ? raw : null;
+};
+const toDateOnly = (value: unknown): string | null => {
+  const raw = clip(value, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+};
+
 router.post('/inventory', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const { agent_id, software, services, processes, network_interfaces } = req.body;
+
+  if (!agent_id) {
+    res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
+    return;
+  }
+
+  const agentSecret = req.headers['x-agent-secret'];
+  if (agentSecret !== process.env.AGENT_SECRET) {
+    res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
+    return;
+  }
+
+  const deviceResult = await query('SELECT id FROM devices WHERE agent_id = $1', [agent_id]);
+  if (deviceResult.rows.length === 0) {
+    res.status(404).json({ success: false, error: { message: 'Device not found' } });
+    return;
+  }
+
+  const deviceId = deviceResult.rows[0].id;
+  const client = await getClient();
+
+  // Replace everything atomically: a failure must never leave the tables wiped
   try {
-    const { agent_id, software, services, processes, network_interfaces } = req.body;
+    await client.query('BEGIN');
 
-    if (!agent_id) {
-      res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
-      return;
-    }
-
-    const agentSecret = req.headers['x-agent-secret'];
-    if (agentSecret !== process.env.AGENT_SECRET) {
-      res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
-      return;
-    }
-
-    const deviceResult = await query('SELECT id FROM devices WHERE agent_id = $1', [agent_id]);
-    if (deviceResult.rows.length === 0) {
-      res.status(404).json({ success: false, error: { message: 'Device not found' } });
-      return;
-    }
-
-    const deviceId = deviceResult.rows[0].id;
-
-    // Clear old data and insert new
-    await query('DELETE FROM device_software WHERE device_id = $1', [deviceId]);
+    await client.query('DELETE FROM device_software WHERE device_id = $1', [deviceId]);
     if (Array.isArray(software)) {
       for (const sw of software) {
-        const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        await query('INSERT INTO device_software (id, device_id, name, version, publisher, install_date) VALUES ($1, $2, $3, $4, $5, $6)',
-          [id, deviceId, sw.name || '', sw.version || '', sw.publisher || '', sw.install_date || null]);
+        const name = clip(sw?.name, 255) || 'Unknown';
+        await client.query(
+          'INSERT INTO device_software (device_id, name, version, publisher, install_date) VALUES ($1, $2, $3, $4, $5)',
+          [deviceId, name, clip(sw?.version, 100) || null, clip(sw?.publisher, 255) || null, toDateOnly(sw?.install_date)]
+        );
       }
     }
 
-    await query('DELETE FROM device_services WHERE device_id = $1', [deviceId]);
+    await client.query('DELETE FROM device_services WHERE device_id = $1', [deviceId]);
     if (Array.isArray(services)) {
       for (const svc of services) {
-        const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        await query('INSERT INTO device_services (id, device_id, name, display_name, status, startup_type) VALUES ($1, $2, $3, $4, $5, $6)',
-          [id, deviceId, svc.name || '', svc.display_name || svc.name || '', svc.status || '', svc.startup_type || '']);
+        await client.query(
+          'INSERT INTO device_services (device_id, name, display_name, status, startup_type) VALUES ($1, $2, $3, $4, $5)',
+          [deviceId, clip(svc?.name, 255) || 'Unknown', clip(svc?.display_name || svc?.name, 255) || null, clip(svc?.status, 50) || null, clip(svc?.startup_type, 50) || null]
+        );
       }
     }
 
-    await query('DELETE FROM device_processes WHERE device_id = $1', [deviceId]);
+    await client.query('DELETE FROM device_processes WHERE device_id = $1', [deviceId]);
     if (Array.isArray(processes)) {
       for (const proc of processes) {
-        const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        await query('INSERT INTO device_processes (id, device_id, pid, name, cpu_usage, memory_usage, user_name) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-          [id, deviceId, proc.pid || 0, proc.name || '', proc.cpu_percent || proc.cpu_usage || 0, proc.memory_bytes || proc.memory_usage || 0, proc.user || proc.user_name || '']);
+        await client.query(
+          'INSERT INTO device_processes (device_id, pid, name, cpu_usage, memory_usage, user_name) VALUES ($1, $2, $3, $4, $5, $6)',
+          [deviceId, toPid(proc?.pid), clip(proc?.name, 255) || 'unknown', toBoundedNumber(proc?.cpu_percent ?? proc?.cpu_usage, 0, 999.99), toBoundedNumber(proc?.memory_bytes ?? proc?.memory_usage, 0, Number.MAX_SAFE_INTEGER), clip(proc?.user ?? proc?.user_name, 255) || null]
+        );
       }
     }
 
-    await query('DELETE FROM device_network_interfaces WHERE device_id = $1', [deviceId]);
+    await client.query('DELETE FROM device_network_interfaces WHERE device_id = $1', [deviceId]);
     if (Array.isArray(network_interfaces)) {
       for (const iface of network_interfaces) {
-        const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        await query('INSERT INTO device_network_interfaces (id, device_id, name, mac_address, ipv4_address, ipv6_address, is_connected, speed_mbps) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-          [id, deviceId, iface.name || '', iface.mac || iface.mac_address || '', iface.ipv4 || iface.ipv4_address || '', iface.ipv6 || iface.ipv6_address || '', iface.is_connected ? true : false, iface.speed || iface.speed_mbps || 0]);
+        const name = clip(iface?.name, 100) || 'unknown';
+        await client.query(
+          'INSERT INTO device_network_interfaces (device_id, name, mac_address, ipv4_address, ipv6_address, is_connected, speed_mbps) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [deviceId, name, toMac(iface?.mac ?? iface?.mac_address), toInet(iface?.ipv4 ?? iface?.ipv4_address, 4), toInet(iface?.ipv6 ?? iface?.ipv6_address, 6), !!iface?.is_connected, toBoundedNumber(iface?.speed ?? iface?.speed_mbps, 0, 2147483647)]
+        );
       }
     }
 
-    await query("UPDATE devices SET last_inventory = NOW() WHERE id = $1", [deviceId]);
-
-    logger.info('Inventory updated', { deviceId, agent_id });
-    res.json({ success: true, data: { message: 'Inventory updated' } });
+    await client.query('UPDATE devices SET last_inventory = NOW() WHERE id = $1', [deviceId]);
+    await client.query('COMMIT');
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Inventory update failed', { agent_id, error: (error as Error).message });
     next(error);
+    return;
+  } finally {
+    client.release();
   }
+
+  logger.info('Inventory updated', { deviceId, agent_id });
+  res.json({ success: true, data: { message: 'Inventory updated' } });
 });
 
 // Agent reports command result (no auth required, uses agent secret)
@@ -1142,7 +1212,7 @@ function sanitizeIp(raw: string | null): string | null {
   return null;
 }
 
-// Mobile (PWA) inventory: what a browser can honestly report — the PWA itself and the browser.
+// Mobile (PWA) inventory: what a browser can honestly report - the PWA itself and the browser.
 async function syncMobileSoftware(deviceId: string, ua: string): Promise<void> {
   const browser = parseBrowserFromUA(ua);
   await query('DELETE FROM device_software WHERE device_id = $1', [deviceId]);

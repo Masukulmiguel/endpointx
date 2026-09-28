@@ -165,7 +165,7 @@ function formatEvidence(evidence: any, t: (key: string) => string): React.ReactN
               ? toEntries(item as Record<string, unknown>).map(([k, v]) => (
                   <div key={k}>
                     <span className="text-gray-500">{k.replace(/_/g, ' ')}:</span>{' '}
-                    <span className="text-gray-800 dark:text-gray-200">{String(v ?? '—')}</span>
+                    <span className="text-gray-800 dark:text-gray-200">{String(v ?? '-')}</span>
                   </div>
                 ))
               : String(item)}
@@ -182,7 +182,7 @@ function formatEvidence(evidence: any, t: (key: string) => string): React.ReactN
           <li key={k}>
             <span className="text-gray-500 capitalize">{k.replace(/_/g, ' ')}:</span>{' '}
             <span className="text-gray-800 dark:text-gray-200">
-              {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '—')}
+              {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '-')}
             </span>
           </li>
         ))}
@@ -408,8 +408,8 @@ export default function HermesPage() {
         </div>
         <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           {[
-            [t('hermes.openPorts'), surface?.open_ports ?? '—'],
-            [t('hermes.highRiskSvc'), surface?.high_risk_services ?? '—'],
+            [t('hermes.openPorts'), surface?.open_ports ?? '-'],
+            [t('hermes.highRiskSvc'), surface?.high_risk_services ?? '-'],
             [t('hermes.criticalCve'), status.critical],
             [t('hermes.alerts'), status.open_alerts],
           ].map(([label, val]) => (
@@ -551,7 +551,7 @@ export default function HermesPage() {
                         </span>
                       ))}
                     {assets.filter((a) => a.is_authorized).length === 0 && (
-                      <span className="text-xs text-gray-400">—</span>
+                      <span className="text-xs text-gray-400">-</span>
                     )}
                   </div>
                 </div>
@@ -595,7 +595,7 @@ export default function HermesPage() {
                         <span className="text-xs text-amber-500">{t('hermes.potentialVuln')}</span>
                       )}
                     </td>
-                    <td className="py-3 pr-3 text-gray-600 dark:text-gray-300">{f.hostname || f.ip_address || '—'}</td>
+                    <td className="py-3 pr-3 text-gray-600 dark:text-gray-300">{f.hostname || f.ip_address || '-'}</td>
                     <td className="py-3 pr-3">{f.confidence}%</td>
                     <td className="py-3 pr-3 text-xs text-gray-500 dark:text-gray-400 max-w-[280px]">
                       <details>
@@ -634,7 +634,7 @@ export default function HermesPage() {
                 assets.map((a) => (
                   <tr key={a.id} className="table-row">
                     <td className="py-3 pr-3 font-medium text-gray-900 dark:text-white">{a.hostname || t('common.unknown')}</td>
-                    <td className="py-3 pr-3 font-mono text-xs">{a.ip_address || '—'}</td>
+                    <td className="py-3 pr-3 font-mono text-xs">{a.ip_address || '-'}</td>
                     <td className="py-3 pr-3">
                       {a.is_authorized ? (
                         <span className="badge-green">{t('hermes.yes')}</span>
@@ -643,7 +643,7 @@ export default function HermesPage() {
                       )}
                     </td>
                     <td className="py-3 pr-3">{a.posture_score}/100</td>
-                    <td className="py-3 pr-3 font-semibold">{a.last_grade || '—'}</td>
+                    <td className="py-3 pr-3 font-semibold">{a.last_grade || '-'}</td>
                   </tr>
                 ))
               )}
@@ -698,8 +698,8 @@ export default function HermesPage() {
                         })()}
                       </span>
                     </td>
-                    <td className="py-3 pr-3 text-xs text-gray-500">{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
-                    <td className="py-3 pr-3 text-xs text-gray-500">{s.completed_at ? new Date(s.completed_at).toLocaleString() : '—'}</td>
+                    <td className="py-3 pr-3 text-xs text-gray-500">{s.started_at ? new Date(s.started_at).toLocaleString() : '-'}</td>
+                    <td className="py-3 pr-3 text-xs text-gray-500">{s.completed_at ? new Date(s.completed_at).toLocaleString() : '-'}</td>
                     <td className="py-3 pr-3 text-xs max-w-[220px]">
                       {formatScanStats(s.stats, s.status, t)}
                     </td>

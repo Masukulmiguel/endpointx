@@ -743,7 +743,7 @@ class EndpointAgent:
     def handle_isolate(self, params: dict[str, Any]) -> dict[str, Any]:
         """Network containment: allow only management server, block other traffic.
 
-        Defensive isolation — does not delete data or run exploits.
+        Defensive isolation - does not delete data or run exploits.
         """
         reason = params.get("reason", "containment")
         logger.warning("Isolate/containment command received (%s)", reason)
@@ -1126,6 +1126,7 @@ class EndpointAgent:
 
         self._running = True
         self._inventory_sent = False
+        self._last_inventory = 0.0
         self._security_sent = False
         self._last_security_check = 0
 
@@ -1150,11 +1151,15 @@ class EndpointAgent:
                                 except Exception as exc:
                                     logger.error("Command execution error: %s", exc)
 
-                        # Send inventory on first successful heartbeat
-                        if not self._inventory_sent:
+                        # Inventory: retry until the server confirms it, then refresh every 6h.
+                        # (A single failed attempt used to disable it for the whole agent lifetime,
+                        # which left software/services/network tabs empty forever.)
+                        now = time.time()
+                        if (not self._inventory_sent) or (now - self._last_inventory >= 21600):
                             try:
-                                self.send_inventory()
-                                self._inventory_sent = True
+                                if self.send_inventory():
+                                    self._inventory_sent = True
+                                    self._last_inventory = now
                             except Exception as exc:
                                 logger.error("Inventory send error: %s", exc)
 

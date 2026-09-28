@@ -46,10 +46,10 @@ export default function ProfilePage() {
   })();
 
   const infoRows = [
-    { icon: UserIcon, label: 'Full name', value: user?.full_name || '—' },
-    { icon: Mail, label: 'Email', value: user?.email || '—' },
-    { icon: Hash, label: 'Username', value: user?.username || '—' },
-    { icon: ShieldCheck, label: 'Role', value: user?.role_name || '—' },
+    { icon: UserIcon, label: 'Full name', value: user?.full_name || '-' },
+    { icon: Mail, label: 'Email', value: user?.email || '-' },
+    { icon: Hash, label: 'Username', value: user?.username || '-' },
+    { icon: ShieldCheck, label: 'Role', value: user?.role_name || '-' },
     {
       icon: KeyRound,
       label: 'MFA',
@@ -58,7 +58,7 @@ export default function ProfilePage() {
     {
       icon: Clock,
       label: 'Last login',
-      value: user?.last_login ? new Date(user.last_login).toLocaleString() : '—',
+      value: user?.last_login ? new Date(user.last_login).toLocaleString() : '-',
     },
   ];
 
@@ -78,9 +78,9 @@ export default function ProfilePage() {
           </div>
           <div>
             <p className="text-base font-semibold text-gray-900 dark:text-white">
-              {user?.full_name || user?.email || '—'}
+              {user?.full_name || user?.email || '-'}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{user?.email || '—'}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{user?.email || '-'}</p>
           </div>
         </div>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
@@ -113,7 +113,7 @@ export default function ProfilePage() {
                 Password changed successfully.
               </p>
               <p className="text-emerald-700 dark:text-emerald-400 mt-1">
-                All sessions were closed — signing you out to sign in with the new password.
+                All sessions were closed - signing you out to sign in with the new password.
               </p>
             </div>
           </div>

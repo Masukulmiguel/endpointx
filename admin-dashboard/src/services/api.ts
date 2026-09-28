@@ -2,7 +2,7 @@ const API_BASE = window.location.hostname === 'localhost'
   ? '/api' 
   : 'https://endpointx.onrender.com/api';
 
-// Production origin — install commands run on remote machines, so they must
+// Production origin - install commands run on remote machines, so they must
 // always point at the deployed server (never the local dev proxy).
 export const API_ORIGIN = 'https://endpointx.onrender.com';
 

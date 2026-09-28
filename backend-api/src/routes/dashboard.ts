@@ -11,7 +11,7 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
     updateOfflineDevices();
     const viewAll = canViewAllDevices(req.user);
     const userId = req.user?.id;
-    // Device-scoped filters (non-admin => own devices only) — leading space so callers can concatenate directly
+    // Device-scoped filters (non-admin => own devices only) - leading space so callers can concatenate directly
     const devWhere = (extra?: string) => {
       if (viewAll) return extra ? ` WHERE ${extra}` : '';
       return ` WHERE ${extra ? `${extra} AND ` : ''}created_by = $1`;

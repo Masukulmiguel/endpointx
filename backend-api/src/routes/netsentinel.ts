@@ -79,7 +79,7 @@ export function evaluateNacPolicy(device: any, policies: any[]): { decision: str
     }
   }
   if (device.device_type === 'UNKNOWN' || device.trust_level === 'UNKNOWN') {
-    return { decision: 'QUARANTINE', policyId: null, reason: 'Unknown device — default quarantine' };
+    return { decision: 'QUARANTINE', policyId: null, reason: 'Unknown device - default quarantine' };
   }
   if (device.quarantine_status === 'QUARANTINED' || device.quarantine_status === 'BLOCKED') {
     return { decision: device.quarantine_status, policyId: null, reason: `Device status ${device.quarantine_status}` };

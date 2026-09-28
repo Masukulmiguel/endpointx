@@ -1053,7 +1053,7 @@ const seedDefaults = async (): Promise<void> => {
       }
     }
 
-    // Admin account — password comes exclusively from SEED_ADMIN_PASSWORD (never hardcoded)
+    // Admin account - password comes exclusively from SEED_ADMIN_PASSWORD (never hardcoded)
     const adminPassword = process.env.SEED_ADMIN_PASSWORD;
     if (adminPassword && adminPassword.length >= 12) {
       const bcrypt = require('bcryptjs');
@@ -1065,7 +1065,7 @@ const seedDefaults = async (): Promise<void> => {
         [hash]
       );
     } else {
-      logger.warn('SEED_ADMIN_PASSWORD not set (min 12 chars) — skipping admin account creation');
+      logger.warn('SEED_ADMIN_PASSWORD not set (min 12 chars) - skipping admin account creation');
     }
 
     // Default settings

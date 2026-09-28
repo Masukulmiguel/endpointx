@@ -523,7 +523,7 @@ async function correlateSoftwareVulns(scanId: string) {
          VALUES ($1, $2, $3, $4, $5, 'vulnerability', $6, $7, $8, $9, $10, $11, $12, $13, 'open', NOW(), NOW())`,
         [
           findingId, scanId, row.asset_id, row.port_id, rule.cve, rule.severity,
-          `${rule.cve} — ${rule.product} ${row.version}`,
+          `${rule.cve} - ${rule.product} ${row.version}`,
           rule.description,
           JSON.stringify([
             { check: 'Port open', value: row.port },
@@ -581,7 +581,7 @@ async function correlateSoftwareVulns(scanId: string) {
          VALUES ($1, $2, $3, $4, 'vulnerability', $5, $6, $7, $8, 75, $9, $10, true, 'open', NOW(), NOW())`,
         [
           newId(), scanId, app.asset_id, rule.cve, rule.severity,
-          `${rule.cve} — ${app.name} ${app.version} (endpoint application)`,
+          `${rule.cve} - ${app.name} ${app.version} (endpoint application)`,
           rule.description,
           JSON.stringify([{ source: 'endpoint inventory', application: app.name, version: app.version }]),
           rule.cvss * 10,

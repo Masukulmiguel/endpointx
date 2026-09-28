@@ -232,7 +232,7 @@ export default function Layout() {
                 {user?.full_name || user?.email || 'User'}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                {user?.role_name || '—'}
+                {user?.role_name || '-'}
               </p>
             </div>
             <button
@@ -366,10 +366,10 @@ export default function Layout() {
                 <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {user?.full_name || user?.email || '—'}
+                      {user?.full_name || user?.email || '-'}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{user?.email || '—'}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{user?.role_name || '—'}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{user?.email || '-'}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{user?.role_name || '-'}</p>
                   </div>
                   <Link
                     to="/profile"

@@ -5,7 +5,7 @@ export function canViewAllDevices(user?: { permissions?: string[] } | null): boo
   return !!user?.permissions?.includes('devices.view_all');
 }
 
-// True when the user owns the device (devices.created_by) — used for non-admin accounts
+// True when the user owns the device (devices.created_by) - used for non-admin accounts
 export async function ownsDevice(userId: string | undefined, deviceId: string): Promise<boolean> {
   if (!userId || !deviceId) return false;
   const r = await query('SELECT created_by FROM devices WHERE id = $1', [deviceId]);
@@ -15,7 +15,7 @@ export async function ownsDevice(userId: string | undefined, deviceId: string): 
 
 // Who may approve/reject a device: the account that created it (or anyone, when the
 // device has no owner). Admin (view_all) can see other accounts' devices but must not
-// moderate them — super-admin observes, the owning account decides.
+// moderate them - super-admin observes, the owning account decides.
 export type DeviceModeration = 'allow' | 'forbidden' | 'not_found';
 
 export async function moderateDeviceAccess(

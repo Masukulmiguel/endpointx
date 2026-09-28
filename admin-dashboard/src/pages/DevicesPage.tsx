@@ -81,7 +81,7 @@ function UsageBar({ label, value, icon: Icon }: { label: string; value: number |
           <Icon className="w-3 h-3" />
           {label}
         </span>
-        <span className="text-gray-700 dark:text-gray-300 font-medium">{hasValue ? `${pct}%` : '—'}</span>
+        <span className="text-gray-700 dark:text-gray-300 font-medium">{hasValue ? `${pct}%` : '-'}</span>
       </div>
       <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: hasValue ? `${pct}%` : '0%' }} />
@@ -270,7 +270,7 @@ export default function DevicesPage() {
     const p: Record<string, string> = { page: String(page), limit: '12' };
     if (search) p.search = search;
     if (statusFilter) p.status = statusFilter;
-    if (osFilter) p.os_type = osFilter;
+    if (osFilter) p.os_family = osFilter;
     return p;
   }, [page, search, statusFilter, osFilter]);
 
@@ -332,7 +332,7 @@ export default function DevicesPage() {
       label: 'Account',
       render: (row: Device) => (
         <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px] block">
-          {row.owner_email || '—'}
+          {row.owner_email || '-'}
         </span>
       ),
     },
