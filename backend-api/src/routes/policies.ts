@@ -16,7 +16,7 @@ const normalizeRules = (rules: any): any[] => {
 };
 
 // Stats
-router.get('/stats', authenticate, requirePermission('policies.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/stats', authenticate, requirePermission('policies.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const [totalRes, activeRes] = await Promise.all([
       query('SELECT COUNT(*) as count FROM compliance_policies'),
@@ -27,9 +27,11 @@ router.get('/stats', authenticate, requirePermission('policies.view'), async (_r
     let complianceRate = 0;
     if (total > 0) {
       const results = await query(
-        `SELECT COUNT(DISTINCT device_id) AS checked,
-                COUNT(DISTINCT device_id) FILTER (WHERE is_compliant) AS ok
-         FROM compliance_results`
+        `SELECT COUNT(DISTINCT cr.device_id) AS checked,
+                COUNT(DISTINCT cr.device_id) FILTER (WHERE cr.is_compliant) AS ok
+         FROM compliance_results cr
+         JOIN devices d ON d.id = cr.device_id AND d.created_by = $1`,
+        [req.user!.id]
       );
       const checked = parseInt(results.rows[0]?.checked || '0', 10);
       const ok = parseInt(results.rows[0]?.ok || '0', 10);
@@ -154,8 +156,8 @@ router.post('/:id/check', authenticate, requirePermission('policies.manage'), as
       `SELECT DISTINCT d.* FROM devices d
        JOIN device_group_members dgm ON dgm.device_id = d.id
        JOIN policy_assignments pa ON pa.group_id = dgm.group_id
-       WHERE pa.policy_id = $1`,
-      [id]
+       WHERE pa.policy_id = $1 AND d.created_by = $2`,
+      [id, req.user!.id]
     );
 
     let checked = 0;
@@ -241,9 +243,9 @@ router.get('/:id/results', authenticate, requirePermission('compliance.view'), a
       `SELECT cr.*, d.hostname, d.agent_id
        FROM compliance_results cr
        JOIN devices d ON d.id = cr.device_id
-       WHERE cr.policy_id = $1
+       WHERE cr.policy_id = $1 AND d.created_by = $2
        ORDER BY cr.checked_at DESC`,
-      [id]
+      [id, req.user!.id]
     );
 
     res.json({ success: true, data: { results: results.rows } });

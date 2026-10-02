@@ -297,6 +297,7 @@ const createInlineSchema = async (): Promise<void> => {
       name VARCHAR(100) UNIQUE NOT NULL,
       description TEXT,
       color VARCHAR(7) DEFAULT '#0080ff',
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -306,6 +307,15 @@ const createInlineSchema = async (): Promise<void> => {
       device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
       PRIMARY KEY (group_id, device_id)
     );
+
+    CREATE TABLE IF NOT EXISTS device_locations (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_device_locations_device_time ON device_locations(device_id, recorded_at);
 
     CREATE TABLE IF NOT EXISTS compliance_policies (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -664,6 +674,8 @@ const createInlineSchema = async (): Promise<void> => {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
     CREATE INDEX IF NOT EXISTS idx_devices_created_by ON devices(created_by);
+    ALTER TABLE device_groups ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_device_groups_created_by ON device_groups(created_by);
 
     CREATE TABLE IF NOT EXISTS network_discovery_runs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -802,6 +814,8 @@ const createInlineSchema = async (): Promise<void> => {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE devices ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
     CREATE INDEX IF NOT EXISTS idx_devices_created_by ON devices(created_by);
+    ALTER TABLE device_groups ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_device_groups_created_by ON device_groups(created_by);
 
     CREATE TABLE IF NOT EXISTS network_discovery_runs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -922,7 +936,7 @@ const seedDefaults = async (): Promise<void> => {
   // Full permission catalog (safe for existing DBs)
   const allPerms: Array<[string, string, string, string]> = [
     ['devices.view', 'View Devices', 'View device list and details', 'devices'],
-    ['devices.view_all', 'View All Devices (All Accounts)', 'View devices across every account (super admin scope)', 'devices'],
+    ['devices.view_all', 'View Unassigned Devices', 'View and manage devices that are not assigned to any account (admin)', 'devices'],
     ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
     ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
     ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
@@ -960,6 +974,13 @@ const seedDefaults = async (): Promise<void> => {
       [code, name, desc, category]
     );
   }
+  // Refresh the label of the legacy grant on existing databases (code is unchanged)
+  await pool.query(
+    `UPDATE permissions
+        SET name = 'View Unassigned Devices',
+            description = 'View and manage devices that are not assigned to any account (admin)'
+      WHERE code = 'devices.view_all'`
+  );
   // Admin always gets every permission (repairs existing DBs missing newer codes)
   const adminRole = await pool.query(`SELECT id FROM roles WHERE name = 'admin'`);
   if (adminRole.rows.length > 0) {

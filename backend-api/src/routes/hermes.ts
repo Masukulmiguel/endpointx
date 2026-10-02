@@ -279,7 +279,8 @@ async function runScan(scanId: string, scanType: string, startedBy: string | nul
 
     const devices = await query(
       `SELECT id, hostname, ip_address, os_type, os_version, status, last_heartbeat
-       FROM devices WHERE is_authorized = true AND ip_address IS NOT NULL`
+       FROM devices WHERE is_authorized = true AND ip_address IS NOT NULL AND created_by = $1`,
+      [startedBy]
     );
 
     let assetsScanned = 0;

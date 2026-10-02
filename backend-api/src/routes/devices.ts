@@ -8,7 +8,7 @@ import { join } from 'path';
 import logger from '../utils/logger';
 import jwt from 'jsonwebtoken';
 import { JWT } from '../config/constants';
-import { canViewAllDevices, ownsDevice } from '../utils/tenant';
+import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
 
 const router = Router();
 
@@ -43,10 +43,10 @@ function verifyEnrollToken(raw: unknown): string | null {
   return null;
 }
 
-// Non-admin accounts can only touch devices they own; others get 404 (no existence leak)
+// Accounts can only touch devices they own; admin (devices.view_all) may also touch
+// devices that have no account yet - others get 404 (no existence leak)
 async function denyUnlessOwns(req: AuthRequest, res: Response, deviceId: string): Promise<boolean> {
-  if (canViewAllDevices(req.user)) return true;
-  if (await ownsDevice(req.user?.id, deviceId)) return true;
+  if (await canAccessDevice(req.user, deviceId)) return true;
   res.status(404).json({ success: false, error: { message: 'Device not found' } });
   return false;
 }
@@ -64,7 +64,7 @@ export async function updateOfflineDevices() {
     await query(
       `UPDATE devices SET status = 'offline'
         WHERE status = 'online'
-          AND last_heartbeat < NOW() - (CASE WHEN agent_id LIKE 'mobile-%' THEN $1 ELSE $2 END * INTERVAL '1 minute')`,
+          AND last_heartbeat < NOW() - ((CASE WHEN agent_id LIKE 'mobile-%' THEN $1::int ELSE $2::int END) * INTERVAL '1 minute')`,
       [mobileMinutes, agentMinutes]
     );
   } catch (e) {
@@ -115,14 +115,15 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
     })();
 
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    await query(
+    const inserted = await query(
       `INSERT INTO devices (id, agent_id, hostname, os_type, os_version, os_build, mac_address, ip_address, status, last_heartbeat, is_authorized, device_type, ownership, trust_level, approval_status, first_seen, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, 'CORPORATE', 'KNOWN', 'approved', NOW(), $12)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, 'CORPORATE', 'KNOWN', 'approved', NOW(), $12)
+       RETURNING id`,
       [id, agent_id, hostname || '', os_type || 'unknown', os_version || '', os_build || '', mac_address || '', ip_address || '', 'online', new Date(), inferredType, ownerUserId || null]
     );
 
     logger.info('New device registered', { deviceId: id, agent_id });
-    res.status(201).json({ success: true, data: { id, agent_id, status: 'online', is_new: true } });
+    res.status(201).json({ success: true, data: { id: inserted.rows[0].id, agent_id, status: 'online', is_new: true } });
   } catch (error) {
     next(error);
   }
@@ -263,7 +264,7 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
     const status = req.query.status as string || '';
     const osPatterns = osFilterPatterns(req.query.os_family ?? req.query.os_type);
     const offset = (page - 1) * limit;
-    const viewAll = canViewAllDevices(req.user);
+    const seeUnowned = canViewUnownedDevices(req.user);
 
     const conditions: string[] = [];
     const params: any[] = [];
@@ -284,11 +285,13 @@ router.get('/', authenticate, requirePermission('devices.view'), async (req: Aut
       params.push(osPatterns);
       paramIdx += 1;
     }
-    if (!viewAll) {
-      conditions.push(`d.created_by = $${paramIdx}`);
-      params.push(req.user!.id);
-      paramIdx += 1;
-    }
+    conditions.push(
+      seeUnowned
+        ? `(d.created_by = $${paramIdx} OR d.created_by IS NULL)`
+        : `d.created_by = $${paramIdx}`
+    );
+    params.push(req.user!.id);
+    paramIdx += 1;
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const countResult = await query(`SELECT COUNT(*) as total FROM devices d ${whereClause}`, params);
@@ -327,16 +330,16 @@ function isPrivateIp(ip: string): boolean {
 router.get('/map', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     updateOfflineDevices();
-    const viewAll = canViewAllDevices(req.user);
+    const seeUnowned = canViewUnownedDevices(req.user);
     const result = await query(
       `SELECT d.id, d.hostname, d.display_name, d.os_type, d.device_type, d.status, d.latitude, d.longitude,
               d.battery_level, d.last_heartbeat, d.ip_address, d.location_updated_at, d.approval_status, d.agent_id,
               u.email as owner_email
          FROM devices d
          LEFT JOIN users u ON u.id = d.created_by
-        ${viewAll ? '' : 'WHERE d.created_by = $1'}
+        WHERE ${seeUnowned ? '(d.created_by = $1 OR d.created_by IS NULL)' : 'd.created_by = $1'}
         ORDER BY d.last_heartbeat DESC NULLS LAST`,
-      viewAll ? [] : [req.user!.id]
+      [req.user!.id]
     );
     const devices = result.rows as Array<Record<string, unknown> & { latitude: number | null; longitude: number | null; ip_address: string | null }>;
     for (const d of devices) {
@@ -390,7 +393,9 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
-    if (!canViewAllDevices(req.user) && deviceResult.rows[0].created_by !== req.user?.id) {
+    const detailOwner = deviceResult.rows[0].created_by as string | null;
+    const canSeeThis = detailOwner === req.user?.id || (detailOwner == null && canViewUnownedDevices(req.user));
+    if (!canSeeThis) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -423,6 +428,57 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
   }
 });
 
+// Daily GPS route: chronological location history of one device for one day.
+// Query params: date=YYYY-MM-DD (default: today) and offset=minutes of the client's
+// UTC offset (from Date.getTimezoneOffset()) so the day boundaries match local time.
+router.get('/:id/route', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const dateStr = String(req.query.date || new Date().toISOString().slice(0, 10));
+    const [dy, dm, dd] = dateStr.split('-').map(Number);
+    const parsed = new Date(Date.UTC(dy || 1970, (dm || 1) - 1, dd || 1));
+    const validDate =
+      /^\d{4}-\d{2}-\d{2}$/.test(dateStr) &&
+      parsed.getUTCFullYear() === dy &&
+      parsed.getUTCMonth() === dm - 1 &&
+      parsed.getUTCDate() === dd;
+    if (!validDate) {
+      res.status(400).json({ success: false, error: { message: 'Invalid date (expected YYYY-MM-DD)' } });
+      return;
+    }
+    const offsetRaw = Number(req.query.offset);
+    const offset = Number.isFinite(offsetRaw) ? Math.trunc(offsetRaw) : 0;
+
+    const deviceResult = await query('SELECT id, created_by FROM devices WHERE id = $1', [id]);
+    if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    const routeOwner = deviceResult.rows[0].created_by as string | null;
+    if (!(routeOwner === req.user?.id || (routeOwner == null && canViewUnownedDevices(req.user)))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+
+    const points = await query(
+      `SELECT latitude, longitude, recorded_at FROM device_locations
+        WHERE device_id = $1
+          AND recorded_at >= (($2::timestamp) + ($3::int * INTERVAL '1 minute')) AT TIME ZONE 'UTC'
+          AND recorded_at <  (($2::timestamp) + INTERVAL '1 day' + ($3::int * INTERVAL '1 minute')) AT TIME ZONE 'UTC'
+        ORDER BY recorded_at ASC
+        LIMIT 3000`,
+      [id, dateStr, offset]
+    );
+
+    res.json({
+      success: true,
+      data: { date: dateStr, device_id: id, points: points.rows, count: points.rows.length },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Update device
 router.put('/:id', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -437,6 +493,51 @@ router.put('/:id', authenticate, requirePermission('devices.manage'), async (req
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_update', 'device', id, 'Device updated', req.ip]);
 
     res.json({ success: true, data: { message: 'Device updated' } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Assign a device to an account. Admin (devices.view_all) only: unowned devices, or
+// devices the admin already owns - never another account's device.
+router.put('/:id/owner', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    if (!canViewUnownedDevices(req.user)) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    const userId = String(req.body?.user_id || '').trim();
+    const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || /^[0-9a-f]{32}$/i.test(v);
+    if (!userId || !isUuid(userId)) {
+      res.status(404).json({ success: false, error: { message: 'User not found' } });
+      return;
+    }
+    const target = await query('SELECT id, email FROM users WHERE id = $1 AND is_active = true', [userId]);
+    if (target.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'User not found' } });
+      return;
+    }
+
+    const updated = await query(
+      `UPDATE devices SET created_by = $1, updated_at = NOW()
+        WHERE id = $2 AND (created_by IS NULL OR created_by = $3)
+        RETURNING id`,
+      [userId, id, req.user!.id]
+    );
+    if (updated.rows.length === 0) {
+      const existing = await query('SELECT created_by FROM devices WHERE id = $1', [id]);
+      res.status(existing.rows.length === 0 ? 404 : 409).json({
+        success: false,
+        error: { message: existing.rows.length === 0 ? 'Device not found' : 'Device already belongs to another account' },
+      });
+      return;
+    }
+
+    await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_assign', 'device', id, `Device assigned to ${target.rows[0].email}`, req.ip]);
+
+    res.json({ success: true, data: { message: 'Device assigned', owner_id: userId, owner_email: target.rows[0].email } });
   } catch (error) {
     next(error);
   }
@@ -1416,6 +1517,22 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
       [nextStatus, ip, battery, lat, lng, existing.rows[0].id]
     );
     const deviceId = existing.rows[0].id;
+    // Persist GPS history point for the daily route.
+    // Dedupe: skip if the same spot was already stored in the last 2 minutes.
+    if (lat != null && lng != null) {
+      await query(
+        `INSERT INTO device_locations (device_id, latitude, longitude, recorded_at)
+         SELECT $1, $2, $3, NOW()
+          WHERE NOT EXISTS (
+            SELECT 1 FROM device_locations
+             WHERE device_id = $1
+               AND recorded_at > NOW() - INTERVAL '2 minutes'
+               AND ABS(latitude - $2) < 0.0002
+               AND ABS(longitude - $3) < 0.0002
+          )`,
+        [deviceId, lat, lng]
+      );
+    }
     const ua = String(req.headers['user-agent'] || '');
     const swCount = await query(
       'SELECT COUNT(*)::int AS count FROM device_software WHERE device_id = $1',

@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { canViewAllDevices, ownsDevice, moderateDeviceAccess } from '../utils/tenant';
+import { canAccessDevice, canViewAllDevices, canViewUnownedDevices, moderateDeviceAccess } from '../utils/tenant';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -310,7 +310,7 @@ router.get('/unknown', authenticate, requirePermission('devices.view'), async (r
 router.post('/devices/:id/approve', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const access = await moderateDeviceAccess(req.user?.id, id, canViewAllDevices(req.user));
+    const access = await moderateDeviceAccess(req.user?.id, id, canViewUnownedDevices(req.user));
     if (access === 'not_found') {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -343,7 +343,7 @@ router.post('/devices/:id/approve', authenticate, async (req: AuthRequest, res: 
 router.post('/devices/:id/reject', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const access = await moderateDeviceAccess(req.user?.id, id, canViewAllDevices(req.user));
+    const access = await moderateDeviceAccess(req.user?.id, id, canViewUnownedDevices(req.user));
     if (access === 'not_found') {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
@@ -373,7 +373,7 @@ router.post('/devices/:id/reject', authenticate, async (req: AuthRequest, res: R
 router.post('/devices/:id/quarantine', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+    if (!(await canAccessDevice(req.user, id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -397,7 +397,7 @@ router.post('/devices/:id/quarantine', authenticate, requirePermission('devices.
 router.post('/devices/:id/release', authenticate, requirePermission('devices.quarantine'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+    if (!(await canAccessDevice(req.user, id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -422,7 +422,7 @@ router.post('/devices/:id/release', authenticate, requirePermission('devices.qua
 router.put('/devices/:id', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, id))) {
+    if (!(await canAccessDevice(req.user, id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -664,7 +664,7 @@ router.get('/nac/decisions', authenticate, requirePermission('policies.view'), a
 // Device trust / posture detail
 router.get('/devices/:id/trust', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, req.params.id))) {
+    if (!(await canAccessDevice(req.user, req.params.id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -763,7 +763,7 @@ router.post('/incidents/:id/status', authenticate, requirePermission('alerts.man
 // Device events
 router.get('/devices/:id/events', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, req.params.id))) {
+    if (!(await canAccessDevice(req.user, req.params.id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }

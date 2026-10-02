@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   XCircle,
   User,
+  UserPlus,
   Wifi,
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
@@ -30,6 +31,7 @@ import SearchInput from '../components/SearchInput';
 import StatusBadge from '../components/StatusBadge';
 import Pagination from '../components/Pagination';
 import DataTable from '../components/DataTable';
+import Modal from '../components/Modal';
 import type { Device, PaginatedResponse } from '../types';
 
 function formatTimeAgo(dateStr: string | null): string {
@@ -124,6 +126,11 @@ function DeviceCard({ device, onClick, onModerate }: { device: Device; onClick: 
               {[device.os_type, device.os_version].filter(Boolean).join(' ')}
               {model ? ` · ${model}` : ''}
             </p>
+            {!owner && (
+              <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                Sem conta
+              </span>
+            )}
           </div>
         </div>
         <StatusBadge status={device.status} />
@@ -277,6 +284,43 @@ export default function DevicesPage() {
   const { data, loading, error, refetch } = useApi<{ devices: Device[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/devices', { params, refreshInterval: 30000 });
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const { hasPermission } = useAuth();
+  const canAssignAccounts = hasPermission('devices.view_all');
+  const [assignDevice, setAssignDevice] = useState<Device | null>(null);
+  const [assignUsers, setAssignUsers] = useState<Array<{ id: string; email: string; full_name?: string; is_active?: boolean }>>([]);
+  const [assignUserId, setAssignUserId] = useState('');
+  const [assigning, setAssigning] = useState(false);
+
+  const openAssign = async (device: Device) => {
+    setAssignDevice(device);
+    setAssignUserId('');
+    setActionError(null);
+    try {
+      const res = (await api.getUsers({ limit: '200' })) as {
+        data?: { users?: Array<{ id: string; email: string; full_name?: string; is_active?: boolean }> };
+      };
+      setAssignUsers((res?.data?.users || []).filter((u) => u.is_active !== false));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to load accounts');
+      setAssignDevice(null);
+    }
+  };
+
+  const confirmAssign = async () => {
+    if (!assignDevice || !assignUserId) return;
+    setAssigning(true);
+    try {
+      await api.assignDeviceOwner(assignDevice.id, assignUserId);
+      setAssignDevice(null);
+      setActionError(null);
+      refetch();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to assign device');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   const handleModerate = async (device: Device, action: 'approve' | 'reject') => {
     try {
       await api.request(`/netsentinel/devices/${device.id}/${action}`, { method: 'POST' });
@@ -330,11 +374,16 @@ export default function DevicesPage() {
     {
       key: 'owner_email',
       label: 'Account',
-      render: (row: Device) => (
-        <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px] block">
-          {row.owner_email || '-'}
-        </span>
-      ),
+      render: (row: Device) =>
+        row.owner_email ? (
+          <span className="text-gray-500 dark:text-gray-400 truncate max-w-[150px] block">
+            {row.owner_email}
+          </span>
+        ) : (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+            Sem conta
+          </span>
+        ),
     },
     {
       key: 'cpu_usage',
@@ -382,6 +431,18 @@ export default function DevicesPage() {
           >
             <Eye className="w-4 h-4" />
           </button>
+          {!row.owner_email && canAssignAccounts && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openAssign(row);
+              }}
+              className="p-1.5 rounded-md text-gray-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+              title="Atribuir conta"
+            >
+              <UserPlus className="w-4 h-4" />
+            </button>
+          )}
           {row.status === 'blocked' ? (
             <button
               onClick={(e) => e.stopPropagation()}
@@ -522,6 +583,59 @@ export default function DevicesPage() {
       )}
 
       <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+
+      <Modal
+        isOpen={!!assignDevice}
+        onClose={() => setAssignDevice(null)}
+        title="Atribuir dispositivo a uma conta"
+        size="sm"
+      >
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="font-medium text-gray-900 dark:text-white">
+              {assignDevice?.display_name || assignDevice?.hostname}
+            </span>{' '}
+            passará a estar visível apenas na conta escolhida.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+              Conta
+            </label>
+            <select
+              value={assignUserId}
+              onChange={(e) => setAssignUserId(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="">Selecionar conta...</option>
+              {assignUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email} ({u.email})
+                </option>
+              ))}
+            </select>
+            {assignUsers.length === 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Sem outras contas disponíveis.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setAssignDevice(null)}
+              className="px-3 py-2 text-sm rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmAssign}
+              disabled={!assignUserId || assigning}
+              className="px-3 py-2 text-sm rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {assigning ? 'A atribuir...' : 'Atribuir'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

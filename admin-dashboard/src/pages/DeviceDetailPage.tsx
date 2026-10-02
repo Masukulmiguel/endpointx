@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   ArrowLeft,
   Monitor,
@@ -33,6 +36,7 @@ import {
   Laptop,
   CheckCircle2,
   XCircle,
+  UserPlus,
 } from 'lucide-react';
 import {
   LineChart,
@@ -45,6 +49,7 @@ import {
 } from 'recharts';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import DataTable from '../components/DataTable';
@@ -133,13 +138,38 @@ const COMMAND_STATUS_COLORS: Record<string, string> = {
   timeout: 'text-orange-600 bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400',
 };
 
+function RouteFitBounds({ positions }: { positions: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length >= 2) {
+      map.fitBounds(L.latLngBounds(positions), { padding: [30, 30] });
+    } else if (positions.length === 1) {
+      map.setView(positions[0], 15);
+    }
+  }, [positions, map]);
+  return null;
+}
+
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [commandModalOpen, setCommandModalOpen] = useState(false);
   const [selectedCommand, setSelectedCommand] = useState('');
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignUsers, setAssignUsers] = useState<Array<{ id: string; email: string; full_name?: string; is_active?: boolean }>>([]);
+  const [assignUserId, setAssignUserId] = useState('');
+  const [assigning, setAssigning] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const [routeDate, setRouteDate] = useState(localToday);
+  const [routePoints, setRoutePoints] = useState<Array<{ latitude: number; longitude: number; recorded_at: string }>>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+
+  const routePositions = useMemo(
+    () => routePoints.map((p) => [p.latitude, p.longitude] as [number, number]),
+    [routePoints]
+  );
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -147,7 +177,8 @@ export default function DeviceDetailPage() {
   };
 
   const { data: deviceData, loading, error, refetch } = useApi<{ device: DeviceDetail }>(`/devices/${id}`, { refreshInterval: 15000 });
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canAssignAccounts = hasPermission('devices.view_all');
   const blockMutation = useApiMutation(`/devices/${id}/block`, 'POST');
   const unblockMutation = useApiMutation(`/devices/${id}/unblock`, 'POST');
   const quarantineMutation = useApiMutation(`/devices/${id}/quarantine`, 'POST');
@@ -155,6 +186,26 @@ export default function DeviceDetailPage() {
   const commandMutation = useApiMutation('/commands', 'POST');
   const approveMutation = useApiMutation(`/netsentinel/devices/${id}/approve`, 'POST');
   const rejectMutation = useApiMutation(`/netsentinel/devices/${id}/reject`, 'POST');
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    setRouteLoading(true);
+    api
+      .getDeviceRoute(id, routeDate, new Date().getTimezoneOffset())
+      .then((res: any) => {
+        if (!cancelled) setRoutePoints(res?.data?.points || []);
+      })
+      .catch(() => {
+        if (!cancelled) setRoutePoints([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRouteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, routeDate]);
 
   const device = deviceData?.device;
   const isMobileDevice = !!(
@@ -209,6 +260,34 @@ export default function DeviceDetailPage() {
       refetch();
     } catch (err) {
       showToast('error', 'Failed to send command');
+    }
+  };
+
+  const openAssignModal = async () => {
+    setAssignUserId('');
+    try {
+      const res = (await api.getUsers({ limit: '200' })) as {
+        data?: { users?: Array<{ id: string; email: string; full_name?: string; is_active?: boolean }> };
+      };
+      setAssignUsers((res?.data?.users || []).filter((u) => u.is_active !== false));
+      setAssignModalOpen(true);
+    } catch {
+      showToast('error', 'Failed to load accounts');
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!id || !assignUserId) return;
+    setAssigning(true);
+    try {
+      await api.assignDeviceOwner(id, assignUserId);
+      setAssignModalOpen(false);
+      showToast('success', 'Device assigned to account');
+      refetch();
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to assign device');
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -468,7 +547,9 @@ export default function DeviceDetailPage() {
                   ['Disk', device.disk_total ? `${(device.disk_total / 1073741824).toFixed(1)} GB` : 'N/A'],
                   ['IP Address', device.ip_address || 'N/A'],
                   ['MAC Address', device.mac_address || 'N/A'],
-                  ...(device.owner_email ? [['Account', device.owner_email]] : []),
+                  ...(device.owner_email
+                    ? [['Account', device.owner_email]]
+                    : [['Account', 'Sem conta']]),
                   ['Registered', new Date(device.registered_at).toLocaleDateString()],
                   ...(device.approval_status ? [['Approval', device.approval_status.toUpperCase()]] : []),
                   ...(device.battery_level != null ? [['Battery', `${device.battery_level}%`]] : []),
@@ -489,6 +570,15 @@ export default function DeviceDetailPage() {
                   </div>
                 ))}
               </dl>
+              {!device.owner_email && canAssignAccounts && (
+                <button
+                  onClick={openAssignModal}
+                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Atribuir a uma conta
+                </button>
+              )}
               {device.latitude != null && device.longitude != null && (
                 <a
                   href={`https://www.openstreetmap.org/?mlat=${device.latitude}&mlon=${device.longitude}#map=16/${device.latitude}/${device.longitude}`}
@@ -540,6 +630,72 @@ export default function DeviceDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Rota diária (GPS)</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Percorrido do dispositivo ao longo do dia
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {routeLoading && <span className="text-xs text-gray-400 dark:text-gray-500">A carregar…</span>}
+                <input
+                  type="date"
+                  value={routeDate}
+                  onChange={(e) => setRouteDate(e.target.value || localToday)}
+                  className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+            {routePositions.length > 0 ? (
+              <>
+                <div className="relative h-80 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">
+                  <MapContainer center={routePositions[0]} zoom={14} className="h-full w-full" scrollWheelZoom>
+                    <TileLayer
+                      url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    />
+                    <RouteFitBounds positions={routePositions} />
+                    <Polyline
+                      positions={routePositions}
+                      pathOptions={{ color: '#2563eb', weight: 4, opacity: 0.85 }}
+                    />
+                    <CircleMarker
+                      center={routePositions[0]}
+                      radius={7}
+                      pathOptions={{ color: '#16a34a', fillColor: '#22c55e', fillOpacity: 1 }}
+                    >
+                      <LeafletTooltip>Partida · {new Date(routePoints[0].recorded_at).toLocaleTimeString()}</LeafletTooltip>
+                    </CircleMarker>
+                    <CircleMarker
+                      center={routePositions[routePositions.length - 1]}
+                      radius={7}
+                      pathOptions={{ color: '#dc2626', fillColor: '#ef4444', fillOpacity: 1 }}
+                    >
+                      <LeafletTooltip>
+                        Chegada · {new Date(routePoints[routePoints.length - 1].recorded_at).toLocaleTimeString()}
+                      </LeafletTooltip>
+                    </CircleMarker>
+                  </MapContainer>
+                </div>
+                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  {routePoints.length} ponto{routePoints.length === 1 ? '' : 's'} ·{' '}
+                  {new Date(routePoints[0].recorded_at).toLocaleTimeString()} →{' '}
+                  {new Date(routePoints[routePoints.length - 1].recorded_at).toLocaleTimeString()}
+                  {routePoints.length === 1 ? ' (apenas um ponto registado neste dia)' : ''}
+                </p>
+              </>
+            ) : (
+              <div className="h-40 flex flex-col items-center justify-center text-center px-4 text-sm text-gray-500 dark:text-gray-400">
+                <MapPin className="w-6 h-6 mb-2 text-gray-400" />
+                {routeLoading
+                  ? 'A carregar a rota…'
+                  : 'Sem localizações neste dia. A rota é registada quando a app móvel está aberta com a partilha de localização activa.'}
+              </div>
+            )}
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -802,6 +958,57 @@ export default function DeviceDetailPage() {
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={assignModalOpen}
+        onClose={() => setAssignModalOpen(false)}
+        title="Atribuir dispositivo a uma conta"
+        size="sm"
+      >
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="font-medium text-gray-900 dark:text-white">{device.hostname}</span>{' '}
+            passará a estar visível apenas na conta escolhida.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+              Conta
+            </label>
+            <select
+              value={assignUserId}
+              onChange={(e) => setAssignUserId(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="">Selecionar conta...</option>
+              {assignUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email} ({u.email})
+                </option>
+              ))}
+            </select>
+            {assignUsers.length === 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Sem outras contas disponíveis.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setAssignModalOpen(false)}
+              className="px-3 py-2 text-sm rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAssign}
+              disabled={!assignUserId || assigning}
+              className="px-3 py-2 text-sm rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {assigning ? 'Atribuindo...' : 'Atribuir'}
             </button>
           </div>
         </div>

@@ -7,14 +7,14 @@ import { Response, NextFunction } from 'express';
 const router = Router();
 
 // Network stats
-router.get('/stats', authenticate, requirePermission('network.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/stats', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const totalResult = await query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = true');
-    const onlineResult = await query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = true AND status = 'online'");
-    const latencyResult = await query("SELECT AVG(ram_usage) as avg_ram FROM device_heartbeats WHERE recorded_at > NOW() - INTERVAL '5 minutes'");
+    const totalResult = await query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = true AND created_by = $1', [req.user!.id]);
+    const onlineResult = await query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = true AND status = 'online' AND created_by = $1", [req.user!.id]);
+    const latencyResult = await query("SELECT AVG(h.ram_usage) as avg_ram FROM device_heartbeats h JOIN devices d ON d.id = h.device_id WHERE h.recorded_at > NOW() - INTERVAL '5 minutes' AND d.created_by = $1", [req.user!.id]);
 
-    const total = totalResult.rows[0]?.total || 0;
-    const online = onlineResult.rows[0]?.online || 0;
+    const total = parseInt(String(totalResult.rows[0]?.total || 0), 10) || 0;
+    const online = parseInt(String(onlineResult.rows[0]?.online || 0), 10) || 0;
     const avgRam = latencyResult.rows[0]?.avg_ram || 0;
 
     res.json({
@@ -40,11 +40,12 @@ router.get('/bandwidth', authenticate, requirePermission('network.view'), async 
              d.hostname, d.agent_id
       FROM device_heartbeats h
       JOIN devices d ON h.device_id = d.id
+      WHERE d.created_by = $1
     `;
-    const params: any[] = [];
+    const params: any[] = [req.user!.id];
 
     if (deviceId) {
-      sql += ' WHERE h.device_id = $1';
+      sql += ' AND h.device_id = $2';
       params.push(deviceId);
     }
 
@@ -71,11 +72,12 @@ router.get('/interfaces', authenticate, requirePermission('network.view'), async
              d.hostname as device_name, d.agent_id as device_id_ref
       FROM device_network_interfaces ni
       JOIN devices d ON ni.device_id = d.id
+      WHERE d.created_by = $1
     `;
-    const params: any[] = [];
+    const params: any[] = [req.user!.id];
 
     if (deviceId) {
-      sql += ' WHERE ni.device_id = $1';
+      sql += ' AND ni.device_id = $2';
       params.push(deviceId);
     }
 

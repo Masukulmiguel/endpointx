@@ -20,14 +20,16 @@ router.get('/packages', authenticate, requirePermission('software.view'), async 
 });
 
 // List all deployments
-router.get('/deployments', authenticate, requirePermission('software.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/deployments', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await query(
       `SELECT sd.*, d.hostname AS device_name, d.agent_id, sp.name AS package_name, sp.version AS package_version
        FROM software_deployments sd
        JOIN devices d ON d.id = sd.device_id
        JOIN software_packages sp ON sp.id = sd.package_id
-       ORDER BY sd.created_at DESC`
+       WHERE d.created_by = $1
+       ORDER BY sd.created_at DESC`,
+      [req.user!.id]
     );
     res.json({ success: true, data: { deployments: result.rows } });
   } catch (error) { next(error); }
@@ -147,7 +149,7 @@ router.post('/deploy', authenticate, requirePermission('software.deploy'), async
 
     const deployments = [];
     for (const deviceId of targets) {
-      const devResult = await query('SELECT id, agent_id FROM devices WHERE id = $1', [deviceId]);
+      const devResult = await query('SELECT id, agent_id FROM devices WHERE id = $1 AND created_by = $2', [deviceId, req.user!.id]);
       if (devResult.rows.length === 0) continue;
 
       const deployIdResult = await query('SELECT uuid_generate_v4() AS id');
@@ -188,14 +190,16 @@ router.get('/', authenticate, requirePermission('software.view'), async (_req: A
   } catch (error) { next(error); }
 });
 
-router.get('/deployments/all', authenticate, requirePermission('software.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/deployments/all', authenticate, requirePermission('software.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await query(
       `SELECT sd.*, d.hostname AS device_name, sp.name AS package_name, sp.version AS package_version
        FROM software_deployments sd
        JOIN devices d ON d.id = sd.device_id
        JOIN software_packages sp ON sp.id = sd.package_id
-       ORDER BY sd.created_at DESC`
+       WHERE d.created_by = $1
+       ORDER BY sd.created_at DESC`,
+      [req.user!.id]
     );
     res.json({ success: true, data: { deployments: result.rows } });
   } catch (error) { next(error); }

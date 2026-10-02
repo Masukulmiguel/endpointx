@@ -199,6 +199,13 @@ class ApiClient {
     });
   }
 
+  async assignDeviceOwner(id: string, userId: string) {
+    return this.request(`/devices/${id}/owner`, {
+      method: 'PUT',
+      body: JSON.stringify({ user_id: userId }),
+    });
+  }
+
   async deleteDevice(id: string) {
     return this.request(`/devices/${id}`, { method: 'DELETE' });
   }
@@ -222,6 +229,10 @@ class ApiClient {
   async getDeviceHistory(id: string, params?: Record<string, any>) {
     const query = params ? '?' + new URLSearchParams(params).toString() : '';
     return this.request(`/devices/${id}/history${query}`);
+  }
+
+  async getDeviceRoute(id: string, date: string, offset: number) {
+    return this.request(`/devices/${id}/route?date=${encodeURIComponent(date)}&offset=${offset}`);
   }
 
   // Commands
