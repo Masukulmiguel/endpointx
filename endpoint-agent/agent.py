@@ -595,7 +595,7 @@ class EndpointAgent:
                     "network_in": net_traffic.get("bytes_recv", 0),
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
-                    "current_version": "1.2.0",
+                    "current_version": "1.3.0",
                 }
 
                 if self._tamper:
@@ -617,8 +617,8 @@ class EndpointAgent:
                     data = resp.json()
                     server_data = data.get("data", {})
                     server_version = server_data.get("agent_version", "")
-                    if server_version and server_version != "1.2.0" and not getattr(self, '_update_attempted', False):
-                        logger.info("New agent version available: %s (current: 1.2.0)", server_version)
+                    if server_version and server_version != "1.3.0" and not getattr(self, '_update_attempted', False):
+                        logger.info("New agent version available: %s (current: 1.3.0)", server_version)
                         self._update_attempted = True
                         self._auto_update()
                     return data
@@ -645,7 +645,7 @@ class EndpointAgent:
             import urllib.request
             base_url = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
             agent_dir = os.path.dirname(os.path.abspath(__file__))
-            files_to_update = ["agent.py", "system_info.py"]
+            files_to_update = ["agent.py", "system_info.py", "remote.py", "requirements.txt"]
             updated = []
 
             for fname in files_to_update:
@@ -663,6 +663,25 @@ class EndpointAgent:
                     logger.warning("Failed to auto-update %s: %s", fname, exc)
 
             if updated:
+                if "requirements.txt" in updated:
+                    # Remote assistance pulls in mss/Pillow/websocket-client/pyautogui
+                    try:
+                        subprocess.run(
+                            [
+                                sys.executable,
+                                "-m",
+                                "pip",
+                                "install",
+                                "--disable-pip-version-check",
+                                "-q",
+                                "-r",
+                                os.path.join(agent_dir, "requirements.txt"),
+                            ],
+                            check=False,
+                            timeout=600,
+                        )
+                    except Exception as exc:
+                        logger.warning("Dependency refresh failed: %s", exc)
                 logger.info("Auto-update complete. Restarting agent...")
                 os.execl(sys.executable, sys.executable, *sys.argv)
         except Exception as exc:
@@ -1123,6 +1142,7 @@ class EndpointAgent:
 
     def run(self) -> None:
         global _SHUTDOWN_REQUESTED
+        import threading
 
         logger.info("EndpointX agent starting...")
         logger.info("Platform: %s (%s)", platform.system(), platform.platform())
@@ -1135,6 +1155,24 @@ class EndpointAgent:
         self._last_inventory = 0.0
         self._security_sent = False
         self._last_security_check = 0
+
+        # Remote assistance channel: the agent dials out to the server and only
+        # captures the screen while an operator is actually watching.
+        self._remote_stop = threading.Event()
+        try:
+            from remote import RemoteAccess
+
+            self._remote = RemoteAccess(
+                server_url=str(self.config.get("server_url") or ""),
+                agent_id=str(self.config.get("agent_id") or ""),
+                agent_secret=str(self.config.get("agent_secret") or ""),
+                stop_event=self._remote_stop,
+            )
+            self._remote.start()
+            logger.info("Remote assistance channel starting (%s)", self._remote._ws_url())
+        except Exception as exc:
+            logger.warning("Remote assistance not started: %s", exc)
+            self._remote = None
 
         if not self.config.get("agent_id"):
             logger.info("No agent_id found, attempting registration...")
@@ -1202,6 +1240,12 @@ class EndpointAgent:
                         break
                     time.sleep(1)
         finally:
+            self._remote_stop.set()
+            if getattr(self, "_remote", None):
+                try:
+                    self._remote.stop()
+                except Exception:
+                    pass
             if self._tamper:
                 self._tamper.cleanup()
             logger.info("EndpointX agent stopped")
@@ -1216,7 +1260,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.2.0 by Masukulu Miguel")
+        print("EndpointX Agent v1.3.0 by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:

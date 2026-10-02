@@ -37,6 +37,7 @@ import {
   CheckCircle2,
   XCircle,
   UserPlus,
+  MonitorPlay,
 } from 'lucide-react';
 import {
   LineChart,
@@ -54,12 +55,14 @@ import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
+import RemoteViewer from '../components/RemoteViewer';
 import type { DeviceDetail, Command } from '../types';
 
-type Tab = 'overview' | 'software' | 'services' | 'processes' | 'network' | 'security' | 'commands';
+type Tab = 'overview' | 'remote' | 'software' | 'services' | 'processes' | 'network' | 'security' | 'commands';
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'overview', label: 'Overview', icon: Info },
+  { key: 'remote', label: 'Remote', icon: MonitorPlay },
   { key: 'software', label: 'Software', icon: Package },
   { key: 'services', label: 'Services', icon: Server },
   { key: 'processes', label: 'Processes', icon: Activity },
@@ -747,6 +750,8 @@ export default function DeviceDetailPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'remote' && <RemoteViewer deviceId={device.id} />}
 
       {activeTab === 'software' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">

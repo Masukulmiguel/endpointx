@@ -16,6 +16,7 @@ import { validateSecrets } from './config/constants';
 import { RATE_LIMIT } from './config/constants';
 import { updateOfflineDevices } from './routes/devices';
 import { errorHandler } from './middleware/errorHandler';
+import { initRemoteAccess } from './remote';
 
 // Validate secrets before starting
 try {
@@ -188,6 +189,11 @@ io.on('connection', (socket) => {
   socket.on('leave_room', (room: string) => socket.leave(room));
   socket.on('disconnect', (reason) => logger.debug('Client disconnected', { socketId: socket.id, reason }));
 });
+
+// Remote desktop relay: agents push screen frames, operators pull them and send
+// input back. Everything travels over the same HTTPS/WSS origin as the API.
+initRemoteAccess(server);
+logger.info('Remote access relay listening on /remote');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 

@@ -257,7 +257,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       data: {
         device_id: device.id,
         commands: commands.rows,
-        agent_version: '1.2.0',
+        agent_version: '1.3.0',
         status: device.status,
         contained: isContained,
       },
@@ -1109,7 +1109,7 @@ Read-Host "Press Enter to close"`;
 router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params;
-    const allowedFiles = ['agent.py', 'system_info.py', 'requirements.txt', 'crypto_utils.py'];
+    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'requirements.txt', 'crypto_utils.py'];
 
     if (!allowedFiles.includes(filename)) {
       res.status(404).json({ success: false, error: { message: 'File not found' } });
@@ -1216,7 +1216,7 @@ router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, n
 router.get('/download/public/:filename', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params;
-    const allowedFiles = ['agent.py', 'system_info.py', 'requirements.txt', 'crypto_utils.py'];
+    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'requirements.txt', 'crypto_utils.py'];
 
     if (!allowedFiles.includes(filename)) {
       res.status(404).json({ success: false, error: { message: 'File not found' } });

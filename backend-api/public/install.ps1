@@ -110,8 +110,14 @@ try {
         Write-Step "[2/4] Baixando atualizacoes..."
         Get-File "$github/agent.py" (Join-Path $agentDir "agent.py")
         Get-File "$github/system_info.py" (Join-Path $agentDir "system_info.py")
+        try { Get-File "$github/remote.py" (Join-Path $agentDir "remote.py") } catch { }
         if (Test-Path "$github/requirements.txt") {
             Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt")
+        }
+
+        $reqPath = Join-Path $agentDir "requirements.txt"
+        if ((Test-Path $reqPath) -and $pythonCmd) {
+            & $pythonCmd -m pip install --disable-pip-version-check -q -r $reqPath 2>$null
         }
 
         Write-Step "[3/4] Atualizando config.yaml..."
@@ -143,6 +149,7 @@ server_url: $serverUrl/api
         Get-File "$github/agent.py" (Join-Path $agentDir "agent.py")
         Get-File "$github/system_info.py" (Join-Path $agentDir "system_info.py")
         Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt")
+        try { Get-File "$github/remote.py" (Join-Path $agentDir "remote.py") } catch { }
         if (Test-Path "$github/crypto_utils.py") {
             try { Get-File "$github/crypto_utils.py" (Join-Path $agentDir "crypto_utils.py") } catch { }
         }
@@ -159,8 +166,12 @@ server_url: $serverUrl/api
 "@
         Set-Content -Path (Join-Path $agentDir "config.yaml") -Value $config -Encoding utf8
 
-        Write-Step "[4/5] Instalando dependencias (psutil, requests, pyyaml)..."
+        Write-Step "[4/5] Instalando dependencias (psutil, requests, pyyaml, remote)..."
         & $pythonCmd -m pip install --disable-pip-version-check -q psutil requests pyyaml 2>$null
+        $reqPath = Join-Path $agentDir "requirements.txt"
+        if (Test-Path $reqPath) {
+            & $pythonCmd -m pip install --disable-pip-version-check -q -r $reqPath 2>$null
+        }
 
         Write-Step "[5/5] Registrando device..."
         Push-Location $agentDir

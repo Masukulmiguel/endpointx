@@ -20,6 +20,10 @@ export default defineConfig({
         target: 'http://localhost:3001',
         ws: true,
       },
+      '/remote': {
+        target: 'http://localhost:3001',
+        ws: true,
+      },
     },
   },
 })

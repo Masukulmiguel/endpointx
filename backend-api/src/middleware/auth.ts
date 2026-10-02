@@ -197,4 +197,28 @@ async function optionalAuth(
   next();
 }
 
+// Same verification as the Express middleware, but usable outside a request
+// (WebSocket handshakes, background jobs). Returns null when the token is
+// missing, expired or invalid.
+export async function verifyAccessToken(token: string | null | undefined): Promise<AuthUser | null> {
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, JWT.ACCESS_SECRET, {
+      issuer: JWT.ISSUER,
+      audience: JWT.AUDIENCE,
+    }) as JwtPayload;
+
+    const dbPerms = await loadRolePermissions(decoded.role_id);
+    return {
+      id: decoded.id,
+      email: decoded.email,
+      role_id: decoded.role_id,
+      role_name: decoded.role_name,
+      permissions: dbPerms ?? decoded.permissions ?? [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export { AuthRequest, AuthUser, authenticate, optionalAuth };

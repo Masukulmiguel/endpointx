@@ -15,7 +15,7 @@ if errorlevel 1 (
 
 REM Instalar dependencias
 echo Instalando dependencias...
-pip install psutil requests pyyaml
+pip install -r requirements.txt
 
 REM Registar agent
 echo Registando device no servidor...
