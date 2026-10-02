@@ -595,7 +595,7 @@ class EndpointAgent:
                     "network_in": net_traffic.get("bytes_recv", 0),
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
-                    "current_version": "1.4.0",
+                    "current_version": "1.5.0",
                 }
 
                 if self._tamper:
@@ -617,8 +617,8 @@ class EndpointAgent:
                     data = resp.json()
                     server_data = data.get("data", {})
                     server_version = server_data.get("agent_version", "")
-                    if server_version and server_version != "1.4.0" and not getattr(self, '_update_attempted', False):
-                        logger.info("New agent version available: %s (current: 1.4.0)", server_version)
+                    if server_version and server_version != "1.5.0" and not getattr(self, '_update_attempted', False):
+                        logger.info("New agent version available: %s (current: 1.5.0)", server_version)
                         self._update_attempted = True
                         self._auto_update()
                     return data
@@ -638,6 +638,39 @@ class EndpointAgent:
                     time.sleep(wait)
                     continue
                 return None
+
+    def _command_poll_loop(self) -> None:
+        """Claim pending commands every few seconds.
+
+        The heartbeat only runs once a minute, so a command issued from the
+        dashboard could sit unnoticed for up to 60s and look like it did
+        nothing. This lightweight poll delivers commands in about 3 seconds.
+        """
+        interval = float(self.config.get("command_poll_interval", 3) or 3)
+        logger.info("Command poll loop starting (every %.0fs)", interval)
+        while self._running and not _SHUTDOWN_REQUESTED:
+            try:
+                agent_id = str(self.config.get("agent_id") or self.agent_id or "")
+                if agent_id:
+                    resp = self._make_request(
+                        "POST", "/devices/command-poll", {"agent_id": agent_id}, timeout=15
+                    )
+                    if resp is not None and resp.status_code == 200:
+                        data = resp.json().get("data", {}) or {}
+                        for cmd in data.get("commands") or []:
+                            try:
+                                self.execute_command(cmd)
+                            except Exception as exc:
+                                logger.error("Command execution error: %s", exc)
+            except Exception as exc:
+                logger.debug("Command poll error: %s", exc)
+
+            waited = 0.0
+            while waited < interval:
+                if _SHUTDOWN_REQUESTED or not self._running:
+                    return
+                time.sleep(0.25)
+                waited += 0.25
 
     def _auto_update(self) -> None:
         """Download latest agent files from GitHub and restart."""
@@ -868,42 +901,45 @@ class EndpointAgent:
 
         return {"mode": "unsupported", "platform": system}
 
+    @staticmethod
+    def _delay(params: dict[str, Any]) -> int:
+        try:
+            return max(0, min(3600, int(params.get("delay", 5))))
+        except (TypeError, ValueError):
+            return 5
+
+    @staticmethod
+    def _run_os_command(cmd: list[str]) -> None:
+        """Run a shutdown/reboot command and surface failures to the dashboard."""
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip() or "no output"
+            raise RuntimeError(f"{' '.join(cmd)} failed ({proc.returncode}): {detail}")
+
     def handle_reboot(self, params: dict[str, Any]) -> dict[str, Any]:
-        delay = params.get("delay", 5)
+        delay = self._delay(params)
         logger.warning("Reboot command received, delay=%ds", delay)
         system = platform.system()
 
-        def _do_reboot() -> None:
-            time.sleep(delay)
-            if system == "Windows":
-                subprocess.run(["shutdown", "/r", "/t", "0"], check=False)
-            elif system == "Darwin":
-                subprocess.run(["sudo", "shutdown", "-r", "now"], check=False)
-            else:
-                subprocess.run(["sudo", "reboot"], check=False)
-
-        import threading
-        timer = threading.Thread(target=_do_reboot, daemon=True)
-        timer.start()
+        if system == "Windows":
+            self._run_os_command(["shutdown", "/r", "/t", str(delay)])
+        elif system == "Darwin":
+            self._run_os_command(["sudo", "shutdown", "-r", "now"])
+        else:
+            self._run_os_command(["sudo", "reboot"])
         return {"message": f"System will reboot in {delay} seconds"}
 
     def handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
-        delay = params.get("delay", 5)
+        delay = self._delay(params)
         logger.warning("Shutdown command received, delay=%ds", delay)
         system = platform.system()
 
-        def _do_shutdown() -> None:
-            time.sleep(delay)
-            if system == "Windows":
-                subprocess.run(["shutdown", "/s", "/t", "0"], check=False)
-            elif system == "Darwin":
-                subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
-            else:
-                subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
-
-        import threading
-        timer = threading.Thread(target=_do_shutdown, daemon=True)
-        timer.start()
+        if system == "Windows":
+            self._run_os_command(["shutdown", "/s", "/t", str(delay)])
+        elif system == "Darwin":
+            self._run_os_command(["sudo", "shutdown", "-h", "now"])
+        else:
+            self._run_os_command(["sudo", "shutdown", "-h", "now"])
         return {"message": f"System will shut down in {delay} seconds"}
 
     def handle_lock(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -1174,6 +1210,13 @@ class EndpointAgent:
             logger.warning("Remote assistance not started: %s", exc)
             self._remote = None
 
+        # Fast command delivery: the heartbeat runs once a minute, this poll
+        # picks commands up within a few seconds so reboot/lock feel instant.
+        self._poll_thread = threading.Thread(
+            target=self._command_poll_loop, name="command-poll", daemon=True
+        )
+        self._poll_thread.start()
+
         if not self.config.get("agent_id"):
             logger.info("No agent_id found, attempting registration...")
             if not self.register():
@@ -1260,7 +1303,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.4.0 by Masukulu Miguel")
+        print("EndpointX Agent v1.5.0 by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:

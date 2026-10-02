@@ -134,6 +134,7 @@ const COMMAND_TYPES = [
 
 const COMMAND_STATUS_COLORS: Record<string, string> = {
   pending: 'text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-400',
+  processing: 'text-indigo-600 bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400',
   sent: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400',
   executing: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400',
   completed: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400',

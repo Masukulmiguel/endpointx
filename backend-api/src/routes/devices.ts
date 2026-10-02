@@ -130,6 +130,25 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
   }
 });
 
+// Contained devices: only receive containment-related commands (isolate/unisolate/quarantine).
+// The claim is a single UPDATE ... RETURNING, so the heartbeat and the fast
+// command-poll endpoint can never hand the same command to the agent twice.
+function claimPendingCommandsSql(limit: number, contained: boolean): string {
+  const filter = contained ? `AND command_type IN ('isolate', 'unisolate', 'quarantine')` : '';
+  return `
+    WITH picked AS (
+      UPDATE agent_commands SET status = 'processing'
+      WHERE id IN (
+        SELECT id FROM agent_commands
+        WHERE device_id = $1 AND status = 'pending' ${filter}
+        ORDER BY created_at ASC
+        LIMIT ${Math.max(1, Math.min(20, limit))}
+      )
+      RETURNING id, command_type, parameters, created_at
+    )
+    SELECT id, command_type, parameters FROM picked ORDER BY created_at ASC`;
+}
+
 // Agent heartbeat
 router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -237,32 +256,64 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     await query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [hbId, device.id, cpu_usage || 0, ram_usage || 0, disk_usage || 0, network_in || 0, network_out || 0, active_processes || 0]);
 
-    // Contained devices: only receive containment-related commands (isolate/unisolate/quarantine)
-    const commands = await query(
-      isContained
-        ? `SELECT id, command_type, parameters FROM agent_commands
-            WHERE device_id = $1 AND status = 'pending'
-              AND command_type IN ('isolate', 'unisolate', 'quarantine')
-            ORDER BY created_at ASC LIMIT 5`
-        : `SELECT id, command_type, parameters FROM agent_commands
-            WHERE device_id = $1 AND status = 'pending'
-            ORDER BY created_at ASC LIMIT 10`,
-      [device.id]
-    );
-    for (const cmd of commands.rows) {
-      await query("UPDATE agent_commands SET status = 'processing' WHERE id = $1", [cmd.id]);
-    }
+    const commands = await query(claimPendingCommandsSql(isContained ? 5 : 10, isContained), [device.id]);
 
     res.json({
       success: true,
       data: {
         device_id: device.id,
         commands: commands.rows,
-        agent_version: '1.4.0',
+        agent_version: '1.5.0',
         status: device.status,
         contained: isContained,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Agent command poll - low-latency command delivery.
+//
+// The heartbeat runs once a minute, so before this endpoint a reboot issued
+// from the dashboard could sit for up to 60 seconds and look like it did
+// nothing. The agent polls here every ~3 seconds instead.
+router.post('/command-poll', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { agent_id } = req.body || {};
+    if (!agent_id) {
+      res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
+      return;
+    }
+    if (req.headers['x-agent-secret'] !== process.env.AGENT_SECRET) {
+      res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
+      return;
+    }
+
+    const deviceResult = await query(
+      "SELECT id, status, quarantine_status FROM devices WHERE agent_id = $1 AND is_authorized = true",
+      [agent_id]
+    );
+    if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found or not authorized' } });
+      return;
+    }
+
+    const device = deviceResult.rows[0];
+    const isContained = device.status === 'blocked' || device.status === 'quarantine'
+      || device.quarantine_status === 'QUARANTINED' || device.quarantine_status === 'BLOCKED';
+
+    // Anything claimed but never confirmed becomes a failure instead of an
+    // eternal "processing" row in the dashboard.
+    await query(
+      `UPDATE agent_commands
+          SET status = 'failed', error_message = 'agent did not confirm execution', completed_at = NOW()
+        WHERE device_id = $1 AND status = 'processing' AND created_at < NOW() - INTERVAL '5 minutes'`,
+      [device.id]
+    );
+
+    const commands = await query(claimPendingCommandsSql(isContained ? 5 : 10, isContained), [device.id]);
+    res.json({ success: true, data: { commands: commands.rows } });
   } catch (error) {
     next(error);
   }
