@@ -104,11 +104,18 @@
         </LinearLayout>
 
         <Button
+            android:id="@+id/btnAllowRestricted"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_allow_restricted"
+            android:layout_marginTop="8dp" />
+
+        <Button
             android:id="@+id/btnControl"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/btn_control"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:layout_width="wrap_content"

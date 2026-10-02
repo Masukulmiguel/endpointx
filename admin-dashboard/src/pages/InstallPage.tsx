@@ -175,6 +175,12 @@ export default function InstallPage() {
             Android 8.0+ · assinado · ~1 MB · permissões de acessibilidade (controlo) e partilha de ecrã
             (visualização). A app continua ativa em segundo plano com serviço persistente.
           </p>
+          <p className="text-yellow-500/90 text-xs mt-2">
+            Android 13+: o controlo remoto é bloqueado em apps instaladas por APK («Para sua segurança,
+            esta definição está indisponível»). Depois de instalar, abra Definições → Apps → EndpointX →
+            menu <strong>⋮</strong> → <strong>Permitir definições restritas</strong> e só depois ative o
+            serviço em Definições → Acessibilidade. Repita após cada atualização do APK.
+          </p>
         </div>
       </div>
 

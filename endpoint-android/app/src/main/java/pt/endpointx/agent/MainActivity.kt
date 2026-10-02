@@ -46,8 +46,15 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnRegister).setOnClickListener { register() }
         findViewById<Button>(R.id.btnShare).setOnClickListener { requestCapture() }
         findViewById<Button>(R.id.btnStopShare).setOnClickListener { stopCapture() }
+        findViewById<Button>(R.id.btnAllowRestricted).setOnClickListener { openAppDetails() }
         findViewById<Button>(R.id.btnControl).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            if (!ControlService.isReady) {
+                log(
+                    "Procure \"EndpointX\" em Apps descarregadas e ative-o. " +
+                        "Se o Android disser \"definição indisponível\", faça antes o passo 1)."
+                )
+            }
         }
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -142,6 +149,30 @@ class MainActivity : Activity() {
         refreshStatus()
     }
 
+    /**
+     * Android 13+ refuses to toggle accessibility for apps installed from an APK
+     * ("Restricted setting - For your security, this setting is currently
+     * unavailable"). The only supported way past it is the hidden menu in the
+     * app's own info screen, so we send the user straight there.
+     */
+    private fun openAppDetails() {
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")
+                )
+            )
+            log(
+                "Abriu a informação da app. Toque nos3 pontos (⋮) no topo e escolha " +
+                    "\"Permitir definições restritas\" (confirme com PIN/impressão digital)."
+            )
+        } catch (e: Exception) {
+            log("Não foi possível abrir as definições da app: ${e.message}")
+        }
+        refreshStatus()
+    }
+
     private fun refreshStatus() {
         val registered = Prefs.hasSession(this)
         val control = ControlService.isReady
@@ -160,6 +191,9 @@ class MainActivity : Activity() {
             append("ligação: ").append(connection).append('\n')
             append("partilha de ecrã: ").append(if (share) "ativa" else "desligada").append('\n')
             append("controlo remoto: ").append(if (control) "ativo" else "desativado").append('\n')
+            if (!control) {
+                append("→ ative com os botões 1) e 2) acima (Android 13+)\n")
+            }
             append("---\n")
             append(status.text)
         }
