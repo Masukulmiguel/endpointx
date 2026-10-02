@@ -44,6 +44,88 @@ function verifyEnrollToken(raw: unknown): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Registration dedupe by source IP.
+// The same physical device often comes back with a brand new agent_id (APK
+// reinstalled, app data cleared, or the enrolment page opened twice), which used
+// to create a second row for one machine. The IP alone is not enough - CGNAT and
+// office routers put many devices behind the same address - so a match also
+// needs the same OS plus hostname/model, and the candidate record has to be
+// either silent (no heartbeat for 10 minutes: it was replaced) or freshly
+// created (a repeated registration of that very device).
+const DUP_SILENT_MS = 10 * 60 * 1000;
+const DUP_RETRY_MS = 15 * 60 * 1000;
+const GENERIC_MODELS = new Set(['', 'android', 'ios', 'iphone', 'ipad', 'unknown', 'phone', 'mobile', 'tablet']);
+
+function requestIp(req: AuthRequest): string {
+  const fwd = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd || '').split(',')[0].trim();
+  return first || req.ip || '';
+}
+
+interface RegistrationFingerprint {
+  osType: string;
+  hostname?: string;
+  model?: string;
+}
+
+function fingerprintMatches(row: Record<string, unknown>, fp: RegistrationFingerprint): boolean {
+  const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+  if (norm(row.os_type) !== norm(fp.osType)) return false;
+  const rowModel = norm(row.model);
+  const wantModel = norm(fp.model);
+  if (rowModel && wantModel && !GENERIC_MODELS.has(wantModel)) return rowModel === wantModel;
+  const rowHost = norm(row.hostname);
+  const wantHost = norm(fp.hostname);
+  if (rowHost && wantHost) return rowHost === wantHost;
+  return false;
+}
+
+/**
+ * Finds the device this registration most likely belongs to, keyed by the source
+ * IP of the request (plus the IP the agent itself reported). Returns null when
+ * there is no credible match - i.e. a different device sharing the network.
+ */
+async function findDeviceByIp(
+  req: AuthRequest,
+  fp: RegistrationFingerprint,
+  reportedIp?: string
+): Promise<{ id: string; agent_id: string } | null> {
+  const sourceIp = requestIp(req);
+  const altIp = (reportedIp || '').trim();
+  if (!sourceIp && !altIp) return null;
+  let candidates;
+  try {
+    candidates = await query(
+      `SELECT id, agent_id, os_type, hostname, model, last_heartbeat, first_seen, created_at
+         FROM devices
+        WHERE ip_address IS NOT NULL
+          AND ($1 = '' OR ip_address::text = $1)
+          AND ($2 = '' OR ip_address::text = $2)
+          AND ($1 <> '' OR $2 <> '')
+        ORDER BY COALESCE(last_heartbeat, first_seen, created_at) DESC
+        LIMIT 25`,
+      [sourceIp, altIp]
+    );
+  } catch (error) {
+    logger.warn('IP dedupe lookup failed', { error: (error as Error).message });
+    return null;
+  }
+  const now = Date.now();
+  for (const row of candidates.rows) {
+    if (!fingerprintMatches(row, fp)) continue;
+    const lastSeen = row.last_heartbeat
+      ? new Date(row.last_heartbeat as string | number | Date).getTime()
+      : null;
+    const created =
+      new Date((row.first_seen ?? row.created_at) as string | number | Date).getTime() || now;
+    const silent = lastSeen === null ? now - created > DUP_SILENT_MS : now - lastSeen > DUP_SILENT_MS;
+    const justCreated = now - created < DUP_RETRY_MS;
+    if (silent || justCreated) return { id: String(row.id), agent_id: String(row.agent_id || '') };
+  }
+  return null;
+}
+
 // Accounts can only touch devices they own; admin (devices.view_all) may also touch
 // devices that have no account yet - others get 404 (no existence leak)
 async function denyUnlessOwns(req: AuthRequest, res: Response, deviceId: string): Promise<boolean> {
@@ -114,6 +196,47 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
       if (os.includes('windows')) return 'DESKTOP';
       return 'UNKNOWN';
     })();
+
+    // Reinstall of the same machine = new agent_id but the same OS/hostname on
+    // the same IP: adopt the existing row instead of creating a duplicate.
+    const duplicate = await findDeviceByIp(req, { osType: os_type || '', hostname: hostname || '' }, ip_address);
+    if (duplicate) {
+      await query(
+        `UPDATE devices SET
+           agent_id = $2,
+           hostname = COALESCE(NULLIF($3, ''), hostname),
+           os_type = COALESCE(NULLIF($4, ''), os_type),
+           os_version = COALESCE(NULLIF($5, ''), os_version),
+           os_build = COALESCE(NULLIF($6, ''), os_build),
+           mac_address = COALESCE(NULLIF($7, ''), mac_address),
+           ip_address = COALESCE(NULLIF($8::text, '')::inet, ip_address),
+           status = 'online',
+           last_heartbeat = NOW(),
+           is_authorized = true,
+           approval_status = 'approved',
+           created_by = COALESCE(created_by, $9),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [
+          duplicate.id,
+          agent_id,
+          hostname || '',
+          os_type || '',
+          os_version || '',
+          os_build || '',
+          mac_address || '',
+          requestIp(req),
+          ownerUserId || null,
+        ]
+      );
+      logger.info('Device re-registered and matched by IP fingerprint', {
+        deviceId: duplicate.id,
+        agent_id,
+        ip: requestIp(req),
+      });
+      res.json({ success: true, data: { id: duplicate.id, agent_id, status: 'online', is_new: false, deduplicated: true } });
+      return;
+    }
 
     const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     const inserted = await query(
@@ -1387,6 +1510,23 @@ router.get('/public/endpointx-agent.apk', (_req: AuthRequest, res: Response, nex
   }
 });
 
+// PUBLIC - assisted Android setup (installs + enables remote control over adb)
+router.get('/public/enable-control.bat', (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const filePath = join(__dirname, '..', '..', 'public', 'apk', 'enable-control.bat');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'Script not found' } });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="enable-control.bat"');
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(filePath);
+  } catch (error) {
+    next(error);
+  }
+});
+
 function parseBrowserFromUA(ua: string): { name: string; version: string } | null {
   const s = ua || '';
   const pick = (re: RegExp, name: string): { name: string; version: string } | null => {
@@ -1538,15 +1678,73 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
       return;
     }
 
+    // Same phone registering again (APK reinstalled or enrolment page reopened):
+    // same OS, name and model coming from the same IP => reuse its row.
+    const duplicate = await findDeviceByIp(req, {
+      osType: os,
+      hostname: name,
+      model: (model || '').trim(),
+    });
+    if (duplicate) {
+      await query(
+        `UPDATE devices SET
+           agent_id = $2,
+           hostname = $3,
+           display_name = $3,
+           device_type = $4,
+           os_type = $5,
+           manufacturer = COALESCE(NULLIF($6, ''), manufacturer),
+           model = COALESCE(NULLIF($7, ''), model),
+           ownership = $8,
+           department = COALESCE(NULLIF($9, ''), department),
+           ip_address = COALESCE(NULLIF($10::text, '')::inet, ip_address),
+           created_by = COALESCE(created_by, $11),
+           updated_at = NOW()
+         WHERE id = $1`,
+        [
+          duplicate.id,
+          agentId,
+          name,
+          inferredType,
+          os,
+          (user_agent || '').includes('iPhone') ? 'Apple' : (user_agent || '').includes('Android') ? 'Android' : '',
+          (model || '').trim().slice(0, 80),
+          ownershipValue,
+          (department || '').trim().slice(0, 80),
+          requestIp(req),
+          ownerUserId || null,
+        ]
+      );
+      const kept = await query('SELECT approval_status FROM devices WHERE id = $1', [duplicate.id]);
+      await syncMobileSoftware(duplicate.id, String(user_agent || req.headers['user-agent'] || ''));
+      logger.info('Mobile device re-enrolled and matched by IP fingerprint', {
+        deviceId: duplicate.id,
+        agentId,
+        ip: requestIp(req),
+      });
+      res.json({
+        success: true,
+        data: {
+          device_id: duplicate.id,
+          agent_id: agentId,
+          remote_token: remoteSecretFor(agentId),
+          approval_status: kept.rows[0]?.approval_status || 'pending',
+          is_new: false,
+          deduplicated: true,
+        },
+      });
+      return;
+    }
+
     const deviceId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     await query(
       `INSERT INTO devices (
          id, agent_id, hostname, display_name, os_type, device_type, manufacturer, model,
-         ownership, department, status, is_authorized, trust_level, approval_status,
+         ownership, department, ip_address, status, is_authorized, trust_level, approval_status,
          managed, mdm_enrolled, quarantine_status, first_seen, registered_at, notes, created_by
        ) VALUES (
          $1, $2, $3, $3, $4, $5, $6, $7,
-         $8, $9, 'offline', false, 'UNKNOWN', 'pending',
+         $8, $9, NULLIF($12::text, '')::inet, 'offline', false, 'UNKNOWN', 'pending',
          false, false, 'none', NOW(), NOW(), $10, $11
        )`,
       [
@@ -1562,6 +1760,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
         (department || '').trim().slice(0, 80),
         `Mobile enrollment (${source || 'page'})${owner ? `; owner=${String(owner).slice(0, 80)}` : ''}`,
         ownerUserId || null,
+        requestIp(req),
       ]
     );
 
@@ -1586,7 +1785,8 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
 // PUBLIC - Mobile presence heartbeat (page open => device online; no agent telemetry)
 router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id: clientAgentId, battery_level, latitude, longitude, network, ram_total, cpu_cores } = req.body as Record<string, unknown>;
+    const { agent_id: clientAgentId, battery_level, latitude, longitude, network, ram_total, cpu_cores,
+            ram_used, ram_usage, cpu_usage, disk_total, disk_used, disk_usage } = req.body as Record<string, unknown>;
     const agentId = String(clientAgentId || '').trim().slice(0, 64);
     if (!agentId.startsWith('mobile-')) {
       res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
@@ -1603,6 +1803,23 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
     const lng = typeof longitude === 'number' && Number.isFinite(longitude) && Math.abs(longitude) <= 180 ? longitude : null;
     const fwd = req.headers['x-forwarded-for'];
     const ip = (Array.isArray(fwd) ? fwd[0] : fwd || '').split(',')[0].trim() || req.ip || null;
+    // Real telemetry reported by the Android app (memory / CPU / storage).
+    const toIntOrNull = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+    };
+    const toPctOrNull = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n * 100) / 100 : null;
+    };
+    const ramTotal = toIntOrNull(ram_total);
+    const ramUsed = toIntOrNull(ram_used);
+    const ramPct = toPctOrNull(ram_usage);
+    const cpuPct = toPctOrNull(cpu_usage);
+    const cpuCores = toIntOrNull(cpu_cores);
+    const diskTotal = toIntOrNull(disk_total);
+    const diskUsed = toIntOrNull(disk_used);
+    const diskPct = toPctOrNull(disk_usage);
     const currentStatus = String(existing.rows[0].status || 'offline');
     // Preserve blocked/quarantine/alert; only an offline device flips to online
     const nextStatus = currentStatus === 'offline' ? 'online' : currentStatus;
@@ -1614,13 +1831,25 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
              longitude = COALESCE($5, longitude),
              location_updated_at = CASE WHEN $4::double precision IS NOT NULL THEN NOW() ELSE location_updated_at END,
              ram_total = COALESCE($7::bigint, ram_total),
-             cpu_cores = COALESCE($8::int, cpu_cores),
+             ram_used = COALESCE($8::bigint, ram_used),
+             ram_usage = COALESCE($9::double precision, ram_usage),
+             cpu_cores = COALESCE($10::int, cpu_cores),
+             cpu_usage = COALESCE($11::double precision, cpu_usage),
+             disk_total = COALESCE($12::bigint, disk_total),
+             disk_used = COALESCE($13::bigint, disk_used),
+             disk_usage = COALESCE($14::double precision, disk_usage),
              updated_at = NOW()
        WHERE id = $6`,
       [nextStatus, ip, battery, lat, lng, existing.rows[0].id,
-       Number.isFinite(Number(ram_total)) && Number(ram_total) > 0 ? Math.trunc(Number(ram_total)) : null,
-       Number.isFinite(Number(cpu_cores)) && Number(cpu_cores) > 0 ? Math.trunc(Number(cpu_cores)) : null]
+       ramTotal, ramUsed, ramPct, cpuCores, cpuPct, diskTotal, diskUsed, diskPct]
     );
+    if (cpuPct != null || ramPct != null || diskPct != null) {
+      const hbId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      await query(
+        'INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [hbId, existing.rows[0].id, cpuPct ?? 0, ramPct ?? 0, diskPct ?? 0, 0, 0, 0]
+      );
+    }
     const deviceId = existing.rows[0].id;
     // Persist GPS history point for the daily route.
     // Dedupe: skip if the same spot was already stored in the last 2 minutes.
