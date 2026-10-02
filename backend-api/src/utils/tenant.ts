@@ -1,17 +1,38 @@
 import { query } from '../config/database';
 
 // Account isolation: every account - including the super admin - only sees the devices
-// connected to its own account (devices.created_by). The legacy 'devices.view_all'
-// permission is no longer honoured: no endpoint may expose another account's devices.
-export function canViewAllDevices(_user?: { permissions?: string[] } | null): boolean {
-  return false;
-}
-
-// Devices with no account (created_by IS NULL - enrolled without an enroll token).
-// Nobody owns them, so only accounts holding 'devices.view_all' (admin) may see and
-// manage them until they are assigned to an account.
+// connected to its own account (devices.created_by). No endpoint may expose another
+// account's devices; the legacy 'devices.view_all' grant now only means "may also see
+// and manage devices that are not assigned to any account".
 export function canViewUnownedDevices(user?: { permissions?: string[] } | null): boolean {
   return !!user?.permissions?.includes('devices.view_all');
+}
+
+export type TenantUser = { id?: string; permissions?: string[] } | null | undefined;
+
+// May this account see a device owned by `ownerId` (null/undefined = no account)?
+export function canSeeDevice(user: TenantUser, ownerId: string | null | undefined): boolean {
+  if (ownerId == null) return canViewUnownedDevices(user);
+  return !!user?.id && ownerId === user.id;
+}
+
+// SQL predicate for a `devices.created_by` column restricting rows to what this
+// account may see: its own devices, plus - for admin - devices with no account.
+// `ph` is the placeholder index holding the caller's user id.
+export function visibleDevicesSql(col: string, ph: number, user: TenantUser): string {
+  const own = `${col} = $${ph}`;
+  return canViewUnownedDevices(user) ? `(${own} OR ${col} IS NULL)` : own;
+}
+
+// LEFT JOIN variant for alerts / security events / commands: rows with no device are
+// system-level and always visible, device rows follow visibleDevicesSql().
+export function visibleDeviceRowsSql(
+  deviceIdCol: string,
+  ownerCol: string,
+  ph: number,
+  user: TenantUser
+): string {
+  return `(${deviceIdCol} IS NULL OR ${visibleDevicesSql(ownerCol, ph, user)})`;
 }
 
 export async function isUnownedDevice(deviceId: string): Promise<boolean> {

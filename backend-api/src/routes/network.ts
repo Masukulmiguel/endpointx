@@ -3,15 +3,16 @@ import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { Response, NextFunction } from 'express';
+import { visibleDevicesSql } from '../utils/tenant';
 
 const router = Router();
 
 // Network stats
 router.get('/stats', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const totalResult = await query('SELECT COUNT(*) as total FROM devices WHERE is_authorized = true AND created_by = $1', [req.user!.id]);
-    const onlineResult = await query("SELECT COUNT(*) as online FROM devices WHERE is_authorized = true AND status = 'online' AND created_by = $1", [req.user!.id]);
-    const latencyResult = await query("SELECT AVG(h.ram_usage) as avg_ram FROM device_heartbeats h JOIN devices d ON d.id = h.device_id WHERE h.recorded_at > NOW() - INTERVAL '5 minutes' AND d.created_by = $1", [req.user!.id]);
+    const totalResult = await query(`SELECT COUNT(*) as total FROM devices WHERE is_authorized = true AND ${visibleDevicesSql('created_by', 1, req.user)}`, [req.user!.id]);
+    const onlineResult = await query(`SELECT COUNT(*) as online FROM devices WHERE is_authorized = true AND status = 'online' AND ${visibleDevicesSql('created_by', 1, req.user)}`, [req.user!.id]);
+    const latencyResult = await query(`SELECT AVG(h.ram_usage) as avg_ram FROM device_heartbeats h JOIN devices d ON d.id = h.device_id WHERE h.recorded_at > NOW() - INTERVAL '5 minutes' AND ${visibleDevicesSql('d.created_by', 1, req.user)}`, [req.user!.id]);
 
     const total = parseInt(String(totalResult.rows[0]?.total || 0), 10) || 0;
     const online = parseInt(String(onlineResult.rows[0]?.online || 0), 10) || 0;
@@ -40,7 +41,7 @@ router.get('/bandwidth', authenticate, requirePermission('network.view'), async 
              d.hostname, d.agent_id
       FROM device_heartbeats h
       JOIN devices d ON h.device_id = d.id
-      WHERE d.created_by = $1
+      WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
     `;
     const params: any[] = [req.user!.id];
 
@@ -72,7 +73,7 @@ router.get('/interfaces', authenticate, requirePermission('network.view'), async
              d.hostname as device_name, d.agent_id as device_id_ref
       FROM device_network_interfaces ni
       JOIN devices d ON ni.device_id = d.id
-      WHERE d.created_by = $1
+      WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
     `;
     const params: any[] = [req.user!.id];
 

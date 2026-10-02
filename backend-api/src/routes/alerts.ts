@@ -3,7 +3,7 @@ import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { sendAlertNotification } from '../services/emailService';
-import { canViewAllDevices, ownsDevice } from '../utils/tenant';
+import { canAccessDevice, canSeeDevice, visibleDeviceRowsSql } from '../utils/tenant';
 
 const router = Router();
 
@@ -34,11 +34,10 @@ function buildAlertFilters(req: AuthRequest): { where: string; params: unknown[]
     clauses.push(`(a.title ILIKE $${params.length} OR a.description ILIKE $${params.length} OR a.alert_type ILIKE $${params.length} OR d.hostname ILIKE $${params.length})`);
   }
 
-  // Account isolation: non-admin sees system alerts (no device) + alerts of own devices only
-  if (!canViewAllDevices(req.user)) {
-    params.push(req.user!.id);
-    clauses.push(`(a.device_id IS NULL OR d.created_by = $${params.length})`);
-  }
+  // Account isolation: system alerts (no device) + alerts of the caller's devices
+  // (+ unassigned devices for admin)
+  params.push(req.user!.id);
+  clauses.push(visibleDeviceRowsSql('a.device_id', 'd.created_by', params.length, req.user));
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return { where, params };
@@ -80,15 +79,14 @@ router.get('/', authenticate, requirePermission('alerts.view'), async (req: Auth
 
 router.get('/stats', authenticate, requirePermission('alerts.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
-    const join = viewAll ? '' : ' LEFT JOIN devices d ON a.device_id = d.id';
-    const w = viewAll ? '' : ' WHERE (a.device_id IS NULL OR d.created_by = $1)';
-    const p = viewAll ? [] : [req.user!.id];
+    const join = ' LEFT JOIN devices d ON a.device_id = d.id';
+    const w = ` WHERE ${visibleDeviceRowsSql('a.device_id', 'd.created_by', 1, req.user)}`;
+    const p = [req.user!.id];
     const totalResult = await query(`SELECT COUNT(*) as count FROM alerts a${join}${w}`, p);
     const bySeverity = await query(`SELECT a.severity, COUNT(*) as count FROM alerts a${join}${w} GROUP BY a.severity`, p);
     const byType = await query(`SELECT a.alert_type, COUNT(*) as count FROM alerts a${join}${w} GROUP BY a.alert_type ORDER BY COUNT(*) DESC`, p);
     const unresolvedResult = await query(
-      `SELECT COUNT(*) as count FROM alerts a${join}${viewAll ? ' WHERE a.is_dismissed = false' : `${w} AND a.is_dismissed = false`}`,
+      `SELECT COUNT(*) as count FROM alerts a${join}${w} AND a.is_dismissed = false`,
       p
     );
 
@@ -121,7 +119,7 @@ router.get('/:id', authenticate, requirePermission('alerts.view'), async (req: A
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
     const alert = result.rows[0];
-    if (!canViewAllDevices(req.user) && alert.device_id && alert.device_created_by !== req.user?.id) {
+    if (alert.device_id && !canSeeDevice(req.user, alert.device_created_by)) {
       res.status(404).json({ success: false, error: { message: 'Alert not found' } });
       return;
     }
@@ -136,16 +134,13 @@ router.post('/dismiss', authenticate, requirePermission('alerts.manage'), async 
       res.status(400).json({ success: false, error: { message: 'ids array is required' } });
       return;
     }
-    // Non-admin: only dismiss system alerts + alerts of owned devices
-    let allowedIds = ids;
-    if (!canViewAllDevices(req.user)) {
-      const owned = await query(
-        `SELECT a.id FROM alerts a LEFT JOIN devices d ON a.device_id = d.id
-         WHERE a.id = ANY($1::uuid[]) AND (a.device_id IS NULL OR d.created_by = $2)`,
-        [ids, req.user!.id]
-      );
-      allowedIds = owned.rows.map((r: { id: string }) => r.id);
-    }
+    // Only dismiss system alerts + alerts of devices this account may see
+    const owned = await query(
+      `SELECT a.id FROM alerts a LEFT JOIN devices d ON a.device_id = d.id
+       WHERE a.id = ANY($1::uuid[]) AND ${visibleDeviceRowsSql('a.device_id', 'd.created_by', 2, req.user)}`,
+      [ids, req.user!.id]
+    );
+    const allowedIds = owned.rows.map((r: { id: string }) => r.id);
     const result = await query(
       `UPDATE alerts SET is_dismissed = true, dismissed_by = $1, dismissed_at = NOW()
        WHERE id = ANY($2::uuid[]) RETURNING id`,
@@ -162,7 +157,7 @@ router.post('/', authenticate, requirePermission('alerts.manage'), async (req: A
       res.status(400).json({ success: false, error: { message: 'severity, title, and device_id are required.' } });
       return;
     }
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, device_id))) {
+    if (!(await canAccessDevice(req.user, device_id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -191,7 +186,7 @@ router.post('/:id/dismiss', authenticate, requirePermission('alerts.manage'), as
     );
     if (existing.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
     const alert = existing.rows[0];
-    if (!canViewAllDevices(req.user) && alert.device_id && alert.device_created_by !== req.user?.id) {
+    if (alert.device_id && !canSeeDevice(req.user, alert.device_created_by)) {
       res.status(404).json({ success: false, error: { message: 'Alert not found' } });
       return;
     }

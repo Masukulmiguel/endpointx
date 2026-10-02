@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { canViewAllDevices } from '../utils/tenant';
+import { canSeeDevice, visibleDeviceRowsSql } from '../utils/tenant';
 
 const router = Router();
 
@@ -33,11 +33,10 @@ function buildEventFilters(req: AuthRequest): { where: string; params: unknown[]
   else if (dateRange === '7d') clauses.push(`se.created_at > NOW() - INTERVAL '7 days'`);
   else if (dateRange === '30d') clauses.push(`se.created_at > NOW() - INTERVAL '30 days'`);
 
-  // Account isolation: non-admin sees system events (no device) + own devices only
-  if (!canViewAllDevices(req.user)) {
-    params.push(req.user!.id);
-    clauses.push(`(se.device_id IS NULL OR d.created_by = $${params.length})`);
-  }
+  // Account isolation: system events (no device) + events of the caller's devices
+  // (+ unassigned devices for admin)
+  params.push(req.user!.id);
+  clauses.push(visibleDeviceRowsSql('se.device_id', 'd.created_by', params.length, req.user));
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return { where, params };
@@ -79,13 +78,12 @@ router.get('/events', authenticate, requirePermission('security.view'), async (r
 
 router.get('/events/stats', authenticate, requirePermission('security.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
-    const join = viewAll ? '' : ' LEFT JOIN devices d ON se.device_id = d.id';
-    const w = viewAll ? '' : ' WHERE (se.device_id IS NULL OR d.created_by = $1)';
-    const p = viewAll ? [] : [req.user!.id];
+    const join = ' LEFT JOIN devices d ON se.device_id = d.id';
+    const w = ` WHERE ${visibleDeviceRowsSql('se.device_id', 'd.created_by', 1, req.user)}`;
+    const p = [req.user!.id];
     const total = await query(`SELECT COUNT(*) as count FROM security_events se${join}${w}`, p);
-    const resolved = await query(`SELECT COUNT(*) as count FROM security_events se${join}${viewAll ? ' WHERE se.is_resolved = true' : `${w} AND se.is_resolved = true`}`, p);
-    const unresolved = await query(`SELECT COUNT(*) as count FROM security_events se${join}${viewAll ? ' WHERE se.is_resolved = false' : `${w} AND se.is_resolved = false`}`, p);
+    const resolved = await query(`SELECT COUNT(*) as count FROM security_events se${join}${w} AND se.is_resolved = true`, p);
+    const unresolved = await query(`SELECT COUNT(*) as count FROM security_events se${join}${w} AND se.is_resolved = false`, p);
     const bySeverity = await query(`SELECT se.severity, COUNT(*) as count FROM security_events se${join}${w} GROUP BY se.severity`, p);
     const byType = await query(`SELECT se.event_type, COUNT(*) as count FROM security_events se${join}${w} GROUP BY se.event_type ORDER BY COUNT(*) DESC`, p);
 
@@ -120,7 +118,7 @@ router.get('/events/:id', authenticate, requirePermission('security.view'), asyn
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Event not found' } }); return; }
     const event = result.rows[0];
-    if (!canViewAllDevices(req.user) && event.device_id && event.device_created_by !== req.user?.id) {
+    if (event.device_id && !canSeeDevice(req.user, event.device_created_by)) {
       res.status(404).json({ success: false, error: { message: 'Event not found' } });
       return;
     }
@@ -136,7 +134,7 @@ router.post('/events/:id/resolve', authenticate, requirePermission('security.man
     );
     if (existing.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Event not found' } }); return; }
     const ev = existing.rows[0];
-    if (!canViewAllDevices(req.user) && ev.device_id && ev.device_created_by !== req.user?.id) {
+    if (ev.device_id && !canSeeDevice(req.user, ev.device_created_by)) {
       res.status(404).json({ success: false, error: { message: 'Event not found' } });
       return;
     }

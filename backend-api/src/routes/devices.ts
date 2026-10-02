@@ -132,7 +132,8 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
 // Agent heartbeat
 router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes, agent_hash, current_version } = req.body;
+    const { agent_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes, agent_hash, current_version,
+            cpu_model, cpu_cores, ram_total, ram_used, disk_total, disk_used } = req.body;
 
     if (!agent_id) {
       res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
@@ -178,6 +179,33 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       await query(
         "UPDATE devices SET status = 'online', last_heartbeat = NOW(), cpu_usage = $1, ram_usage = $2, disk_usage = $3 WHERE id = $4",
         [cpu_usage || 0, ram_usage || 0, disk_usage || 0, device.id]
+      );
+    }
+
+    // Hardware capacity (CPU model/cores, RAM and disk size). Reported with every
+    // heartbeat so the dashboard shows real numbers instead of N/A; COALESCE keeps the
+    // previous value when an older agent does not send the fields.
+    const hwModel = typeof cpu_model === 'string' && cpu_model.trim() ? cpu_model.trim().slice(0, 255) : null;
+    const hwInt = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+    };
+    const hwCores = hwInt(cpu_cores);
+    const hwRam = hwInt(ram_total);
+    const hwRamUsed = hwInt(ram_used);
+    const hwDisk = hwInt(disk_total);
+    const hwDiskUsed = hwInt(disk_used);
+    if (hwModel || hwCores || hwRam || hwRamUsed || hwDisk || hwDiskUsed) {
+      await query(
+        `UPDATE devices SET
+           cpu_model = COALESCE($1, cpu_model),
+           cpu_cores = COALESCE($2, cpu_cores),
+           ram_total = COALESCE($3, ram_total),
+           disk_total = COALESCE($4, disk_total),
+           ram_used = COALESCE($5, ram_used),
+           disk_used = COALESCE($6, disk_used)
+         WHERE id = $7`,
+        [hwModel, hwCores, hwRam, hwDisk, hwRamUsed, hwDiskUsed, device.id]
       );
     }
 
@@ -257,7 +285,8 @@ router.get('/enroll-token', authenticate, requirePermission('devices.view'), asy
 // List devices
 router.get('/', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    updateOfflineDevices();
+    // Refresh statuses first so a device that stopped heartbeating is reported offline
+    await updateOfflineDevices();
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const search = req.query.search as string || '';
@@ -329,7 +358,7 @@ function isPrivateIp(ip: string): boolean {
 
 router.get('/map', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    updateOfflineDevices();
+    await updateOfflineDevices();
     const seeUnowned = canViewUnownedDevices(req.user);
     const result = await query(
       `SELECT d.id, d.hostname, d.display_name, d.os_type, d.device_type, d.status, d.latitude, d.longitude,
@@ -385,6 +414,7 @@ router.get('/map', authenticate, requirePermission('devices.view'), async (req: 
 router.get('/:id', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    await updateOfflineDevices();
     const deviceResult = await query(
       'SELECT d.*, u.email as owner_email FROM devices d LEFT JOIN users u ON u.id = d.created_by WHERE d.id = $1',
       [id]
@@ -1485,7 +1515,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
 // PUBLIC - Mobile presence heartbeat (page open => device online; no agent telemetry)
 router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { agent_id: clientAgentId, battery_level, latitude, longitude, network } = req.body as Record<string, unknown>;
+    const { agent_id: clientAgentId, battery_level, latitude, longitude, network, ram_total, cpu_cores } = req.body as Record<string, unknown>;
     const agentId = String(clientAgentId || '').trim().slice(0, 64);
     if (!agentId.startsWith('mobile-')) {
       res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
@@ -1512,9 +1542,13 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
              latitude = COALESCE($4, latitude),
              longitude = COALESCE($5, longitude),
              location_updated_at = CASE WHEN $4::double precision IS NOT NULL THEN NOW() ELSE location_updated_at END,
+             ram_total = COALESCE($7::bigint, ram_total),
+             cpu_cores = COALESCE($8::int, cpu_cores),
              updated_at = NOW()
        WHERE id = $6`,
-      [nextStatus, ip, battery, lat, lng, existing.rows[0].id]
+      [nextStatus, ip, battery, lat, lng, existing.rows[0].id,
+       Number.isFinite(Number(ram_total)) && Number(ram_total) > 0 ? Math.trunc(Number(ram_total)) : null,
+       Number.isFinite(Number(cpu_cores)) && Number(cpu_cores) > 0 ? Math.trunc(Number(cpu_cores)) : null]
     );
     const deviceId = existing.rows[0].id;
     // Persist GPS history point for the daily route.

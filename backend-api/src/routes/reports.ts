@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { canViewAllDevices } from '../utils/tenant';
+import { visibleDeviceRowsSql, visibleDevicesSql } from '../utils/tenant';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -10,15 +10,14 @@ const router = Router();
 // GET /devices/csv - Export devices as CSV
 router.get('/devices/csv', authenticate, requirePermission('logs.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
     const result = await query(
       `SELECT d.hostname, d.os_type, d.status, u.email as user_email, d.last_heartbeat,
               d.cpu_usage, d.ram_usage, d.disk_usage
        FROM devices d
        LEFT JOIN users u ON d.user_id = u.id
-       ${viewAll ? '' : 'WHERE d.created_by = $1'}
+       WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
        ORDER BY d.hostname`,
-      viewAll ? [] : [req.user!.id]
+      [req.user!.id]
     );
 
     const headers = ['Hostname', 'OS', 'Status', 'User', 'Last Heartbeat', 'CPU%', 'RAM%', 'Disk%'];
@@ -51,15 +50,14 @@ router.get('/devices/pdf', authenticate, requirePermission('logs.view'), async (
   try {
     const PDFDocument = require('pdfkit');
 
-    const viewAll = canViewAllDevices(req.user);
     const result = await query(
       `SELECT d.hostname, d.os_type, d.status, u.email as user_email, d.last_heartbeat,
               d.cpu_usage, d.ram_usage, d.disk_usage
        FROM devices d
        LEFT JOIN users u ON d.user_id = u.id
-       ${viewAll ? '' : 'WHERE d.created_by = $1'}
+       WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
        ORDER BY d.hostname`,
-      viewAll ? [] : [req.user!.id]
+      [req.user!.id]
     );
 
     const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
@@ -125,15 +123,14 @@ router.get('/devices/pdf', authenticate, requirePermission('logs.view'), async (
 // GET /compliance/csv - Export compliance results as CSV
 router.get('/compliance/csv', authenticate, requirePermission('compliance.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
     const result = await query(
       `SELECT d.hostname, p.name as policy_name, cr.is_compliant, cr.violations, cr.checked_at
        FROM compliance_results cr
        JOIN devices d ON cr.device_id = d.id
        JOIN compliance_policies p ON cr.policy_id = p.id
-       ${viewAll ? '' : 'WHERE d.created_by = $1'}
+       WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
        ORDER BY cr.checked_at DESC`,
-      viewAll ? [] : [req.user!.id]
+      [req.user!.id]
     );
 
     const headers = ['Hostname', 'Policy', 'Compliant', 'Violations', 'Checked At'];
@@ -161,15 +158,14 @@ router.get('/compliance/csv', authenticate, requirePermission('compliance.view')
 // GET /alerts/csv - Export alerts as CSV
 router.get('/alerts/csv', authenticate, requirePermission('logs.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
     const result = await query(
       `SELECT a.alert_type, a.severity, a.title, a.description, d.hostname,
               a.is_dismissed, a.created_at
        FROM alerts a
        LEFT JOIN devices d ON a.device_id = d.id
-       ${viewAll ? '' : 'WHERE (a.device_id IS NULL OR d.created_by = $1)'}
+       WHERE ${visibleDeviceRowsSql('a.device_id', 'd.created_by', 1, req.user)}
        ORDER BY a.created_at DESC`,
-      viewAll ? [] : [req.user!.id]
+      [req.user!.id]
     );
 
     const headers = ['Type', 'Severity', 'Title', 'Description', 'Device', 'Dismissed', 'Created At'];
@@ -199,16 +195,12 @@ router.get('/alerts/csv', authenticate, requirePermission('logs.view'), async (r
 // GET /summary - Get summary report data
 router.get('/summary', authenticate, requirePermission('logs.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
-    const p = viewAll ? [] : [req.user!.id];
-    const devCond = (extra?: string) => {
-      const parts: string[] = [];
-      if (!viewAll) parts.push('created_by = $1');
-      if (extra) parts.push(extra);
-      return parts.length ? ` WHERE ${parts.join(' AND ')}` : '';
-    };
-    const alertsFrom = `FROM alerts a${viewAll ? '' : ' LEFT JOIN devices d ON a.device_id = d.id'}`;
-    const alertsWhere = viewAll ? '' : ' WHERE (a.device_id IS NULL OR d.created_by = $1)';
+    const devSql = visibleDevicesSql('created_by', 1, req.user);
+    const p = [req.user!.id];
+    const devCond = (extra?: string) =>
+      ` WHERE ${extra ? `${extra} AND ` : ''}${devSql}`;
+    const alertsFrom = 'FROM alerts a LEFT JOIN devices d ON a.device_id = d.id';
+    const alertsWhere = ` WHERE ${visibleDeviceRowsSql('a.device_id', 'd.created_by', 1, req.user)}`;
 
     const [totalDevices, onlineDevices, offlineDevices, totalAlerts, unresolvedAlerts, deviceByOs, deviceByStatus, alertsBySeverity] = await Promise.all([
       query(`SELECT COUNT(*) as count FROM devices${devCond()}`, p),

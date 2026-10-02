@@ -1,29 +1,24 @@
 import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
-import { canViewAllDevices } from '../utils/tenant';
+import { visibleDeviceRowsSql, visibleDevicesSql } from '../utils/tenant';
 import { updateOfflineDevices } from './devices';
 
 const router = Router();
 
 router.get('/overview', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    updateOfflineDevices();
-    const viewAll = canViewAllDevices(req.user);
-    const userId = req.user?.id;
-    // Device-scoped filters (non-admin => own devices only) - leading space so callers can concatenate directly
-    const devWhere = (extra?: string) => {
-      if (viewAll) return extra ? ` WHERE ${extra}` : '';
-      return ` WHERE ${extra ? `${extra} AND ` : ''}created_by = $1`;
-    };
-    const devP = viewAll ? [] : [userId];
+    await updateOfflineDevices();
+    const userId = req.user!.id;
+    // Device-scoped filters: own devices + (admin) devices with no account.
+    // Leading space so callers can concatenate directly.
+    const devWhere = (extra?: string) =>
+      ` WHERE ${extra ? `${extra} AND ` : ''}${visibleDevicesSql('created_by', 1, req.user)}`;
+    const devP = [userId];
     // Alerts/events join devices; NULL device_id = system-level, visible to everyone
-    const joinWhere = (alias: string, extra?: string) => {
-      const own = `(${alias}.device_id IS NULL OR d.created_by = $1)`;
-      if (viewAll) return extra ? ` WHERE ${extra}` : '';
-      return ` WHERE ${extra ? `${extra} AND ` : ''}${own}`;
-    };
-    const jP = viewAll ? [] : [userId];
+    const joinWhere = (alias: string, extra?: string) =>
+      ` WHERE ${extra ? `${extra} AND ` : ''}${visibleDeviceRowsSql(`${alias}.device_id`, 'd.created_by', 1, req.user)}`;
+    const jP = [userId];
     const canSeeUsers = (req.user?.permissions || []).includes('users.view');
 
     const totalDevices = await query(`SELECT COUNT(*) as count FROM devices${devWhere()}`, devP);
@@ -61,19 +56,11 @@ router.get('/overview', authenticate, async (req: AuthRequest, res: Response, ne
 
     // Heartbeat trend - count heartbeats per hour for last 24h
     const heartbeatTrend = await query(
-      viewAll
-        ? `
-      SELECT TO_CHAR(date_trunc('hour', recorded_at), 'HH24:MI') as time, COUNT(*) as count
-      FROM device_heartbeats
-      WHERE recorded_at > NOW() - INTERVAL '24 hours'
-      GROUP BY date_trunc('hour', recorded_at)
-      ORDER BY date_trunc('hour', recorded_at) ASC
-    `
-        : `
+      `
       SELECT TO_CHAR(date_trunc('hour', dh.recorded_at), 'HH24:MI') as time, COUNT(*) as count
       FROM device_heartbeats dh
       JOIN devices d ON d.id = dh.device_id
-      WHERE dh.recorded_at > NOW() - INTERVAL '24 hours' AND d.created_by = $1
+      WHERE dh.recorded_at > NOW() - INTERVAL '24 hours' AND ${visibleDevicesSql('d.created_by', 1, req.user)}
       GROUP BY date_trunc('hour', dh.recorded_at)
       ORDER BY date_trunc('hour', dh.recorded_at) ASC
     `,

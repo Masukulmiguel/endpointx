@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { visibleDevicesSql } from '../utils/tenant';
 
 const router = Router();
 
@@ -26,9 +27,9 @@ router.get('/deployments', authenticate, requirePermission('software.view'), asy
       `SELECT sd.*, d.hostname AS device_name, d.agent_id, sp.name AS package_name, sp.version AS package_version
        FROM software_deployments sd
        JOIN devices d ON d.id = sd.device_id
-       JOIN software_packages sp ON sp.id = sd.package_id
-       WHERE d.created_by = $1
-       ORDER BY sd.created_at DESC`,
+        JOIN software_packages sp ON sp.id = sd.package_id
+        WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
+        ORDER BY sd.created_at DESC`,
       [req.user!.id]
     );
     res.json({ success: true, data: { deployments: result.rows } });
@@ -149,7 +150,7 @@ router.post('/deploy', authenticate, requirePermission('software.deploy'), async
 
     const deployments = [];
     for (const deviceId of targets) {
-      const devResult = await query('SELECT id, agent_id FROM devices WHERE id = $1 AND created_by = $2', [deviceId, req.user!.id]);
+      const devResult = await query(`SELECT id, agent_id FROM devices WHERE id = $1 AND ${visibleDevicesSql('created_by', 2, req.user)}`, [deviceId, req.user!.id]);
       if (devResult.rows.length === 0) continue;
 
       const deployIdResult = await query('SELECT uuid_generate_v4() AS id');
@@ -197,7 +198,7 @@ router.get('/deployments/all', authenticate, requirePermission('software.view'),
        FROM software_deployments sd
        JOIN devices d ON d.id = sd.device_id
        JOIN software_packages sp ON sp.id = sd.package_id
-       WHERE d.created_by = $1
+       WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
        ORDER BY sd.created_at DESC`,
       [req.user!.id]
     );

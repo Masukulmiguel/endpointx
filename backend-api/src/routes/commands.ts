@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { canViewAllDevices, ownsDevice } from '../utils/tenant';
+import { canAccessDevice, canSeeDevice, visibleDevicesSql } from '../utils/tenant';
 
 const router = Router();
 
@@ -25,12 +25,11 @@ const ALLOWED_COMMAND_TYPES = [
 // List commands
 router.get('/', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const viewAll = canViewAllDevices(req.user);
     const result = await query(
       `SELECT ac.*, d.hostname FROM agent_commands ac LEFT JOIN devices d ON ac.device_id = d.id
-       ${viewAll ? '' : 'WHERE d.created_by = $1'}
+       WHERE ${visibleDevicesSql('d.created_by', 1, req.user)}
        ORDER BY ac.created_at DESC LIMIT 100`,
-      viewAll ? [] : [req.user!.id]
+      [req.user!.id]
     );
     res.json({ success: true, data: { commands: result.rows } });
   } catch (error) { next(error); }
@@ -50,7 +49,7 @@ router.post('/', authenticate, requirePermission('devices.commands'), async (req
       return;
     }
 
-    if (!canViewAllDevices(req.user) && !(await ownsDevice(req.user?.id, device_id))) {
+    if (!(await canAccessDevice(req.user, device_id))) {
       res.status(404).json({ success: false, error: { message: 'Device not found' } });
       return;
     }
@@ -99,7 +98,7 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
     );
     if (result.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Command not found' } }); return; }
     const cmd = result.rows[0];
-    if (!canViewAllDevices(req.user) && cmd.device_created_by !== req.user?.id) {
+    if (!canSeeDevice(req.user, cmd.device_created_by)) {
       res.status(404).json({ success: false, error: { message: 'Command not found' } });
       return;
     }
@@ -116,7 +115,7 @@ router.post('/:id/cancel', authenticate, requirePermission('devices.commands'), 
       [req.params.id]
     );
     if (existing.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Command not found' } }); return; }
-    if (!canViewAllDevices(req.user) && existing.rows[0].device_created_by !== req.user?.id) {
+    if (!canSeeDevice(req.user, existing.rows[0].device_created_by)) {
       res.status(404).json({ success: false, error: { message: 'Command not found' } });
       return;
     }

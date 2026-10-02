@@ -245,6 +245,18 @@ export default function DeviceDetailPage() {
     );
   }
 
+  const fmtGB = (bytes?: number | null) => (bytes ? `${(bytes / 1073741824).toFixed(1)} GB` : null);
+  const ramCapacity = device.ram_total
+    ? device.ram_used
+      ? `${fmtGB(device.ram_used)} / ${fmtGB(device.ram_total)}`
+      : fmtGB(device.ram_total)
+    : null;
+  const diskCapacity = device.disk_total
+    ? device.disk_used
+      ? `${fmtGB(device.disk_used)} / ${fmtGB(device.disk_total)}`
+      : fmtGB(device.disk_total)
+    : null;
+
   const handleSendCommand = async (cmdType?: string) => {
     const type = cmdType || selectedCommand;
     if (!type || !id) return;
@@ -542,9 +554,17 @@ export default function DeviceDetailPage() {
                   ...((device.manufacturer || device.model)
                     ? [['Model', [device.manufacturer, device.model].filter(Boolean).join(' ')]]
                     : []),
-                  ['CPU', device.cpu_model || 'N/A', device.cpu_cores ? `${device.cpu_cores} cores` : undefined],
-                  ['RAM', device.ram_total ? `${(device.ram_total / 1073741824).toFixed(1)} GB` : 'N/A'],
-                  ['Disk', device.disk_total ? `${(device.disk_total / 1073741824).toFixed(1)} GB` : 'N/A'],
+                  [
+                    'CPU',
+                    device.cpu_model || 'N/A',
+                    device.cpu_cores
+                      ? `${device.cpu_cores} cores`
+                      : device.cpu_usage != null
+                        ? `${Number(device.cpu_usage).toFixed(1)}% em uso`
+                        : undefined,
+                  ],
+                  ['RAM', ramCapacity || 'N/A', device.ram_usage != null ? `${device.ram_usage}% em uso` : undefined],
+                  ['Disk', diskCapacity || 'N/A', device.disk_usage != null ? `${device.disk_usage}% em uso` : undefined],
                   ['IP Address', device.ip_address || 'N/A'],
                   ['MAC Address', device.mac_address || 'N/A'],
                   ...(device.owner_email

@@ -4,6 +4,7 @@ import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import logger from '../utils/logger';
+import { visibleDevicesSql } from '../utils/tenant';
 import {
   isOpencodeConfigured,
   aiHealth,
@@ -259,7 +260,7 @@ function parsePortList(spec: string): number[] {
   return Array.from(out);
 }
 
-async function runScan(scanId: string, scanType: string, startedBy: string | null) {
+async function runScan(scanId: string, scanType: string, startedBy: string | null, scopeUser?: { id?: string; permissions?: string[] } | null) {
   const emergency = await isEmergencyStopped();
   if (emergency) {
     await query(`UPDATE hermes_scans SET status = 'stopped', completed_at = NOW(), error_message = $1 WHERE id = $2`, ['Emergency stop active', scanId]);
@@ -279,8 +280,9 @@ async function runScan(scanId: string, scanType: string, startedBy: string | nul
 
     const devices = await query(
       `SELECT id, hostname, ip_address, os_type, os_version, status, last_heartbeat
-       FROM devices WHERE is_authorized = true AND ip_address IS NOT NULL AND created_by = $1`,
-      [startedBy]
+       FROM devices WHERE is_authorized = true AND ip_address IS NOT NULL
+         AND ${visibleDevicesSql('created_by', 1, scopeUser ?? { id: startedBy ?? undefined })}`,
+      [scopeUser?.id ?? startedBy]
     );
 
     let assetsScanned = 0;
@@ -717,7 +719,7 @@ router.post('/scans', authenticate, requirePermission('hermes.manage'), async (r
 
     // Run async (non-blocking)
     setImmediate(() => {
-      runScan(id, scanType, req.user?.id || null).catch((e) => logger.error('HERMES scan runner error', { error: e.message }));
+      runScan(id, scanType, req.user?.id || null, req.user || null).catch((e) => logger.error('HERMES scan runner error', { error: e.message }));
     });
 
     res.status(201).json({ success: true, data: { id, scan_type: scanType, status: 'pending' } });

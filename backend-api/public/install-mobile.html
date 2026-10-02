@@ -195,6 +195,13 @@
         return info;
       }
 
+      function getHardwareInfo() {
+        var info = {};
+        if (navigator.deviceMemory) info.ram_total = Math.round(navigator.deviceMemory * 1073741824);
+        if (navigator.hardwareConcurrency) info.cpu_cores = navigator.hardwareConcurrency;
+        return info;
+      }
+
       function sendHeartbeat() {
         var id = localStorage.getItem(AGENT_KEY);
         if (!id || hbInFlight) return;
@@ -202,6 +209,9 @@
         var loc = shareCb.checked ? getPosition() : Promise.resolve(null);
         Promise.all([getBatteryLevel(), loc]).then(function (parts) {
           var payload = { agent_id: id, battery_level: parts[0], network: getNetworkInfo() };
+          var hw = getHardwareInfo();
+          if (hw.ram_total) payload.ram_total = hw.ram_total;
+          if (hw.cpu_cores) payload.cpu_cores = hw.cpu_cores;
           if (parts[1]) {
             payload.latitude = parts[1].latitude;
             payload.longitude = parts[1].longitude;
@@ -248,7 +258,7 @@
           fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_id: id, network: getNetworkInfo() }),
+            body: JSON.stringify(Object.assign({ agent_id: id, network: getNetworkInfo() }, getHardwareInfo())),
             keepalive: true
           }).catch(function () {});
         } catch (e) { /* ignore */ }

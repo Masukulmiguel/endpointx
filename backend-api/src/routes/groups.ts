@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { canViewUnownedDevices } from '../utils/tenant';
+import { canViewUnownedDevices, visibleDevicesSql } from '../utils/tenant';
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.get('/', authenticate, requirePermission('groups.view'), async (req: Auth
       `SELECT g.*,
         (SELECT COUNT(*) FROM device_group_members dgm
            JOIN devices d ON d.id = dgm.device_id
-          WHERE dgm.group_id = g.id AND d.created_by = $1) AS device_count
+          WHERE dgm.group_id = g.id AND ${visibleDevicesSql('d.created_by', 1, req.user)}) AS device_count
        FROM device_groups g
        WHERE g.created_by = $1 OR (g.created_by IS NULL AND $2::boolean)
        ORDER BY g.created_at DESC`,
@@ -69,7 +69,7 @@ router.get('/:id', authenticate, requirePermission('groups.view'), async (req: A
     const membersResult = await query(
       `SELECT d.* FROM devices d
        JOIN device_group_members dgm ON dgm.device_id = d.id
-       WHERE dgm.group_id = $1 AND d.created_by = $2
+       WHERE dgm.group_id = $1 AND ${visibleDevicesSql('d.created_by', 2, req.user)}
        ORDER BY d.hostname ASC`,
       [id, req.user!.id]
     );
@@ -123,7 +123,7 @@ router.post('/:id/assign', authenticate, requirePermission('groups.manage'), asy
     }
     if (!(await denyUnlessOwnGroup(req, res, id))) return;
 
-    const own = await query('SELECT id FROM devices WHERE id = ANY($1::uuid[]) AND created_by = $2', [candidateIds, req.user!.id]);
+    const own = await query(`SELECT id FROM devices WHERE id = ANY($1::uuid[]) AND ${visibleDevicesSql('created_by', 2, req.user)}`, [candidateIds, req.user!.id]);
     const allowed = new Set(own.rows.map((r: any) => r.id));
 
     let inserted = 0;
