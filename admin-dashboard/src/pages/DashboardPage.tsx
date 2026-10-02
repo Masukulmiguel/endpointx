@@ -95,6 +95,10 @@ export default function DashboardPage() {
   }, [startAutoRefresh]);
 
   const overview = data;
+  const statusTotal = (overview?.device_status_distribution || []).reduce(
+    (sum, s) => sum + (Number(s.count) || 0),
+    0
+  );
 
   const statCards = overview
     ? [
@@ -150,33 +154,52 @@ export default function DashboardPage() {
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
                 {t('dashboard.deviceStatus')}
               </h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={overview?.device_status_distribution || []}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={4}
-                    dataKey="count"
-                    nameKey="status"
+              <div className="relative">
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={overview?.device_status_distribution || []}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={4}
+                      dataKey="count"
+                      nameKey="status"
+                    >
+                      {(overview?.device_status_distribution || []).map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#1f2937',
+                        border: '1px solid #374151',
+                        borderRadius: '8px',
+                        color: '#f3f4f6',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <Monitor className="w-9 h-9 text-gray-400 dark:text-gray-500" strokeWidth={1.5} />
+                  <span className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{statusTotal}</span>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2">
+                {(overview?.device_status_distribution || []).map((s, index) => (
+                  <span
+                    key={s.status}
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300"
                   >
-                    {(overview?.device_status_distribution || []).map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2937',
-                      border: '1px solid #374151',
-                      borderRadius: '8px',
-                      color: '#f3f4f6',
-                    }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                    />
+                    {s.status.replace(/_/g, ' ')} · {Number(s.count) || 0}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
