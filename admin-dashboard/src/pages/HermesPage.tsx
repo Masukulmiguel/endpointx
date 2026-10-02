@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Radar,
   Play,
@@ -11,12 +11,48 @@ import {
   AlertTriangle,
   Activity,
   FileText,
+  Send,
   Sparkles,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import api from '../services/api';
 import ErrorState from '../components/ErrorState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useI18n } from '../i18n';
+
+type ChatMsg = { role: 'user' | 'assistant'; content: string };
+
+const CHAT_KEY = 'endpointx_hermes_chat';
+
+const HERMES_GREETING = `Olá, sou o HERMES — técnico de segurança da EndpointX.
+
+Falo como técnico de campo: digo-lhe o que está exposto, por onde um atacante entrava e o que corrigir primeiro.
+
+Duas formas de trabalhar:
+• defensiva — o que parchear ou isolar agora;
+• red team — como um intruso exploraria os vossos pontos fracos (sempre e só sobre os vostos sistemas).
+
+Por onde quer começar?`;
+
+const CHAT_QUICK_PROMPTS = [
+  'Por onde entrava um atacante neste ambiente?',
+  'O que parchear primeiro?',
+  'Quais dispositivos estão expostos à internet?',
+  'Resumo para a direção',
+];
+
+function loadChat(): ChatMsg[] {
+  try {
+    const raw = localStorage.getItem(CHAT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // corrupted history - start fresh
+  }
+  return [{ role: 'assistant', content: HERMES_GREETING }];
+}
 
 type HermesStatus = {
   assets: number;
@@ -216,6 +252,49 @@ export default function HermesPage() {
   const { loading: rejecting, mutate: rejectRec } = useApiMutation('', 'POST');
   const { loading: analyzing, mutate: analyzeAi } = useApiMutation('/hermes/ai/analyze', 'POST');
   const { loading: recommending, mutate: recommendAi } = useApiMutation('/hermes/ai/recommend', 'POST');
+
+  const [chat, setChat] = useState<ChatMsg[]>(loadChat);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatMeta, setChatMeta] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify(chat.slice(-40)));
+    } catch {
+      // storage full/unavailable - history stays in memory
+    }
+  }, [chat]);
+
+  const sendChat = async (value?: string) => {
+    const text = (value ?? chatInput).trim();
+    if (!text || chatSending) return;
+    const next: ChatMsg[] = [...chat, { role: 'user', content: text }];
+    setChat(next);
+    setChatInput('');
+    setChatSending(true);
+    setChatError(null);
+    try {
+      const response = await api.request<any>('/hermes/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages: next.slice(-12), locale }),
+      });
+      const data = response?.data ?? response;
+      const reply = typeof data?.reply === 'string' ? data.reply : '';
+      if (!reply) throw new Error('Sem resposta do HERMES');
+      setChat((prev) => [...prev, { role: 'assistant', content: reply }]);
+      setChatMeta(
+        data?.mode === 'local'
+          ? 'modo local — sem IA configurada no servidor'
+          : `${data?.provider || 'ai'}${data?.model ? ` · ${data.model}` : ''}`
+      );
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : 'Falha ao contactar o HERMES');
+    } finally {
+      setChatSending(false);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -745,6 +824,110 @@ export default function HermesPage() {
 
       {tab === 'ai' && (
         <div className="space-y-4">
+          <div className="card">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/hermes-agent.png"
+                  alt="Agente HERMES"
+                  className="w-11 h-11 rounded-full object-cover border border-blue-500/40 bg-white shrink-0"
+                />
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+                    Agente HERMES · Inteligência de Segurança
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {chatMeta || 'técnico de segurança — modo defensivo ou red team sobre o vosso ambiente'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setChat([{ role: 'assistant', content: HERMES_GREETING }]);
+                  setChatError(null);
+                }}
+                className="btn-secondary text-xs"
+              >
+                Nova conversa
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-3 max-h-96 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+              {chat.map((m, i) => (
+                <div
+                  key={`${i}-${m.role}`}
+                  className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {m.role === 'assistant' && (
+                    <img
+                      src="/hermes-agent.png"
+                      alt=""
+                      className="w-7 h-7 rounded-full object-cover border border-gray-200 dark:border-gray-700 shrink-0 self-start"
+                    />
+                  )}
+                  <div
+                    className={`max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap break-words ${
+                      m.role === 'user'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200'
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {chatSending && (
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <img
+                    src="/hermes-agent.png"
+                    alt=""
+                    className="w-7 h-7 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+                  />
+                  HERMES a analisar o ambiente…
+                </div>
+              )}
+            </div>
+
+            {chatError && (
+              <div className="mt-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+                {chatError}
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {CHAT_QUICK_PROMPTS.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => void sendChat(q)}
+                  disabled={chatSending}
+                  className="px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void sendChat();
+              }}
+              className="mt-3 flex gap-2"
+            >
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Pergunte ao HERMES: por onde entrava um atacante aqui?"
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button type="submit" disabled={chatSending || !chatInput.trim()} className="btn-primary disabled:opacity-50">
+                <Send className="w-4 h-4" /> Enviar
+              </button>
+            </form>
+          </div>
+
           <div className="card">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>

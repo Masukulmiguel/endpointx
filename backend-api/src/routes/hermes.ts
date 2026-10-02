@@ -8,6 +8,7 @@ import { visibleDevicesSql } from '../utils/tenant';
 import {
   isOpencodeConfigured,
   aiHealth,
+  aiComplete,
   analyzeSecurityContext,
   recommendForFinding,
   localAnalyzeSecurityContext,
@@ -1184,6 +1185,145 @@ router.post('/ai/recommend', authenticate, requirePermission('hermes.view'), asy
     });
   } catch (error) {
     logger.error('HERMES AI recommend failed', { error: (error as Error).message });
+    next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// HERMES assistant chat: talks to the operator like a field technician.
+// The reasoning is deliberately adversarial (red team) but scoped to the
+// customer's own environment - how an intruder would get in and what closes
+// that path. Attacks against systems that do not belong to the customer are
+// refused by the system prompt itself.
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+async function safeRows(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
+  try {
+    return (await query(sql, params)).rows;
+  } catch (error) {
+    logger.warn('HERMES chat context query failed', { error: (error as Error).message });
+    return [];
+  }
+}
+
+async function buildChatContext(): Promise<Record<string, unknown>> {
+  const [assets, devices, findings, alerts, recs] = await Promise.all([
+    safeRows(`SELECT COUNT(*)::int AS total,
+                     COUNT(*) FILTER (WHERE is_authorized)::int AS authorized,
+                     COUNT(*) FILTER (WHERE NOT is_authorized)::int AS unknown,
+                     COUNT(*) FILTER (WHERE internet_exposed)::int AS exposed,
+                     COALESCE(ROUND(AVG(posture_score) FILTER (WHERE is_authorized)), 0)::int AS score
+                FROM hermes_assets`),
+    safeRows(`SELECT COUNT(*)::int AS total,
+                     COUNT(*) FILTER (WHERE status = 'online')::int AS online
+                FROM devices`),
+    safeRows(`SELECT f.title, f.severity, f.cve_id, a.hostname
+                FROM hermes_findings f
+                LEFT JOIN hermes_assets a ON f.asset_id = a.id
+               WHERE f.status = 'open'
+               ORDER BY CASE f.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END
+               LIMIT 15`),
+    safeRows('SELECT COUNT(*)::int AS open FROM hermes_alerts WHERE is_open = true'),
+    safeRows("SELECT COUNT(*)::int AS pending FROM hermes_recommendations WHERE status = 'pending'"),
+  ]);
+
+  const a = assets[0] || {};
+  const d = devices[0] || {};
+  return {
+    totalAssets: Number(a.total || 0),
+    authorizedAssets: Number(a.authorized || 0),
+    unknownAssets: Number(a.unknown || 0),
+    internetExposed: Number(a.exposed || 0),
+    postureScore: Number(a.score || 0),
+    devices: Number(d.total || 0),
+    onlineDevices: Number(d.online || 0),
+    openAlerts: Number((alerts[0] || {}).open || 0),
+    pendingRecommendations: Number((recs[0] || {}).pending || 0),
+    openFindings: findings,
+  };
+}
+
+function chatSystem(locale: string, context: Record<string, unknown>): string {
+  const lang = locale.startsWith('pt') ? 'português de Portugal' : 'English';
+  return `You are HERMES, the senior security technician inside the EndpointX console.
+Answer in ${lang}, the way a field technician talks: short lines, concrete steps, no marketing.
+
+You work in two modes and you may combine them in one answer:
+1. Defensive - what is broken, how serious it is, and the exact fix (patch, isolate, configuration).
+2. Red team - think like an intruder ABOUT THIS CUSTOMER ENVIRONMENT ONLY: which entry point is
+   weakest, how an attacker would move from there, and which control closes that path. The red-team
+   view exists to defend the customer, never to attack anyone else.
+
+Hard rules:
+- Use ONLY the CONTEXT below. Never invent devices, CVEs, ports or numbers. If something is not in
+  the context, say you do not have that data.
+- Never give instructions, payloads, tooling or targets for attacking systems that do not belong to
+  this customer. Refuse clearly in one sentence and return to the defensive action.
+- Order the answer by priority, critical first, and quote hostname/CVE from the context when present.
+- Keep it under ~200 words. Finish with ONE concrete next action.
+
+CONTEXT:
+${JSON.stringify(context, null, 2)}`;
+}
+
+function localChatReply(question: string, context: Record<string, unknown>): string {
+  const findings = (context.openFindings as Array<Record<string, unknown>>) || [];
+  const lines = [
+    'HERMES em modo local (sem IA configurada no servidor).',
+    `Ativos: ${context.totalAssets} · sob gestão: ${context.authorizedAssets} · desconhecidos: ${context.unknownAssets} · expostos à internet: ${context.internetExposed} · postura média: ${context.postureScore}/100.`,
+    `Dispositivos: ${context.devices} (${context.onlineDevices} online) · alertas abertos: ${context.openAlerts} · recomendações por rever: ${context.pendingRecommendations}.`,
+  ];
+  if (findings.length > 0) {
+    lines.push('Findings em aberto:');
+    findings.slice(0, 5).forEach((f, i) => {
+      const host = f.hostname ? ` (${f.hostname})` : '';
+      lines.push(`${i + 1}. [${f.severity}] ${String(f.title || '')}${host}`);
+    });
+  } else {
+    lines.push('Sem findings em aberto.');
+  }
+  lines.push(`Pergunta recebida: ${question.slice(0, 300)}`);
+  lines.push('Para respostas em linguagem natural, configure OPENROUTER_API_KEY ou OPENCODE_ZEN_API_KEY em Render.');
+  return lines.join('\n');
+}
+
+router.post('/ai/chat', authenticate, requirePermission('hermes.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const locale = (req.body?.locale as string) || 'pt';
+    const raw = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const messages: ChatMessage[] = raw
+      .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .map((m: any) => ({ role: m.role as 'user' | 'assistant', content: String(m.content).slice(0, 4000) }))
+      .slice(-12);
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'user') {
+      res.status(400).json({ success: false, error: { message: 'É obrigatório terminar com uma pergunta do técnico' } });
+      return;
+    }
+
+    const context = await buildChatContext();
+    const system = chatSystem(locale, context);
+
+    if (isOpencodeConfigured()) {
+      try {
+        const transcript = messages.map((m) => `${m.role === 'user' ? 'TECNICO' : 'HERMES'}: ${m.content}`).join('\n');
+        const result = await aiComplete(`${transcript}\nHERMES:`, system);
+        res.json({
+          success: true,
+          data: { reply: result.text.trim(), provider: result.provider, model: result.model, mode: 'ai' },
+        });
+        return;
+      } catch (aiError) {
+        logger.warn('HERMES chat fell back to local reply', { error: (aiError as Error).message });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { reply: localChatReply(last.content, context), provider: null, model: null, mode: 'local' },
+    });
+  } catch (error) {
+    logger.error('HERMES chat failed', { error: (error as Error).message });
     next(error);
   }
 });
