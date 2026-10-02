@@ -172,15 +172,60 @@ export default function InstallPage() {
             Descarregar APK Android
           </a>
           <p className="text-gray-500 text-xs mt-2">
-            Android 8.0+ · assinado · ~1 MB · permissões de acessibilidade (controlo) e partilha de ecrã
+            Android 8.0+ · v1.2.0 · assinado · ~1 MB · permissões de acessibilidade (controlo) e partilha de ecrã
             (visualização). A app continua ativa em segundo plano com serviço persistente.
           </p>
           <p className="text-yellow-500/90 text-xs mt-2">
             Android 13+: o controlo remoto é bloqueado em apps instaladas por APK («Para sua segurança,
-            esta definição está indisponível»). Depois de instalar, abra Definições → Apps → EndpointX →
-            menu <strong>⋮</strong> → <strong>Permitir definições restritas</strong> e só depois ative o
-            serviço em Definições → Acessibilidade. Repita após cada atualização do APK.
+            esta definição está indisponível»). Sem PC: abra Definições → Apps → EndpointX → menu
+            <strong> ⋮ </strong> → <strong>Permitir definições restritas</strong> e só depois ative o serviço em
+            Definições → Acessibilidade. Repita após cada atualização do APK.
           </p>
+
+          <div className="mt-4 pt-4 border-t border-gray-700">
+            <p className="text-gray-400 text-sm mb-2">
+              <span className="text-white font-medium">Instalação assistida (recomendado):</span> com o telemóvel
+              ligado por USB e depuração USB ativa, um único comando instala a app e ativa o controlo sem tocar
+              nas definições do Android.
+            </p>
+            <div className="bg-gray-900 rounded p-3 flex items-center justify-between mb-3">
+              <code className="text-green-400 text-xs font-mono break-all">
+                adb shell pm grant pt.endpointx.agent android.permission.WRITE_SECURE_SETTINGS{'\n'}
+                adb shell settings put secure enabled_accessibility_services pt.endpointx.agent/.ControlService{'\n'}
+                adb shell settings put secure accessibility_enabled 1
+              </code>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    'adb shell pm grant pt.endpointx.agent android.permission.WRITE_SECURE_SETTINGS\n' +
+                      'adb shell settings put secure enabled_accessibility_services pt.endpointx.agent/.ControlService\n' +
+                      'adb shell settings put secure accessibility_enabled 1',
+                    'adb-control'
+                  )
+                }
+                className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+                title="Copiar comandos"
+              >
+                {copied === 'adb-control' ? (
+                  <Check className="w-4 h-4 text-green-400" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            <a
+              href={`${API_URL}/api/devices/public/enable-control.bat`}
+              download="enable-control.bat"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              Descarregar script enable-control.bat
+            </a>
+            <p className="text-gray-500 text-xs mt-2">
+              O script descarrega o APK (se não estiver ao lado), instala, concede a permissão e liga o serviço de
+              acessibilidade. Depois disto o controlo fica pronto a usar, inclusive após atualizações do APK.
+            </p>
+          </div>
         </div>
       </div>
 

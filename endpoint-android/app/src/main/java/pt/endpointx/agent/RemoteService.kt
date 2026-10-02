@@ -46,6 +46,7 @@ class RemoteService : Service(), Remote.Callback {
 
     private var scheduler: ScheduledExecutorService? = null
     private var heartbeatScheduled = false
+    private var watchdogScheduled = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -67,6 +68,18 @@ class RemoteService : Service(), Remote.Callback {
                     Log.d(TAG, "heartbeat failed: ${e.message}")
                 }
             }, 0, 60, TimeUnit.SECONDS)
+        }
+        if (!watchdogScheduled) {
+            watchdogScheduled = true
+            // Safety net: if the socket silently died (doze, network switch,
+            // server restart) this brings it back without waiting for a reboot.
+            scheduler?.scheduleAtFixedRate({
+                try {
+                    if (!Remote.connected) Remote.connect(this)
+                } catch (e: Exception) {
+                    Log.d(TAG, "reconnect watchdog failed: ${e.message}")
+                }
+            }, 15, 15, TimeUnit.SECONDS)
         }
         return START_STICKY
     }
@@ -94,7 +107,7 @@ class RemoteService : Service(), Remote.Callback {
     override fun onConnectionChange(connected: Boolean) {
         showNotification(
             if (connected) "Pronto - a consola pode pedir assistência"
-            else "Sem ligação ao servidor - a tentar novamente"
+            else "Sem ligação - a reconectar automaticamente"
         )
     }
 

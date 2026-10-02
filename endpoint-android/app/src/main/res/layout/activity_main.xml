@@ -117,6 +117,13 @@
             android:text="@string/btn_control"
             android:layout_marginTop="4dp" />
 
+        <Button
+            android:id="@+id/btnBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_battery"
+            android:layout_marginTop="4dp" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

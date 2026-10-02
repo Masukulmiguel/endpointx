@@ -2,8 +2,11 @@ package pt.endpointx.agent
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.graphics.Path
 import android.os.Bundle
+import android.provider.Settings
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
@@ -19,6 +22,7 @@ class ControlService : AccessibilityService() {
 
     companion object {
         private const val TAG = "EndpointXControl"
+        private const val WRITE_SECURE = "android.permission.WRITE_SECURE_SETTINGS"
 
         @Volatile
         var instance: ControlService? = null
@@ -26,6 +30,57 @@ class ControlService : AccessibilityService() {
 
         val isReady: Boolean
             get() = instance != null
+
+        /** True when the app holds WRITE_SECURE_SETTINGS (granted once over adb). */
+        fun canSelfEnable(context: android.content.Context): Boolean =
+            context.checkCallingOrSelfPermission(WRITE_SECURE) == PackageManager.PERMISSION_GRANTED
+
+        /** True when the system already has this accessibility service switched on. */
+        fun isEnabled(context: android.content.Context): Boolean {
+            val component = component(context)
+            val current = Settings.Secure.getString(
+                context.applicationContext.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ).orEmpty()
+            return current.split(':').any { it.equals(component, ignoreCase = true) }
+        }
+
+        /**
+         * Turns the service on without going through the Settings screen, so the
+         * Android 13+ "restricted setting" block (which stops sideloaded apps from
+         * being toggled by hand) never comes into play. Returns false when the
+         * permission was not granted over adb.
+         */
+        fun enableSelf(context: android.content.Context): Boolean {
+            if (!canSelfEnable(context)) return false
+            return try {
+                val cr = context.applicationContext.contentResolver
+                val current = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+                val parts = current.split(':').filter { it.isNotBlank() }.toMutableList()
+                val target = component(context)
+                if (parts.none { it.equals(target, ignoreCase = true) }) {
+                    parts.add(target)
+                    if (!Settings.Secure.putString(
+                            cr,
+                            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                            parts.joinToString(":")
+                        )
+                    ) {
+                        Log.w(TAG, "could not write enabled_accessibility_services")
+                        return false
+                    }
+                }
+                Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+                Log.i(TAG, "accessibility service enabled programmatically")
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "could not enable service: ${e.message}")
+                false
+            }
+        }
+
+        private fun component(context: android.content.Context): String =
+            ComponentName(context, ControlService::class.java).flattenToString()
     }
 
     override fun onServiceConnected() {

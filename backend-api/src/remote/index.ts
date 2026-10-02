@@ -218,9 +218,13 @@ function dropFromRoom(ws: AuthedSocket): void {
   cleanupRoom(deviceId);
 }
 
-function dropAgent(deviceId: string): void {
+function dropAgent(deviceId: string, socket: WebSocket): void {
   const room = rooms.get(deviceId);
   if (!room) return;
+  // The agent may have already reconnected and replaced this socket: only the
+  // connection that is still registered in the room may clear the slot,
+  // otherwise a stale close event would orphan the live connection.
+  if (room.agent !== socket) return;
   delete room.agent;
   broadcastToOperators(deviceId, { t: 'agent', connected: false });
   logger.info('Remote: agent disconnected', { deviceId });
@@ -317,7 +321,7 @@ export function initRemoteAccess(server: Server): void {
         if (authed.role === 'operator') {
           dropFromRoom(authed);
         } else if (authed.role === 'agent' && authed.deviceId) {
-          dropAgent(authed.deviceId);
+          dropAgent(authed.deviceId, ws);
           cleanupRoom(authed.deviceId);
         }
       }

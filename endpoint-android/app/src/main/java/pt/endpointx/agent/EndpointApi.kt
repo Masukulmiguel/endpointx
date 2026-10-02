@@ -1,8 +1,10 @@
 package pt.endpointx.agent
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.BatteryManager
 import android.os.Build
+import android.os.StatFs
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -34,7 +36,7 @@ object EndpointApi {
             put("os_type", "android")
             put("device_type", "MOBILE")
             put("model", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
-            put("user_agent", "EndpointXAgentAndroid/1.0 (${Build.MODEL})")
+            put("user_agent", "EndpointXAgentAndroid/1.2.0 (${Build.MODEL})")
             put("source", "android_app")
             if (enrollToken.isNotEmpty()) put("enroll_token", enrollToken)
             val existing = Prefs.agentId(ctx)
@@ -76,6 +78,9 @@ object EndpointApi {
             put("agent_id", agentId)
             put("battery_level", if (level in 0..100) level else -1)
             put("network", "wifi")
+            systemInfo(ctx)?.let { info ->
+                for (key in info.keys()) put(key, info.get(key))
+            }
         }
 
         val request = Request.Builder()
@@ -89,6 +94,86 @@ object EndpointApi {
             }
         } catch (e: Exception) {
             false
+        }
+    }
+
+    /**
+     * Real hardware numbers for the dashboard: memory is read from
+     * ActivityManager (total/available), storage from StatFs and the CPU
+     * percentage is sampled from /proc/stat (null when the OS masks it).
+     */
+    private fun systemInfo(ctx: Context): JSONObject? {
+        return try {
+            val out = JSONObject()
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val mem = ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mem)
+            val total = mem.totalMem
+            val used = (total - mem.availMem).coerceAtLeast(0L)
+            if (total > 0) {
+                out.put("ram_total", total)
+                out.put("ram_used", used)
+                out.put("ram_usage", round1(used.toDouble() * 100.0 / total))
+            }
+            val cores = Runtime.getRuntime().availableProcessors()
+            if (cores > 0) out.put("cpu_cores", cores)
+            cpuUsagePercent()?.let { out.put("cpu_usage", it) }
+            putStorage(out)
+            out
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun putStorage(out: JSONObject) {
+        try {
+            val stat = StatFs(android.os.Environment.getDataDirectory().path)
+            val total = stat.totalBytes
+            val free = stat.freeBytes
+            if (total > 0) {
+                val used = (total - free).coerceAtLeast(0L)
+                out.put("disk_total", total)
+                out.put("disk_used", used)
+                out.put("disk_usage", round1(used.toDouble() * 100.0 / total))
+            }
+        } catch (e: Exception) {
+            // ignore - storage is optional
+        }
+    }
+
+    private fun round1(value: Double): Double = Math.round(value * 10.0) / 10.0
+
+    /** Best-effort system CPU %: two /proc/stat samples 400ms apart. */
+    private fun cpuUsagePercent(): Double? {
+        val first = cpuSample() ?: return null
+        try {
+            Thread.sleep(400)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
+        }
+        val second = cpuSample() ?: return null
+        val busy = second[0] - first[0]
+        val total = second[1] - first[1]
+        if (total <= 0) return null
+        return round1((busy / total) * 100.0).coerceIn(0.0, 100.0)
+    }
+
+    /** Returns [busy, total] jiffies, or null when /proc/stat is unreadable/zeroed. */
+    private fun cpuSample(): DoubleArray? {
+        return try {
+            val line = java.io.File("/proc/stat").readText().lineSequence().firstOrNull { it.startsWith("cpu ") }
+                ?: return null
+            val p = line.trim().split(Regex("\\s+"))
+            if (p.size < 5) return null
+            val user = p[1].toLongOrNull() ?: return null
+            val nice = p[2].toLongOrNull() ?: return null
+            val system = p[3].toLongOrNull() ?: return null
+            val idle = p[4].toLongOrNull() ?: return null
+            val iowait = p.getOrNull(5)?.toLongOrNull() ?: 0L
+            doubleArrayOf((user + nice + system).toDouble(), (user + nice + system + idle + iowait).toDouble())
+        } catch (e: Exception) {
+            null
         }
     }
 }

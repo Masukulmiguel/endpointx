@@ -11,6 +11,7 @@
     <string name="btn_stop_share">Parar partilha</string>
     <string name="btn_control">2) Ativar em Acessibilidade</string>
     <string name="btn_allow_restricted">1) Permitir definições restritas</string>
-    <string name="hint_control">Android 13+ bloqueia o controlo em apps instaladas por ficheiro APK (\"Para sua segurança, esta definição está indisponível\"). Faça 1) Permitir definições restritas \u2014 menu ⋮ no topo da informação da app \u2014 e depois 2) ativar o EndpointX em Acessibilidade \u2013 Apps descarregadas. Repita após cada atualização do APK.</string>
+    <string name="btn_battery">3) Manter sempre ligado (bateria)</string>
+    <string name="hint_control">Android 13+ bloqueia o controlo em apps instaladas por ficheiro APK. Sem PC: 1) Permitir definições restritas (menu ⋮ na informação da app) e depois 2) ativar em Acessibilidade. Com PC: corra o script enable-control.bat uma vez e o controlo fica pronto sem menus, também depois de atualizações. 3) desliga a otimização de bateria para a ligação não cair com o ecrã desligado.</string>
     <string name="status_idle">Pronto.</string>
 </resources>
