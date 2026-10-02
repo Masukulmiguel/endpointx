@@ -13,7 +13,7 @@ router.get('/stats', authenticate, requirePermission('devices.view'), async (req
       `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-        SUM(CASE WHEN agent_version IS NOT NULL AND agent_version < '1.5.0' THEN 1 ELSE 0 END) as outdated
+        SUM(CASE WHEN agent_version IS NOT NULL AND agent_version < '1.6.0' THEN 1 ELSE 0 END) as outdated
       FROM devices
       WHERE ${visibleDevicesSql('created_by', 1, req.user)}`,
       [req.user!.id]

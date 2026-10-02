@@ -59,6 +59,7 @@ export default function RemoteViewer({ deviceId }: Props) {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [monitor, setMonitor] = useState<number | null>(null);
   const [minimized, setMinimized] = useState(false);
+  const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const monitorRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -146,6 +147,12 @@ export default function RemoteViewer({ deviceId }: Props) {
         setMonitor((current) => {
           if (current !== null && list.some((m) => m.index === current)) return current;
           return typeof msg.primary === 'number' ? msg.primary : list[0]?.index ?? null;
+        });
+      } else if (msg.t === 'cursor') {
+        setCursor({
+          x: Number(msg.x) || 0,
+          y: Number(msg.y) || 0,
+          visible: msg.visible !== false,
         });
       } else if (msg.t === 'agent') {
         if (msg.connected) {
@@ -495,11 +502,29 @@ export default function RemoteViewer({ deviceId }: Props) {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         className={`relative rounded-xl overflow-hidden bg-black outline-none ${
-          control ? 'cursor-crosshair' : 'cursor-default'
+          control ? (cursor && !cursor.visible ? 'cursor-crosshair' : 'cursor-none') : 'cursor-default'
         }`}
         style={{ touchAction: control ? 'none' : 'auto' }}
       >
         <canvas ref={canvasRef} className="block w-full h-auto" />
+
+        {cursor && cursor.visible && phase === 'streaming' && (
+          <div
+            className="absolute z-10 pointer-events-none"
+            style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%`, transform: 'translate(-1px, -1px)' }}
+            aria-hidden="true"
+          >
+            <svg width="20" height="28" viewBox="0 0 12 18" className="drop-shadow-md">
+              <path
+                d="M1 1 L1 15.2 L4.55 11.95 L6.85 17.35 L9.15 16.35 L6.9 11.1 L11.2 11.1 Z"
+                fill="#ffffff"
+                stroke="#111827"
+                strokeWidth="1.1"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        )}
 
         {phase !== 'streaming' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">

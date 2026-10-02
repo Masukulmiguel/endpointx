@@ -51,6 +51,25 @@ _SHUTDOWN_REQUESTED = False
 
 SYSTEM = platform.system()
 
+# Bumped whenever agent files change. The server advertises the latest version
+# and endpoints only self-update when it is strictly newer than this one, so a
+# server that is behind an installed agent never causes an update loop.
+CURRENT_AGENT_VERSION = "1.6.0"
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    """Turn '1.10.2' into (1, 10, 2) so versions compare numerically."""
+    parts: list[int] = []
+    for chunk in str(version or "").split("."):
+        digits = "".join(ch for ch in chunk if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def _is_newer(candidate: str, current: str) -> bool:
+    """True only when the advertised version is ahead of the installed one."""
+    return _version_key(candidate) > _version_key(current)
+
 
 def _get_platform_paths() -> dict[str, Path]:
     """Return platform-specific paths for lock, backup, and hash files."""
@@ -595,7 +614,7 @@ class EndpointAgent:
                     "network_in": net_traffic.get("bytes_recv", 0),
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
-                    "current_version": "1.5.0",
+                    "current_version": CURRENT_AGENT_VERSION,
                 }
 
                 if self._tamper:
@@ -617,8 +636,9 @@ class EndpointAgent:
                     data = resp.json()
                     server_data = data.get("data", {})
                     server_version = server_data.get("agent_version", "")
-                    if server_version and server_version != "1.5.0" and not getattr(self, '_update_attempted', False):
-                        logger.info("New agent version available: %s (current: 1.5.0)", server_version)
+                    if _is_newer(server_version, CURRENT_AGENT_VERSION) and not getattr(self, '_update_attempted', False):
+                        logger.info("New agent version available: %s (current: %s)",
+                                    server_version, CURRENT_AGENT_VERSION)
                         self._update_attempted = True
                         self._auto_update()
                     return data
@@ -649,6 +669,7 @@ class EndpointAgent:
         interval = float(self.config.get("command_poll_interval", 3) or 3)
         logger.info("Command poll loop starting (every %.0fs)", interval)
         while self._running and not _SHUTDOWN_REQUESTED:
+            sleep_for = interval
             try:
                 agent_id = str(self.config.get("agent_id") or self.agent_id or "")
                 if agent_id:
@@ -662,11 +683,15 @@ class EndpointAgent:
                                 self.execute_command(cmd)
                             except Exception as exc:
                                 logger.error("Command execution error: %s", exc)
+                    elif resp is not None and resp.status_code in (404, 501):
+                        # The server has not deployed the fast poll route yet:
+                        # back off instead of hammering it every few seconds.
+                        sleep_for = max(interval, 15.0)
             except Exception as exc:
                 logger.debug("Command poll error: %s", exc)
 
             waited = 0.0
-            while waited < interval:
+            while waited < sleep_for:
                 if _SHUTDOWN_REQUESTED or not self._running:
                     return
                 time.sleep(0.25)
@@ -1303,7 +1328,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.version:
-        print("EndpointX Agent v1.5.0 by Masukulu Miguel")
+        print(f"EndpointX Agent v{CURRENT_AGENT_VERSION} by Masukulu Miguel")
         sys.exit(0)
 
     if args.info:

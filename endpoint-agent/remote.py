@@ -27,8 +27,7 @@ from typing import Any, Optional
 logger = logging.getLogger("endpointx-agent.remote")
 
 # module -> pip package
-REQUIRED_DEPS = {"websocket": "websocket-client", "mss": "mss", "PIL": "Pillow"}
-OPTIONAL_DEPS = {"pyautogui": "pyautogui"}
+REQUIRED_DEPS = {"websocket": "websocket-client", "mss": "mss", "PIL": "Pillow", "pyautogui": "pyautogui"}
 
 # Browser KeyboardEvent.code -> pyautogui key name
 KEY_MAP = {
@@ -350,6 +349,7 @@ class RemoteAccess:
                     "height": int(monitor.get("height", 0)),
                 }
                 size = (monitor["width"], monitor["height"])
+                last_cursor = (0.0, 0.0, None)
                 while self._streaming and not self.stop_event.is_set():
                     started = time.time()
                     shot = sct.grab(monitor)
@@ -368,6 +368,21 @@ class RemoteAccess:
                         self._send(buffer.getvalue(), binary=True)
                         last_digest = digest
                         frame_no += 1
+                    cursor = self._cursor_state(self._active_rect)
+                    if (
+                        cursor[2] != last_cursor[2]
+                        or abs(cursor[0] - last_cursor[0]) > 0.002
+                        or abs(cursor[1] - last_cursor[1]) > 0.002
+                    ):
+                        last_cursor = cursor
+                        self._send(
+                            {
+                                "t": "cursor",
+                                "x": round(cursor[0], 4),
+                                "y": round(cursor[1], 4),
+                                "visible": cursor[2],
+                            }
+                        )
                     elapsed = time.time() - started
                     if elapsed < interval:
                         time.sleep(interval - elapsed)
@@ -381,6 +396,56 @@ class RemoteAccess:
             self._send({"t": "stopped"})
 
     # -- input -------------------------------------------------------------
+
+    @staticmethod
+    def _cursor_state(rect: Optional[dict[str, int]]) -> tuple[float, float, bool]:
+        """Cursor position normalised into the streamed monitor plus visibility.
+
+        Screen capture does not include the mouse pointer, so without this the
+        operator only sees their own browser cursor and has no idea where the
+        remote pointer actually is. Sends physical screen coordinates mapped
+        onto the monitor that is being streamed.
+        """
+        if not rect or not rect.get("width") or not rect.get("height"):
+            return 0.0, 0.0, False
+        x = y = 0.0
+        visible = True
+        try:
+            import ctypes
+
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+            class CURSORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_uint),
+                    ("flags", ctypes.c_uint),
+                    ("hCursor", ctypes.c_void_p),
+                    ("ptPos", POINT),
+                ]
+
+            pt = POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+            info = CURSORINFO()
+            info.cbSize = ctypes.sizeof(CURSORINFO)
+            if ctypes.windll.user32.GetCursorInfo(ctypes.byref(info)):
+                visible = bool(info.flags & 0x1)  # CURSOR_SHOWING
+            x, y = float(pt.x), float(pt.y)
+        except Exception:
+            try:
+                import pyautogui
+
+                pos = pyautogui.position()
+                x, y = float(pos[0]), float(pos[1])
+            except Exception:
+                return 0.0, 0.0, False
+
+        width = float(rect.get("width") or 1)
+        height = float(rect.get("height") or 1)
+        nx = (x - float(rect.get("left", 0))) / width
+        ny = (y - float(rect.get("top", 0))) / height
+        inside = -0.02 <= nx <= 1.02 and -0.02 <= ny <= 1.02
+        return min(1.0, max(0.0, nx)), min(1.0, max(0.0, ny)), bool(visible and inside)
 
     @staticmethod
     def _screen_size() -> tuple[int, int]:
