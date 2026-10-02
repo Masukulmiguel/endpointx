@@ -39,9 +39,12 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "EndpointX HERMES",
-      "languages": [
-        "Portuguese"
+      "installerLanguages": [
+        "pt-PT"
       ]
     }
+  },
+  "allowScripts": {
+    "electron@31.7.7": true
   }
 }

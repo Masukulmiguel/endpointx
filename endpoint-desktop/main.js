@@ -104,6 +104,10 @@ function createTray() {
   const menu = Menu.buildFromTemplate([
     { label: 'Chamar HERMES', accelerator: HOTKEY, click: callHermes },
     { label: 'Abrir dashboard', click: () => shell.openExternal(DASHBOARD) },
+    {
+      label: 'HERMES no browser (ditado por voz)',
+      click: () => shell.openExternal(HERMES_URL),
+    },
     { type: 'separator' },
     {
       label: 'Sair',
