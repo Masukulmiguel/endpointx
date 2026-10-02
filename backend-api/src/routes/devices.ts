@@ -258,7 +258,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       data: {
         device_id: device.id,
         commands: commands.rows,
-        agent_version: '1.3.0',
+        agent_version: '1.4.0',
         status: device.status,
         contained: isContained,
       },

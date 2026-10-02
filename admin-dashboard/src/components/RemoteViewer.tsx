@@ -5,12 +5,19 @@ import {
   PlugZap,
   Power,
   Maximize2,
+  Minimize2,
   Keyboard,
   MousePointer2,
   Loader2,
 } from 'lucide-react';
 
 type Phase = 'idle' | 'connecting' | 'ready' | 'streaming' | 'offline' | 'error';
+
+interface MonitorInfo {
+  index: number;
+  width: number;
+  height: number;
+}
 
 const REMOTE_PATH = '/remote';
 
@@ -49,6 +56,23 @@ export default function RemoteViewer({ deviceId }: Props) {
   const [fps, setFps] = useState(10);
   const [typed, setTyped] = useState('');
   const [hint, setHint] = useState(false);
+  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
+  const [monitor, setMonitor] = useState<number | null>(null);
+  const [minimized, setMinimized] = useState(false);
+  const monitorRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    monitorRef.current = monitor;
+  }, [monitor]);
+
+  const startMsg = (fpsOverride?: number, qualityOverride?: number) =>
+    JSON.stringify({
+      t: 'start',
+      fps: fpsOverride ?? fps,
+      quality: qualityOverride ?? quality,
+      max_width: 1600,
+      ...(monitorRef.current !== null ? { monitor: monitorRef.current } : {}),
+    });
 
   useEffect(() => {
     controlRef.current = control;
@@ -114,12 +138,19 @@ export default function RemoteViewer({ deviceId }: Props) {
         setPhase('ready');
         setMessage(msg.agent_connected ? 'A preparar a transmissão...' : 'Agente offline neste dispositivo');
         if (msg.agent_connected) {
-          ws.send(JSON.stringify({ t: 'start', fps, quality, max_width: 1600 }));
+          ws.send(startMsg());
         }
+      } else if (msg.t === 'monitors') {
+        const list: MonitorInfo[] = Array.isArray(msg.monitors) ? msg.monitors : [];
+        setMonitors(list);
+        setMonitor((current) => {
+          if (current !== null && list.some((m) => m.index === current)) return current;
+          return typeof msg.primary === 'number' ? msg.primary : list[0]?.index ?? null;
+        });
       } else if (msg.t === 'agent') {
         if (msg.connected) {
           setPhase('ready');
-          ws.send(JSON.stringify({ t: 'start', fps, quality, max_width: 1600 }));
+          ws.send(startMsg());
         } else {
           setPhase('offline');
           setMessage('A ligação ao agente caiu - a transmitir terminada');
@@ -188,7 +219,7 @@ export default function RemoteViewer({ deviceId }: Props) {
     setFps(nextFps);
     setQuality(nextQuality);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ t: 'start', fps: nextFps, quality: nextQuality, max_width: 1600 }));
+      wsRef.current.send(startMsg(nextFps, nextQuality));
     }
   };
 
@@ -309,6 +340,54 @@ export default function RemoteViewer({ deviceId }: Props) {
     error: 'Erro',
   };
 
+  const selectMonitor = (value: number) => {
+    setMonitor(value);
+    monitorRef.current = value;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ t: 'start', fps, quality, max_width: 1600, monitor: value }));
+    }
+  };
+
+  if (minimized) {
+    // Single collapsed strip: the session keeps running so it can be reopened
+    // instantly without renegotiating with the agent.
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <MonitorPlay className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">Acesso remoto</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{statusLabel[phase]}</p>
+          </div>
+          <span
+            className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+              phase === 'streaming' ? 'bg-green-500' : phase === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-gray-400'
+            }`}
+            title={statusLabel[phase]}
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setMinimized(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            Abrir
+          </button>
+          {phase !== 'idle' && phase !== 'error' && (
+            <button
+              onClick={disconnect}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700"
+            >
+              <Power className="w-3.5 h-3.5" />
+              Desligar
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -353,12 +432,33 @@ export default function RemoteViewer({ deviceId }: Props) {
             <MousePointer2 className="w-3.5 h-3.5" />
             {control ? 'Controlo ativo' : 'Só visualizar'}
           </button>
+          {monitors.length > 1 && (
+            <select
+              value={monitor ?? ''}
+              onChange={(e) => selectMonitor(Number(e.target.value))}
+              className="text-xs px-2 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+              title="Ecrã a transmitir"
+            >
+              {monitors.map((m) => (
+                <option key={m.index} value={m.index}>
+                  Ecrã {m.index} ({m.width}x{m.height})
+                </option>
+              ))}
+            </select>
+          )}
           <button
             onClick={toggleFullscreen}
             className="p-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
             title="Ecrã inteiro"
           >
             <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setMinimized(true)}
+            className="p-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+            title="Minimizar (a sessão continua ativa)"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
           </button>
           {phase === 'idle' || phase === 'error' ? (
             <button
@@ -460,6 +560,10 @@ export default function RemoteViewer({ deviceId }: Props) {
           <p>• Tab para focar a área de vídeo e usar o teclado; atalhos (Ctrl+C, Ctrl+R, Win+D) funcionam normalmente.</p>
           <p>• No telemóvel: arrastar move o rato, toque curto clica, dois dedos faz scroll.</p>
           <p>• Tudo trafega cifrado (WSS/TLS) pelo servidor EndpointX - o equipamento não abre portas.</p>
+          <p>
+            • O ecrã repete-se dentro de si mesmo (eco)? Estás a ver o <strong>mesmo PC</strong> onde está
+            aberto este dashboard — minimize a janela do browser no equipamento alvo ou escolhe outro ecrã.
+          </p>
         </div>
       )}
     </div>

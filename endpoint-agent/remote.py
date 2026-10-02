@@ -132,6 +132,7 @@ class RemoteAccess:
         self._stream_lock = threading.Lock()
         self._binary_opcode = 0x2
         self._connected = False
+        self._active_rect: Optional[dict[str, int]] = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -234,6 +235,8 @@ class RemoteAccess:
         try:
             if kind == "ready":
                 logger.info("Remote channel ready (role=%s)", msg.get("role"))
+                if msg.get("role") == "agent":
+                    self._send_monitors()
             elif kind == "start":
                 self._start_stream(msg)
             elif kind == "stop":
@@ -268,6 +271,45 @@ class RemoteAccess:
 
     # -- video -------------------------------------------------------------
 
+    @staticmethod
+    def _monitors_payload() -> dict[str, Any]:
+        """Describe the physical screens so the operator can pick exactly one."""
+        try:
+            import mss
+
+            with mss.mss() as sct:
+                physical = list(sct.monitors[1:])
+        except Exception as exc:
+            logger.debug("Monitor enumeration failed: %s", exc)
+            return {"t": "monitors", "primary": 1, "monitors": []}
+        monitors = [
+            {
+                "index": idx + 1,
+                "left": int(m.get("left", 0)),
+                "top": int(m.get("top", 0)),
+                "width": int(m.get("width", 0)),
+                "height": int(m.get("height", 0)),
+            }
+            for idx, m in enumerate(physical)
+        ]
+        return {"t": "monitors", "primary": 1, "monitors": monitors}
+
+    def _send_monitors(self) -> None:
+        payload = self._monitors_payload()
+        if payload.get("monitors"):
+            self._send(payload)
+
+    @staticmethod
+    def _pick_monitor(sct: Any, want: Any) -> dict[str, Any]:
+        monitors = sct.monitors
+        try:
+            idx = int(want) if want is not None else 1
+        except (TypeError, ValueError):
+            idx = 1
+        if idx < 1 or idx >= len(monitors):
+            idx = 1 if len(monitors) > 1 else 0
+        return dict(monitors[idx])
+
     def _start_stream(self, params: dict[str, Any]) -> None:
         with self._stream_lock:
             if self._streaming and self._stream_thread and self._stream_thread.is_alive():
@@ -300,7 +342,13 @@ class RemoteAccess:
         logger.info("Remote screen sharing started (fps=%d quality=%d max_width=%d)", fps, quality, max_width)
         try:
             with mss.mss() as sct:
-                monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+                monitor = self._pick_monitor(sct, params.get("monitor"))
+                self._active_rect = {
+                    "left": int(monitor.get("left", 0)),
+                    "top": int(monitor.get("top", 0)),
+                    "width": int(monitor.get("width", 0)),
+                    "height": int(monitor.get("height", 0)),
+                }
                 size = (monitor["width"], monitor["height"])
                 while self._streaming and not self.stop_event.is_set():
                     started = time.time()
@@ -328,6 +376,7 @@ class RemoteAccess:
             self._send({"t": "error", "message": f"capture failed: {exc}"})
         finally:
             self._streaming = False
+            self._active_rect = None
             logger.info("Remote screen sharing stopped (%d frames)", frame_no)
             self._send({"t": "stopped"})
 
@@ -360,11 +409,19 @@ class RemoteAccess:
 
     def _mouse(self, msg: dict[str, Any]) -> None:
         gui = self._gui()
-        width, height = self._screen_size()
-        x = int(float(msg.get("x", 0.0)) * width)
-        y = int(float(msg.get("y", 0.0)) * height)
-        x = max(0, min(width - 1, x))
-        y = max(0, min(height - 1, y))
+        rect = self._active_rect
+        if rect and rect.get("width") and rect.get("height"):
+            width, height = rect["width"], rect["height"]
+            origin_x, origin_y = rect.get("left", 0), rect.get("top", 0)
+        else:
+            width, height = self._screen_size()
+            origin_x = origin_y = 0
+        rel_x = int(float(msg.get("x", 0.0)) * width)
+        rel_y = int(float(msg.get("y", 0.0)) * height)
+        rel_x = max(0, min(width - 1, rel_x))
+        rel_y = max(0, min(height - 1, rel_y))
+        x = origin_x + rel_x
+        y = origin_y + rel_y
         button = str(msg.get("button") or "left")
         action = str(msg.get("action") or "move")
 

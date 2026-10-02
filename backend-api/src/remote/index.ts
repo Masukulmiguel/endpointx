@@ -18,6 +18,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 interface Room {
   agent?: WebSocket;
   operators: Set<WebSocket>;
+  /** Last screen inventory advertised by the agent (one entry per monitor). */
+  monitors?: Record<string, unknown>;
 }
 
 const rooms = new Map<string, Room>();
@@ -157,6 +159,7 @@ async function handleOperatorHandshake(
   authed.deviceId = deviceId;
   authed.user = user;
   sendJson(ws, { t: 'ready', role: 'operator', device_id: deviceId, agent_connected: !!room.agent });
+  if (room.monitors) sendJson(ws, room.monitors);
   logger.info('Remote: operator connected', { deviceId, userId: user.id });
   await writeAudit(user, deviceId, 'remote_session', `Remote session started (${deviceId})`, ip);
 }
@@ -181,6 +184,7 @@ function handleAgentMessage(deviceId: string, data: Buffer | string, isBinary: b
   } catch {
     return;
   }
+  if (payload.t === 'monitors') room.monitors = payload;
   broadcastToOperators(deviceId, payload);
 }
 
