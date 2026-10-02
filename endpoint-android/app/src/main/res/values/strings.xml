@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EndpointX</string>
+    <string name="accessibility_description">Permite à consola EndpointX controlar o telemóvel quando um técnico dá assistência (toques, deslizamentos e escrita). Nada é enviado sem uma sessão ativa.</string>
+
+    <string name="label_server">Servidor</string>
+    <string name="label_device_name">Nome do dispositivo</string>
+    <string name="label_enroll_token">Token de registo (opcional)</string>
+    <string name="btn_register">Registar neste telemóvel</string>
+    <string name="btn_share">Partilhar ecrã</string>
+    <string name="btn_stop_share">Parar partilha</string>
+    <string name="btn_control">Ativar controlo remoto</string>
+    <string name="hint_control">O controlo remoto usa o Serviço de Acessibilidade do Android.</string>
+    <string name="status_idle">Pronto.</string>
+</resources>

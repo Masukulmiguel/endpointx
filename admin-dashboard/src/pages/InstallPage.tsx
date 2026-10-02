@@ -21,6 +21,7 @@ export default function InstallPage() {
   const installScript = `irm ${API_URL}/api/devices/public/install.ps1${tokenQS} | iex`;
   const updateScript = `irm ${API_URL}/api/devices/public/update.ps1 | iex`;
   const mobileUrl = `${API_URL}/api/devices/public/mobile${tokenQS}`;
+  const apkUrl = `${API_URL}/api/devices/public/endpointx-agent.apk`;
   const linuxInstall = `curl -fsSL ${API_URL}/api/devices/public/install-linux.sh${tokenQS} | sudo bash`;
   const macInstall = `curl -fsSL ${API_URL}/api/devices/public/install-macos.sh${tokenQS} | bash`;
 
@@ -145,6 +146,36 @@ export default function InstallPage() {
         >
           Abrir página mobile
         </a>
+
+        <div className="mt-5 pt-4 border-t border-gray-700">
+          <p className="text-gray-400 text-sm mb-3">
+            Para <span className="text-white font-medium">ver e controlar o ecrã</span> do telemóvel a partir
+            do dashboard (remoto assistido), instale a app nativa Android. Depois de abrir, ela regista-se
+            sozinha e fica <span className="text-yellow-400">PENDING</span> até aprovação.
+          </p>
+          <div className="bg-gray-900 rounded p-3 flex items-center justify-between mb-3">
+            <code className="text-blue-400 text-sm font-mono break-all">{apkUrl}</code>
+            <button
+              onClick={() => copyToClipboard(apkUrl, 'apk')}
+              className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+              title="Copiar link"
+            >
+              {copied === 'apk' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
+          <a
+            href={apkUrl}
+            download="endpointx-agent.apk"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded text-sm font-medium"
+          >
+            <Download className="w-4 h-4" />
+            Descarregar APK Android
+          </a>
+          <p className="text-gray-500 text-xs mt-2">
+            Android 8.0+ · assinado · ~1 MB · permissões de acessibilidade (controlo) e partilha de ecrã
+            (visualização). A app continua ativa em segundo plano com serviço persistente.
+          </p>
+        </div>
       </div>
 
       <div className="bg-gray-800 rounded-lg p-6 mb-6">

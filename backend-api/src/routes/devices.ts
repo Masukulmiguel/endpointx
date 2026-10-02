@@ -9,6 +9,7 @@ import logger from '../utils/logger';
 import jwt from 'jsonwebtoken';
 import { JWT } from '../config/constants';
 import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
+import { remoteSecretFor } from '../remote';
 
 const router = Router();
 
@@ -1318,6 +1319,23 @@ router.get('/public/manifest.webmanifest', async (_req: AuthRequest, res: Respon
   }
 });
 
+// PUBLIC - Android agent APK (download link from the install page)
+router.get('/public/endpointx-agent.apk', (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const filePath = join(__dirname, '..', '..', 'public', 'apk', 'endpointx-agent.apk');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'APK not found' } });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="endpointx-agent.apk"');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.sendFile(filePath);
+  } catch (error) {
+    next(error);
+  }
+});
+
 function parseBrowserFromUA(ua: string): { name: string; version: string } | null {
   const s = ua || '';
   const pick = (re: RegExp, name: string): { name: string; version: string } | null => {
@@ -1461,6 +1479,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
         data: {
           device_id: deviceId,
           agent_id: agentId,
+          remote_token: remoteSecretFor(agentId),
           approval_status: existing.rows[0].approval_status || 'pending',
           is_new: false,
         },
@@ -1503,6 +1522,7 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
       data: {
         device_id: deviceId,
         agent_id: agentId,
+        remote_token: remoteSecretFor(agentId),
         approval_status: 'pending',
         is_new: true,
       },

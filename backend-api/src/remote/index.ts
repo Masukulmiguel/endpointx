@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHmac } from 'crypto';
 import type { IncomingMessage, Server } from 'http';
 import type { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -83,9 +83,20 @@ function closeWith(ws: WebSocket, message: string): void {
   setTimeout(() => ws.close(), 50);
 }
 
+// Per-device credential handed to managed endpoints (the Android app) at
+// enrolment time. It never leaves the device, so the shared AGENT_SECRET does
+// not have to be baked into a redistributable APK - yet the relay can still
+// verify the endpoint without storing anything extra.
+export function remoteSecretFor(agentId: string): string {
+  return createHmac('sha256', process.env.AGENT_SECRET || '')
+    .update(`endpointx:remote:${agentId}`)
+    .digest('hex');
+}
+
 async function handleAgentHandshake(ws: WebSocket, agentId: string, secret: string): Promise<void> {
   const expected = process.env.AGENT_SECRET;
-  if (!expected || secret !== expected) {
+  const allowed = !!expected && (secret === expected || secret === remoteSecretFor(agentId));
+  if (!allowed) {
     closeWith(ws, 'invalid agent secret');
     return;
   }
