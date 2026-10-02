@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Radar,
   Play,
@@ -11,14 +11,27 @@ import {
   AlertTriangle,
   Activity,
   FileText,
+  Mic,
+  MicOff,
   Send,
   Sparkles,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import api from '../services/api';
 import ErrorState from '../components/ErrorState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useI18n } from '../i18n';
+import {
+  createRecognizer,
+  recognitionSupported,
+  setVoicesEnabled,
+  speak,
+  stopSpeaking,
+  voicesEnabled,
+  type Recognizer,
+} from '../utils/speech';
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
 
@@ -258,6 +271,13 @@ export default function HermesPage() {
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatMeta, setChatMeta] = useState<string | null>(null);
+  const [voiceOn, setVoiceOn] = useState<boolean>(voicesEnabled);
+  const [listening, setListening] = useState(false);
+  const [heard, setHeard] = useState<string | null>(null);
+
+  const recRef = useRef<Recognizer | null>(null);
+  const listeningRef = useRef(false);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -267,14 +287,110 @@ export default function HermesPage() {
     }
   }, [chat]);
 
+  useEffect(
+    () => () => {
+      listeningRef.current = false;
+      recRef.current?.stop();
+      stopSpeaking();
+    },
+    []
+  );
+
+  const restartListening = () => {
+    if (!listeningRef.current) return;
+    window.setTimeout(() => runRecognizer(), 300);
+  };
+
+  const stopListening = () => {
+    listeningRef.current = false;
+    setListening(false);
+    setHeard(null);
+    recRef.current?.stop();
+    recRef.current = null;
+  };
+
+  const runRecognizer = () => {
+    if (!listeningRef.current || busyRef.current) return;
+    recRef.current?.stop();
+    const rec = createRecognizer({
+      onResult: (text, isFinal) => {
+        setHeard(text);
+        if (!isFinal) return;
+        const wake = /\bhermes\b/i.exec(text);
+        if (!wake) {
+          // no wake word: keep it as a draft so nothing the user said is lost
+          setChatInput(text);
+          setChatError('Disse sem a palavra de ativação — diga «HERMES», depois a pergunta.');
+          return;
+        }
+        const question = text
+          .slice(wake.index + wake[0].length)
+          .replace(/^[\s,:;.-]+/, '')
+          .trim();
+        if (!question) {
+          setChatError('Chamou o HERMES — diga a pergunta a seguir.');
+          return;
+        }
+        setChatError(null);
+        void sendChat(question);
+      },
+      onEnd: () => {
+        if (listeningRef.current && !busyRef.current) {
+          window.setTimeout(() => runRecognizer(), 300);
+        }
+      },
+      onError: (message) => {
+        if (listeningRef.current) setChatError(`Microfone: ${message}`);
+      },
+    });
+    if (!rec) {
+      stopListening();
+      setChatError('Este browser não suporta ditado por voz (use Chrome ou Edge).');
+      return;
+    }
+    recRef.current = rec;
+    rec.start();
+  };
+
+  const startListening = () => {
+    if (!recognitionSupported()) {
+      setChatError('Este browser não suporta voz (use Chrome ou Edge).');
+      return;
+    }
+    stopSpeaking();
+    listeningRef.current = true;
+    setListening(true);
+    setChatError(null);
+    runRecognizer();
+  };
+
+  const toggleListening = () => {
+    if (listening) stopListening();
+    else startListening();
+  };
+
+  const toggleVoice = () => {
+    const next = !voiceOn;
+    setVoiceOn(next);
+    setVoicesEnabled(next);
+    if (next) speak('HERMES pronto para falar.');
+    else stopSpeaking();
+  };
+
   const sendChat = async (value?: string) => {
-    const text = (value ?? chatInput).trim();
+    const raw = (value ?? chatInput).trim();
+    const text = raw.replace(/^\/hermes[\s:,-]*/i, '').trim() || raw;
     if (!text || chatSending) return;
+    busyRef.current = true;
+    recRef.current?.stop();
+    stopSpeaking();
     const next: ChatMsg[] = [...chat, { role: 'user', content: text }];
     setChat(next);
     setChatInput('');
     setChatSending(true);
     setChatError(null);
+    setHeard(null);
+    let spoke = false;
     try {
       const response = await api.request<any>('/hermes/ai/chat', {
         method: 'POST',
@@ -289,10 +405,13 @@ export default function HermesPage() {
           ? 'modo local — sem IA configurada no servidor'
           : `${data?.provider || 'ai'}${data?.model ? ` · ${data.model}` : ''}`
       );
+      if (voiceOn) spoke = speak(reply, { onEnd: restartListening });
     } catch (err) {
       setChatError(err instanceof Error ? err.message : 'Falha ao contactar o HERMES');
     } finally {
       setChatSending(false);
+      busyRef.current = false;
+      if (!spoke) restartListening();
     }
   };
 
@@ -841,17 +960,52 @@ export default function HermesPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setChat([{ role: 'assistant', content: HERMES_GREETING }]);
-                  setChatError(null);
-                }}
-                className="btn-secondary text-xs"
-              >
-                Nova conversa
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleVoice}
+                  title={voiceOn ? 'Desligar a voz do HERMES' : 'Ligar a voz do HERMES'}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                    voiceOn
+                      ? 'border-blue-500/40 bg-blue-500/10 text-blue-500'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {voiceOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  {voiceOn ? 'Voz ligada' : 'Voz desligada'}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  title="Chamar o HERMES por voz (diga «HERMES», depois a pergunta)"
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                    listening
+                      ? 'border-red-500/50 bg-red-500/10 text-red-500'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {listening ? 'A ouvir…' : 'Chamar por voz'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChat([{ role: 'assistant', content: HERMES_GREETING }]);
+                    setChatError(null);
+                  }}
+                  className="btn-secondary text-xs"
+                >
+                  Nova conversa
+                </button>
+              </div>
             </div>
+
+            {listening && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-blue-500 dark:text-blue-400">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                {heard ? `Ouvi: ${heard}` : 'Diga «HERMES», depois a sua pergunta.'}
+              </div>
+            )}
 
             <div className="mt-3 space-y-3 max-h-96 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
               {chat.map((m, i) => (
@@ -919,7 +1073,7 @@ export default function HermesPage() {
               <input
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Pergunte ao HERMES: por onde entrava um atacante aqui?"
+                placeholder="Pergunte ao HERMES — ou diga em voz alta «HERMES, o que estava exposto?»"
                 className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button type="submit" disabled={chatSending || !chatInput.trim()} className="btn-primary disabled:opacity-50">
