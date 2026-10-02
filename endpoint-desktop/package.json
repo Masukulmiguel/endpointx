@@ -1,0 +1,47 @@
+{
+  "name": "endpointx-hermes",
+  "productName": "EndpointX HERMES",
+  "version": "1.0.0",
+  "description": "Chamada rapida do assistente HERMES no PC de administracao",
+  "main": "main.js",
+  "author": "EndpointX",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "pt.endpointx.hermes",
+    "productName": "EndpointX HERMES",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "assets/**"
+    ],
+    "win": {
+      "icon": "assets/hermes.png",
+      "target": [
+        "nsis"
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EndpointX HERMES",
+      "languages": [
+        "Portuguese"
+      ]
+    }
+  }
+}
