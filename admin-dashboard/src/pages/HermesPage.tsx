@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Radar,
   Play,
@@ -243,7 +244,10 @@ function formatEvidence(evidence: any, t: (key: string) => string): React.ReactN
 }
 
 export default function HermesPage() {
-  const [tab, setTab] = useState<'overview' | 'findings' | 'assets' | 'scans' | 'recommendations' | 'ai'>('overview');
+  const [tab, setTab] = useState<
+    'overview' | 'findings' | 'assets' | 'scans' | 'recommendations' | 'investigations' | 'ai'
+  >('overview');
+
   const [toast, setToast] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -256,6 +260,9 @@ export default function HermesPage() {
   const { data: assetsData } = useApi<{ assets: Asset[] }>('/hermes/assets');
   const { data: scansData } = useApi<{ scans: Scan[] }>('/hermes/scans');
   const { data: recsData } = useApi<{ recommendations: Recommendation[] }>('/hermes/recommendations');
+  const { data: investigationsData, refetch: refetchInvestigations } = useApi<{
+    investigations: any[];
+  }>('/hermes/investigations', { params: { limit: '50' }, immediate: tab === 'investigations' });
   const { data: surface } = useApi<any>('/hermes/attack-surface');
   const { data: aiStatus } = useApi<{ configured: boolean; healthy: boolean; provider?: string | null; model?: string | null; freeModels?: string[]; version?: string | null; error?: string | null }>('/hermes/ai/status');
 
@@ -502,6 +509,7 @@ export default function HermesPage() {
   const scans = scansData?.scans || [];
   const recs = recsData?.recommendations || [];
   const pendingRecs = recs.filter((r) => r.status === 'pending');
+  const investigations = investigationsData?.investigations || [];
 
   const score = status.security_score ?? 0;
   const scoreColor = score >= 80 ? 'text-blue-500' : score >= 60 ? 'text-amber-500' : 'text-red-500';
@@ -627,6 +635,7 @@ export default function HermesPage() {
             ['assets', t('hermes.tab.assets')],
             ['scans', t('hermes.tab.scans')],
             ['recommendations', `${t('hermes.tab.recommendations')} (${pendingRecs.length})`],
+            ['investigations', `${t('hermes.tab.investigations')} (${investigations.length})`],
             ['ai', t('hermes.tab.ai')],
           ] as const
         ).map(([key, label]) => (
@@ -938,6 +947,88 @@ export default function HermesPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'investigations' && (
+        <div className="card">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+                {t('hermes.tab.investigations')}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('hermes.invest.subtitle')}</p>
+            </div>
+            <button
+              onClick={() => refetchInvestigations()}
+              className="text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400"
+            >
+              {t('common.retry')}
+            </button>
+          </div>
+          {investigations.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('hermes.invest.empty')}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                    <th className="py-2 pr-4 font-medium">{t('common.status')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('hermes.invest.endpoint')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('hermes.invest.alert')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('hermes.invest.risk')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('hermes.invest.startedAt')}</th>
+                    <th className="py-2 font-medium">{t('common.actions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {investigations.map((inv) => (
+                    <tr key={inv.id} className="table-row">
+                      <td className="py-2 pr-4">
+                        <span
+                          className={`badge uppercase ${
+                            inv.status === 'complete'
+                              ? 'badge-green'
+                              : inv.status === 'failed'
+                                ? 'badge-red'
+                                : inv.status === 'cancelled'
+                                  ? 'badge-gray'
+                                  : 'badge-blue'
+                          }`}
+                        >
+                          {(() => {
+                            const key = `hermes.invest.status.${inv.status}`;
+                            const label = t(key);
+                            return label === key ? inv.status : label;
+                          })()}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">{inv.hostname || '-'}</td>
+                      <td className="py-2 pr-4 text-gray-700 dark:text-gray-300 max-w-xs truncate">
+                        {inv.alert_title || '-'}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <span className={`badge uppercase ${severityBadge(inv.risk || 'info')}`}>
+                          {inv.risk || 'info'}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-gray-500 dark:text-gray-400">
+                        {inv.started_at ? new Date(inv.started_at).toLocaleString() : '-'}
+                      </td>
+                      <td className="py-2">
+                        <Link
+                          to={`/hermes/investigations/${inv.id}`}
+                          className="text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+                        >
+                          {t('hermes.invest.view')}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

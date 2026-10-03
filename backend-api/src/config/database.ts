@@ -584,6 +584,68 @@ const createInlineSchema = async (): Promise<void> => {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS forensic_investigations (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL,
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      alert_snapshot JSONB DEFAULT '{}',
+      status VARCHAR(30) NOT NULL DEFAULT 'queued',
+      command_id UUID REFERENCES agent_commands(id) ON DELETE SET NULL,
+      risk VARCHAR(20) DEFAULT 'info',
+      confidence VARCHAR(20) DEFAULT 'low',
+      summary TEXT,
+      report JSONB DEFAULT '{}',
+      stats JSONB DEFAULT '{}',
+      focus JSONB DEFAULT '{}',
+      started_by UUID REFERENCES users(id),
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      collected_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      error_message TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS forensic_artifacts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      investigation_id UUID NOT NULL REFERENCES forensic_investigations(id) ON DELETE CASCADE,
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      kind VARCHAR(30) NOT NULL,
+      classification VARCHAR(30) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      detail TEXT,
+      data JSONB DEFAULT '{}',
+      severity VARCHAR(20) DEFAULT 'info',
+      confidence VARCHAR(20) DEFAULT 'medium',
+      observed_at TIMESTAMPTZ,
+      source VARCHAR(50),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS forensic_iocs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      investigation_id UUID REFERENCES forensic_investigations(id) ON DELETE CASCADE,
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      ioc_type VARCHAR(40) NOT NULL,
+      value TEXT NOT NULL,
+      label VARCHAR(255),
+      confidence VARCHAR(20) DEFAULT 'medium',
+      source VARCHAR(50),
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      occurrences INT DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS forensic_timeline (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      investigation_id UUID NOT NULL REFERENCES forensic_investigations(id) ON DELETE CASCADE,
+      occurred_at TIMESTAMPTZ,
+      event VARCHAR(255) NOT NULL,
+      source VARCHAR(50),
+      entity TEXT,
+      evidence TEXT,
+      severity VARCHAR(20) DEFAULT 'info',
+      seq INT DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_devices_agent_id ON devices(agent_id);
     CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
     CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
@@ -629,6 +691,16 @@ const createInlineSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_hermes_recommendations_status ON hermes_recommendations(status);
     CREATE INDEX IF NOT EXISTS idx_hermes_audit_created ON hermes_audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_hermes_cves_cve ON hermes_cves(cve_id);
+    CREATE INDEX IF NOT EXISTS idx_forensic_investigations_status ON forensic_investigations(status);
+    CREATE INDEX IF NOT EXISTS idx_forensic_investigations_device ON forensic_investigations(device_id);
+    CREATE INDEX IF NOT EXISTS idx_forensic_investigations_alert ON forensic_investigations(alert_id);
+    CREATE INDEX IF NOT EXISTS idx_forensic_artifacts_investigation ON forensic_artifacts(investigation_id);
+    CREATE INDEX IF NOT EXISTS idx_forensic_artifacts_kind ON forensic_artifacts(kind);
+    CREATE INDEX IF NOT EXISTS idx_forensic_artifacts_classification ON forensic_artifacts(classification);
+    CREATE INDEX IF NOT EXISTS idx_forensic_iocs_investigation ON forensic_iocs(investigation_id);
+    CREATE INDEX IF NOT EXISTS idx_forensic_iocs_type ON forensic_iocs(ioc_type);
+    CREATE INDEX IF NOT EXISTS idx_forensic_iocs_value ON forensic_iocs(value);
+    CREATE INDEX IF NOT EXISTS idx_forensic_timeline_investigation ON forensic_timeline(investigation_id);
 
     DO $$ BEGIN
       ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider_id VARCHAR(100);
@@ -1101,6 +1173,9 @@ const seedDefaults = async (): Promise<void> => {
       ['hermes_allowed_cidrs', '192.168.0.0/16,10.0.0.0/8,172.16.0.0/12', 'HERMES allowed CIDR ranges'],
       ['hermes_emergency_stop', 'false', 'Emergency stop for all HERMES scans'],
       ['hermes_daily_scan_enabled', 'true', 'Enable daily HERMES scan'],
+      ['hermes_collect_browser', 'true', 'Allow read-only browser history/download collection in HERMES investigations'],
+      ['hermes_collect_eventlog', 'true', 'Allow read-only system event log collection in HERMES investigations'],
+      ['hermes_forensic_retention_days', '90', 'Days to keep forensic investigation evidence before it is purged'],
     ];
 
     for (const [key, value, desc] of settings) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React from 'react';
 import {
   Monitor,
   Wifi,
@@ -78,21 +78,11 @@ function SkeletonChart() {
 }
 
 export default function DashboardPage() {
-  const { data, loading, error, refetch } = useApi<DashboardOverview>('/dashboard/overview');
+  const { data, loading, error, refetch } = useApi<DashboardOverview>('/dashboard/overview', {
+    refreshInterval: 30000,
+  });
   const navigate = useNavigate();
   const { t } = useI18n();
-
-  const startAutoRefresh = useCallback(() => {
-    const interval = setInterval(() => {
-      refetch();
-    }, 30000);
-    return interval;
-  }, [refetch]);
-
-  useEffect(() => {
-    const interval = startAutoRefresh();
-    return () => clearInterval(interval);
-  }, [startAutoRefresh]);
 
   const overview = data;
   const statusTotal = (overview?.device_status_distribution || []).reduce(

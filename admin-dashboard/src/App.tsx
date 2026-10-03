@@ -24,6 +24,7 @@ import MfaPage from './pages/MfaPage';
 import ReportsPage from './pages/ReportsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import HermesPage from './pages/HermesPage';
+import InvestigationPage from './pages/InvestigationPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ProfilePage from './pages/ProfilePage';
@@ -234,6 +235,14 @@ export default function App() {
           element={
             <PermissionGate permission="hermes.view">
               <HermesPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="hermes/investigations/:id"
+          element={
+            <PermissionGate permission="hermes.view">
+              <InvestigationPage />
             </PermissionGate>
           }
         />

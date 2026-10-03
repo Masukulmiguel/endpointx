@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import { JWT } from '../config/constants';
 import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
 import { remoteSecretFor } from '../remote';
+import { onForensicCommandResult } from '../hermes/forensics';
 
 const router = Router();
 
@@ -1016,8 +1017,24 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
     await query("UPDATE agent_commands SET status = $1, result = $2, error_message = $3, executed_at = NOW(), completed_at = NOW() WHERE id = $4 AND device_id = $5",
       [validStatus, resultStr, errorStr, command_id, deviceResult.rows[0].id]);
 
+    const cmdType = await query('SELECT command_type FROM agent_commands WHERE id = $1', [command_id]);
+
     logger.info('Command result received', { command_id, status: validStatus });
     res.json({ success: true, data: { message: 'Command result recorded' } });
+
+    // Forensic bundles are analysed after the response so the agent is never
+    // kept waiting by the correlation/report work (and retrying the POST
+    // cannot start a second analysis - see onForensicCommandResult guard).
+    if (cmdType.rows[0]?.command_type === 'forensic_collect') {
+      onForensicCommandResult({
+        commandId: command_id,
+        status: validStatus,
+        result: result ?? resultStr,
+        errorMessage: errorStr,
+      }).catch((err: Error) => {
+        logger.error('Forensic result handling failed', { command_id, error: err.message });
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -1284,7 +1301,7 @@ Read-Host "Press Enter to close"`;
 router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params;
-    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'requirements.txt', 'crypto_utils.py'];
+    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'forensics.py', 'requirements.txt', 'crypto_utils.py'];
 
     if (!allowedFiles.includes(filename)) {
       res.status(404).json({ success: false, error: { message: 'File not found' } });
@@ -1391,7 +1408,7 @@ router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, n
 router.get('/download/public/:filename', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params;
-    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'requirements.txt', 'crypto_utils.py'];
+    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'forensics.py', 'requirements.txt', 'crypto_utils.py'];
 
     if (!allowedFiles.includes(filename)) {
       res.status(404).json({ success: false, error: { message: 'File not found' } });

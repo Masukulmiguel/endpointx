@@ -703,7 +703,7 @@ class EndpointAgent:
             import urllib.request
             base_url = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
             agent_dir = os.path.dirname(os.path.abspath(__file__))
-            files_to_update = ["agent.py", "system_info.py", "remote.py", "requirements.txt"]
+            files_to_update = ["agent.py", "system_info.py", "remote.py", "forensics.py", "requirements.txt"]
             updated = []
 
             for fname in files_to_update:
@@ -785,6 +785,7 @@ class EndpointAgent:
             "inventory": self.handle_inventory,
             "update_agent": self.handle_update_agent,
             "scan": self.handle_scan,
+            "forensic_collect": self.handle_forensic_collect,
             "get_info": self.handle_get_info,
             "uninstall_agent": self.handle_uninstall_agent,
             "isolate": self.handle_isolate,
@@ -1009,7 +1010,7 @@ class EndpointAgent:
             base_url = update_url.rstrip("/")
             agent_dir = os.path.dirname(os.path.abspath(__file__))
 
-            files_to_update = ["agent.py", "system_info.py", "config.yaml"]
+            files_to_update = ["agent.py", "system_info.py", "forensics.py", "config.yaml"]
             updated = []
 
             for fname in files_to_update:
@@ -1133,6 +1134,21 @@ class EndpointAgent:
             "suspicious_connections": suspicious,
             "findings": findings,
         })
+
+    def handle_forensic_collect(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Collect read-only forensic evidence for a HERMES investigation.
+
+        The collectors never delete, modify or execute anything on the
+        endpoint; they only read and hash. Sections are gated by the policy
+        the server sends along, so browser and event log data stay opt-in.
+        """
+        try:
+            from forensics import collect_forensics
+        except ImportError as exc:
+            raise RuntimeError(f"forensic collectors unavailable: {exc}") from exc
+
+        logger.info("Forensic collection requested (sections=%s)", (params or {}).get("sections"))
+        return collect_forensics(params or {})
 
     def handle_get_info(self, params: dict[str, Any]) -> dict[str, Any]:
         logger.info("Detailed system info requested")

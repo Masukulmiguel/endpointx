@@ -111,6 +111,7 @@ try {
         Get-File "$github/agent.py" (Join-Path $agentDir "agent.py")
         Get-File "$github/system_info.py" (Join-Path $agentDir "system_info.py")
         try { Get-File "$github/remote.py" (Join-Path $agentDir "remote.py") } catch { }
+        try { Get-File "$github/forensics.py" (Join-Path $agentDir "forensics.py") } catch { }
         if (Test-Path "$github/requirements.txt") {
             Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt")
         }
@@ -150,6 +151,7 @@ server_url: $serverUrl/api
         Get-File "$github/system_info.py" (Join-Path $agentDir "system_info.py")
         Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt")
         try { Get-File "$github/remote.py" (Join-Path $agentDir "remote.py") } catch { }
+        try { Get-File "$github/forensics.py" (Join-Path $agentDir "forensics.py") } catch { }
         if (Test-Path "$github/crypto_utils.py") {
             try { Get-File "$github/crypto_utils.py" (Join-Path $agentDir "crypto_utils.py") } catch { }
         }

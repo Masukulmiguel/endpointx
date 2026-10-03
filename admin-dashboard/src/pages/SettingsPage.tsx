@@ -4,6 +4,7 @@ import {
   Server,
   Shield,
   Monitor,
+  Search,
   Save,
   CheckCircle,
 } from 'lucide-react';
@@ -56,6 +57,16 @@ const settingGroups: SettingGroup[] = [
     icon: Monitor,
     settings: [
       { key: 'items_per_page', label: 'Items Per Page', type: 'number', description: 'Default number of items per page in tables' },
+    ],
+  },
+  {
+    title: 'HERMES Forensics',
+    description: 'Read-only evidence collection triggered from an alert',
+    icon: Search,
+    settings: [
+      { key: 'hermes_collect_browser', label: 'Collect browser evidence', type: 'toggle', description: 'Include browser history and downloads in forensic investigations' },
+      { key: 'hermes_collect_eventlog', label: 'Collect event logs', type: 'toggle', description: 'Include Windows Event Log / journald events in forensic investigations' },
+      { key: 'hermes_forensic_retention_days', label: 'Investigation retention (days)', type: 'number', description: 'Investigations and their evidence are purged after this many days' },
     ],
   },
 ];

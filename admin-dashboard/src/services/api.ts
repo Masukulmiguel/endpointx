@@ -6,7 +6,25 @@ const API_BASE = window.location.hostname === 'localhost'
 // always point at the deployed server (never the local dev proxy).
 export const API_ORIGIN = 'https://endpointx.onrender.com';
 
-function friendlyErrorMessage(raw: string, status: number): string {
+function friendlyErrorMessage(raw: string, status: number, retryAfter?: number): string {
+  if (status === 429) {
+    const wait = retryAfter && retryAfter > 0 ? retryAfter : null;
+    const locale = (() => {
+      try {
+        return localStorage.getItem('endpointx_locale');
+      } catch {
+        return null;
+      }
+    })();
+    if (locale === 'en') {
+      return wait
+        ? `Too many requests. Please wait ${wait}s and try again.`
+        : 'Too many requests. Please try again in a few moments.';
+    }
+    return wait
+      ? `Demasiados pedidos. Aguarde ${wait}s e tente novamente.`
+      : 'Demasiados pedidos. Tente novamente dentro de instantes.';
+  }
   const isPermission =
     status === 403 ||
     /permission|403|forbidden|required permissions/i.test(raw);
@@ -22,9 +40,28 @@ function friendlyErrorMessage(raw: string, status: number): string {
   return 'Não tem permissão para aceder a esta área. Contacte o administrador.';
 }
 
+export class ApiError extends Error {
+  readonly status: number;
+  /** Seconds the server asked us to wait (429), or 0 when not supplied. */
+  readonly retryAfter: number;
+  /** Set when the server reports an already-running investigation for this alert. */
+  readonly investigationId?: string;
+
+  constructor(message: string, status: number, retryAfter = 0, investigationId?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.retryAfter = retryAfter;
+    this.investigationId = investigationId;
+  }
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+  // Set when the server answers 429 so every caller (page loads, background
+  // polling, layout refresh) stops hammering at once instead of piling up.
+  private rateLimitedUntil = 0;
 
   constructor() {
     this.accessToken = localStorage.getItem('access_token');
@@ -50,6 +87,11 @@ class ApiClient {
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    if (Date.now() < this.rateLimitedUntil) {
+      const wait = Math.ceil((this.rateLimitedUntil - Date.now()) / 1000);
+      throw new ApiError(friendlyErrorMessage('Too many requests', 429, wait), 429, wait);
+    }
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -83,7 +125,19 @@ class ApiClient {
         body?.error?.message ||
         body?.message ||
         `HTTP ${response.status}`;
-      throw new Error(friendlyErrorMessage(message, response.status));
+      const retryAfterRaw = response.headers.get('Retry-After');
+      const retryAfter = retryAfterRaw ? Math.max(0, parseInt(retryAfterRaw, 10) || 0) : 0;
+      if (response.status === 429) {
+        // Re-check at most once a minute even if the server asks for longer
+        const cooldown = Math.min(retryAfter > 0 ? retryAfter : 30, 60);
+        this.rateLimitedUntil = Date.now() + cooldown * 1000;
+      }
+      throw new ApiError(
+        friendlyErrorMessage(message, response.status, retryAfter),
+        response.status,
+        retryAfter,
+        typeof body?.error?.investigationId === 'string' ? body.error.investigationId : undefined
+      );
     }
 
     return response.json();
@@ -566,6 +620,31 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
+  }
+
+  // HERMES forensic investigations (read-only collection on the endpoint)
+  async startInvestigation(alertId: string, sections?: string[]) {
+    return this.request('/hermes/investigations', {
+      method: 'POST',
+      body: JSON.stringify({ alert_id: alertId, ...(sections && sections.length ? { sections } : {}) }),
+    });
+  }
+
+  async getInvestigations(params?: Record<string, any>) {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return this.request(`/hermes/investigations${query}`);
+  }
+
+  async getInvestigation(id: string) {
+    return this.request(`/hermes/investigations/${id}`);
+  }
+
+  async cancelInvestigation(id: string) {
+    return this.request(`/hermes/investigations/${id}/cancel`, { method: 'POST' });
+  }
+
+  async downloadInvestigationReport(id: string): Promise<Blob> {
+    return this.download(`/hermes/investigations/${id}/report?format=md`);
   }
 
   async download(path: string): Promise<Blob> {

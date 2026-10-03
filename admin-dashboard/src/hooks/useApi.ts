@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import api from '../services/api';
+import api, { ApiError } from '../services/api';
 
 interface UseApiOptions {
   immediate?: boolean;
@@ -26,8 +26,12 @@ export function useApi<T = unknown>(
   const [loading, setLoading] = useState(immediate);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  // Background polling backs off instead of hammering the API while it is
+  // answering 429; manual refetches always go through.
+  const blockedUntilRef = useRef(0);
 
   const fetchData = useCallback(async (background = false) => {
+    if (background && Date.now() < blockedUntilRef.current) return;
     if (!background) {
       setLoading(true);
       setError(null);
@@ -39,9 +43,14 @@ export function useApi<T = unknown>(
         : '';
       const response = await api.request<any>(`${endpoint}${query}`);
       if (mountedRef.current) {
+        blockedUntilRef.current = 0;
         setData(response?.success !== undefined && response?.data !== undefined ? response.data : response);
       }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        blockedUntilRef.current =
+          Date.now() + Math.max(err.retryAfter, 15) * 1000;
+      }
       if (!background && mountedRef.current) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       }

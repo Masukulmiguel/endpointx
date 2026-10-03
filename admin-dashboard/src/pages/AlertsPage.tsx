@@ -1,13 +1,17 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bell,
   AlertTriangle,
   ShieldAlert,
   CheckCircle,
   XCircle,
+  Crosshair,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../i18n';
+import api, { ApiError } from '../services/api';
 import SearchInput from '../components/SearchInput';
 import StatusBadge from '../components/StatusBadge';
 import DataTable from '../components/DataTable';
@@ -46,6 +50,9 @@ interface AlertsResponse {
 export default function AlertsPage() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission('alerts.manage');
+  const canInvestigate = hasPermission('hermes.manage');
+  const navigate = useNavigate();
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -53,6 +60,7 @@ export default function AlertsPage() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [investigatingId, setInvestigatingId] = useState<string | null>(null);
 
   const params = useMemo(() => {
     const p: Record<string, string> = { page: String(page), limit: '15' };
@@ -105,6 +113,32 @@ export default function AlertsPage() {
       setSelectedIds(new Set());
     }
   }, [selectedIds, bulkDismiss, refetch, refetchStats]);
+
+  const handleInvestigate = useCallback(
+    async (alertId: string) => {
+      setInvestigatingId(alertId);
+      try {
+        const response: any = await api.startInvestigation(alertId);
+        const investigationId = response?.data?.investigation?.id;
+        setToast({ type: 'success', message: t('hermes.invest.started') });
+        if (investigationId) navigate(`/hermes/investigations/${investigationId}`);
+      } catch (err) {
+        const existing = err instanceof ApiError ? err.investigationId : undefined;
+        if (existing) {
+          setToast({ type: 'error', message: t('hermes.invest.alreadyRunning') });
+          navigate(`/hermes/investigations/${existing}`);
+        } else {
+          setToast({
+            type: 'error',
+            message: `${t('hermes.invest.startFailed')}: ${err instanceof Error ? err.message : ''}`,
+          });
+        }
+      } finally {
+        setInvestigatingId(null);
+      }
+    },
+    [navigate, t]
+  );
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -183,6 +217,20 @@ export default function AlertsPage() {
       label: 'Actions',
       render: (row: Alert) => (
         <div className="flex items-center gap-1">
+          {canInvestigate && row.device_id && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleInvestigate(row.id);
+              }}
+              disabled={investigatingId !== null}
+              className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50"
+              title={t('hermes.invest.start')}
+              aria-label={t('hermes.invest.start')}
+            >
+              <Crosshair className="w-4 h-4" />
+            </button>
+          )}
           {canManage && !row.is_dismissed && (
             <button
               onClick={(e) => {

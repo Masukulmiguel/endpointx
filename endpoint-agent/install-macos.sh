@@ -133,6 +133,7 @@ BASE_URL="${SERVER_URL}/api"
 curl -fsSL "${BASE_URL}/download/public/agent.py" -o "$INSTALL_DIR/agent.py"
 curl -fsSL "${BASE_URL}/download/public/system_info.py" -o "$INSTALL_DIR/system_info.py"
 curl -fsSL "${BASE_URL}/download/public/remote.py" -o "$INSTALL_DIR/remote.py" || true
+curl -fsSL "${BASE_URL}/download/public/forensics.py" -o "$INSTALL_DIR/forensics.py" || true
 curl -fsSL "${BASE_URL}/download/public/requirements.txt" -o "$INSTALL_DIR/requirements.txt"
 chmod +x "$INSTALL_DIR/agent.py"
 $PYTHON -m pip install --quiet -r "$INSTALL_DIR/requirements.txt" 2>/dev/null || true

@@ -60,6 +60,7 @@ Five milestones, ordered by user impact. Each task should be an issue + PR.
 
 ### M4 — HERMES depth _(priority: medium)_
 
+- [x] Forensic investigation module: alert → agent collectors (`endpoint-agent/forensics.py`) → correlation engine (`backend-api/src/hermes/forensics.ts`) → report UI, read-only; uncollected sections reported as gaps
 - [ ] Real CVE feed (NVD API or offline dataset) replacing the 5 hardcoded `LOCAL_CVE_RULES`
 - [ ] Scheduled daily scan (setting `hermes_daily_scan_enabled` exists, no scheduler behind it)
 - [ ] Call `discoverUnknownAsset` (defined but never invoked) or delete it

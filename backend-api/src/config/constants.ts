@@ -142,6 +142,10 @@ export const RATE_LIMIT = {
   AUTH_MAX_REQUESTS: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '20', 10),
   HEARTBEAT_MAX_REQUESTS: parseInt(process.env.HEARTBEAT_RATE_LIMIT_MAX || '300', 10),
   HEARTBEAT_IP_MAX_REQUESTS: parseInt(process.env.HEARTBEAT_RATE_LIMIT_IP_MAX || '1000', 10),
+  // One agent polls /devices/command-poll every 3s = ~300 requests per 15-min
+  // window, so its budget must sit comfortably above that.
+  AGENT_POLL_MAX_REQUESTS: parseInt(process.env.AGENT_POLL_RATE_LIMIT_MAX || '600', 10),
+  AGENT_POLL_IP_MAX_REQUESTS: parseInt(process.env.AGENT_POLL_RATE_LIMIT_IP_MAX || '20000', 10),
   SKIP_SUCCESSFUL: false,
   STANDARD_HEADERS: true,
   LEGACY_HEADERS: false,

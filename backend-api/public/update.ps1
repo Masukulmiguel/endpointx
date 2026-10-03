@@ -76,6 +76,7 @@ try {
     Invoke-WebRequest -Uri "$github/agent.py" -OutFile "$agentDir\agent.py" -UseBasicParsing -TimeoutSec 60
     Invoke-WebRequest -Uri "$github/system_info.py" -OutFile "$agentDir\system_info.py" -UseBasicParsing -TimeoutSec 60
     try { Invoke-WebRequest -Uri "$github/remote.py" -OutFile "$agentDir\remote.py" -UseBasicParsing -TimeoutSec 60 } catch { }
+    try { Invoke-WebRequest -Uri "$github/forensics.py" -OutFile "$agentDir\forensics.py" -UseBasicParsing -TimeoutSec 60 } catch { }
     try { Invoke-WebRequest -Uri "$github/requirements.txt" -OutFile "$agentDir\requirements.txt" -UseBasicParsing -TimeoutSec 60 } catch { }
 } catch {
     Write-Err "Falha no download: $($_.Exception.Message)"

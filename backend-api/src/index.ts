@@ -64,9 +64,21 @@ const authLimiter = rateLimit({
   legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
 });
 
-// Presence heartbeats run forever from many devices; they must not consume the shared /api bucket
-const isHeartbeatPath = (reqPath: string) =>
-  reqPath === '/devices/heartbeat' || reqPath === '/devices/mobile/heartbeat';
+// Agent (machine-to-machine) endpoints must not consume the shared /api bucket:
+// one agent polls /devices/command-poll every 3s (~300 requests per 15-min
+// window), so two devices behind the same NAT already exhaust the budget and
+// every dashboard request behind that IP starts getting 429.
+const AGENT_PATH_RE =
+  /^\/devices\/(heartbeat|mobile\/heartbeat|command-poll|command-result|register|inventory|security-scan)$/;
+
+// req.path is already stripped of the mount point, but normalise anyway so the
+// matcher keeps working if the limiter is ever mounted on the full path
+const isAgentPath = (reqPath: string) => AGENT_PATH_RE.test(reqPath.replace(/^\/api/, ''));
+
+const agentIdOf = (req: Request): string => {
+  const agentId = typeof req.body?.agent_id === 'string' ? req.body.agent_id.trim() : '';
+  return agentId.slice(0, 64) || req.ip || 'unknown';
+};
 
 const apiLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOW_MS,
@@ -74,7 +86,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
   legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
-  skip: (req) => isHeartbeatPath(req.path),
+  skip: (req) => isAgentPath(req.path),
 });
 
 // Heartbeat limiter keyed by the agent (device), so devices behind the same NAT never share a bucket
@@ -84,10 +96,7 @@ const heartbeatLimiter = rateLimit({
   message: { error: 'Too many heartbeat requests, please try again later.' },
   standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
   legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
-  keyGenerator: (req) => {
-    const agentId = typeof req.body?.agent_id === 'string' ? req.body.agent_id.trim() : '';
-    return `heartbeat:${agentId.slice(0, 64) || req.ip || 'unknown'}`;
-  },
+  keyGenerator: (req) => `heartbeat:${agentIdOf(req)}`,
 });
 
 // Safety net on the source IP so fake agent ids cannot be used to flood the endpoint
@@ -99,10 +108,37 @@ const heartbeatIpLimiter = rateLimit({
   legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
 });
 
+// Fast command poll (every 3s per agent) gets its own budget, keyed by agent
+const commandPollLimiter = rateLimit({
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.AGENT_POLL_MAX_REQUESTS,
+  message: { error: 'Too many command poll requests, please try again later.' },
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
+  keyGenerator: (req) => `command-poll:${agentIdOf(req)}`,
+});
+
+// IP safety net for the fast poll: a client without an agent id still cannot
+// flood it, while a whole office behind one NAT stays well within budget
+const agentIpLimiter = rateLimit({
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.AGENT_POLL_IP_MAX_REQUESTS,
+  message: { error: 'Too many agent requests, please try again later.' },
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: RATE_LIMIT.LEGACY_HEADERS,
+});
+
 app.use('/api/auth', authLimiter);
 app.use('/api', apiLimiter);
 app.use('/api/devices/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
 app.use('/api/devices/mobile/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
+app.use('/api/devices/command-poll', commandPollLimiter, agentIpLimiter);
+// Remaining agent endpoints are low frequency but still machine traffic: give
+// them an IP budget of their own instead of the human /api bucket
+app.use('/api/devices/register', agentIpLimiter);
+app.use('/api/devices/inventory', agentIpLimiter);
+app.use('/api/devices/command-result', agentIpLimiter);
+app.use('/api/devices/security-scan', agentIpLimiter);
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
@@ -131,6 +167,7 @@ import policiesRoutes from './routes/policies';
 import softwareRoutes from './routes/software';
 import notificationsRoutes from './routes/notifications';
 import hermesRoutes from './routes/hermes';
+import forensicsRoutes from './routes/forensics';
 import netsentinelRoutes from './routes/netsentinel';
 import reportsRoutes from './routes/reports';
 
@@ -151,6 +188,7 @@ app.use('/api/policies', policiesRoutes);
 app.use('/api/compliance', policiesRoutes);
 app.use('/api/software', softwareRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/hermes', forensicsRoutes);
 app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/reports', reportsRoutes);
