@@ -20,6 +20,8 @@ interface Room {
   operators: Set<WebSocket>;
   /** Last screen inventory advertised by the agent (one entry per monitor). */
   monitors?: Record<string, unknown>;
+  /** Last capability report (Android: screen share + accessibility input). */
+  caps?: Record<string, unknown>;
 }
 
 const rooms = new Map<string, Room>();
@@ -127,6 +129,14 @@ async function handleAgentHandshake(ws: WebSocket, agentId: string, secret: stri
   authed.deviceId = deviceId;
   sendJson(ws, { t: 'ready', role: 'agent', device_id: deviceId });
   broadcastToOperators(deviceId, { t: 'agent', connected: true });
+  // Presence: the socket is the freshest signal we have, so a phone that just
+  // came back from doze is online the moment it reconnects instead of waiting
+  // for the next HTTP heartbeat. Only a genuinely offline device flips, so
+  // contained/blocked states are preserved (same rule as the heartbeats).
+  void query(
+    "UPDATE devices SET status = 'online', last_heartbeat = NOW() WHERE id = $1 AND status = 'offline'",
+    [deviceId]
+  ).catch((error) => logger.warn('Remote: presence update failed', { deviceId, error: (error as Error).message }));
   logger.info('Remote: agent connected', { deviceId, agentId });
 }
 
@@ -160,6 +170,7 @@ async function handleOperatorHandshake(
   authed.user = user;
   sendJson(ws, { t: 'ready', role: 'operator', device_id: deviceId, agent_connected: !!room.agent });
   if (room.monitors) sendJson(ws, room.monitors);
+  if (room.caps) sendJson(ws, room.caps);
   logger.info('Remote: operator connected', { deviceId, userId: user.id });
   await writeAudit(user, deviceId, 'remote_session', `Remote session started (${deviceId})`, ip);
 }
@@ -185,6 +196,7 @@ function handleAgentMessage(deviceId: string, data: Buffer | string, isBinary: b
     return;
   }
   if (payload.t === 'monitors') room.monitors = payload;
+  if (payload.t === 'caps') room.caps = payload;
   broadcastToOperators(deviceId, payload);
 }
 

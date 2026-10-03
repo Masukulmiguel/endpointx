@@ -59,6 +59,10 @@ object Remote {
     @Volatile
     private var pending: ScheduledFuture<*>? = null
 
+    /** Last "what this phone can do" payload sent, so changes only go out once. */
+    @Volatile
+    private var lastCaps: String? = null
+
     private val scheduler: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "endpointx-remote").apply { isDaemon = true }
@@ -113,6 +117,20 @@ object Remote {
                         connected = true
                         attempt = 0
                         callback?.onConnectionChange(true)
+                        // Tell the console straight away what this phone can do
+                        // (screen share / accessibility input), and refresh the
+                        // heartbeat so the dashboard shows the device online
+                        // without waiting for the next 30s tick.
+                        sendCaps(force = true)
+                        appContext?.let { ctx ->
+                            scheduler.execute {
+                                try {
+                                    EndpointApi.heartbeat(ctx)
+                                } catch (e: Exception) {
+                                    Log.d(TAG, "heartbeat after connect failed: ${e.message}")
+                                }
+                            }
+                        }
                     }
                     "error" -> Log.w(TAG, "relay refused: ${msg.optString("message")}")
                     "start", "stop", "mouse", "wheel", "key", "type" -> callback?.onCommand(msg)
@@ -161,6 +179,7 @@ object Remote {
     fun disconnect() {
         connected = false
         attempt = 0
+        lastCaps = null
         try {
             pending?.cancel(false)
         } catch (e: Exception) {
@@ -174,6 +193,48 @@ object Remote {
             // ignore
         }
         ws = null
+    }
+
+    /**
+     * Reconnects as soon as a network becomes available instead of waiting out
+     * the exponential backoff - this is what makes the phone show up online
+     * right after Wi-Fi/data comes back instead of up to 30s+ later.
+     */
+    @Synchronized
+    fun reconnectNow(ctx: Context) {
+        appContext = ctx.applicationContext
+        attempt = 0
+        if (reconnectScheduled) {
+            try {
+                pending?.cancel(false)
+            } catch (e: Exception) {
+                // ignore
+            }
+            pending = null
+            reconnectScheduled = false
+        }
+        if (connected) return
+        val socket = ws
+        if (socket != null) {
+            // Half-dead socket: cancel it, onFailure schedules the retry in ~1s
+            socket.cancel()
+        } else {
+            connect(ctx)
+        }
+    }
+
+    /**
+     * Reports what the phone can currently do. The console uses it to explain
+     * why remote access is unavailable (screen share not authorised, or the
+     * accessibility service off) instead of silently dropping the input.
+     */
+    fun sendCaps(force: Boolean = false) {
+        val control = ControlService.isReady
+        val share = ShareService.isActive
+        val key = "$control:$share"
+        if (!force && key == lastCaps) return
+        lastCaps = key
+        send(JSONObject().put("t", "caps").put("control", control).put("share", share))
     }
 
     fun sendFrame(jpeg: ByteArray): Boolean {

@@ -6,6 +6,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -47,6 +51,19 @@ class RemoteService : Service(), Remote.Callback {
     private var scheduler: ScheduledExecutorService? = null
     private var heartbeatScheduled = false
     private var watchdogScheduled = false
+    private var connectivity: ConnectivityManager? = null
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            // Data/Wi-Fi came back: skip the backoff and reconnect at once so
+            // the phone is reachable (and shows online) without a long wait.
+            try {
+                Remote.reconnectNow(applicationContext)
+            } catch (e: Exception) {
+                Log.d(TAG, "network reconnect failed: ${e.message}")
+            }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -54,6 +71,17 @@ class RemoteService : Service(), Remote.Callback {
         super.onCreate()
         Remote.callback = this
         scheduler = Executors.newSingleThreadScheduledExecutor()
+        connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        try {
+            connectivity?.registerNetworkCallback(
+                NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(),
+                networkCallback
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "could not register network callback: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -67,15 +95,19 @@ class RemoteService : Service(), Remote.Callback {
                 } catch (e: Exception) {
                     Log.d(TAG, "heartbeat failed: ${e.message}")
                 }
-            }, 0, 60, TimeUnit.SECONDS)
+            }, 0, 30, TimeUnit.SECONDS)
         }
         if (!watchdogScheduled) {
             watchdogScheduled = true
             // Safety net: if the socket silently died (doze, network switch,
-            // server restart) this brings it back without waiting for a reboot.
+            // server restart) this brings it back without waiting for a reboot,
+            // and the accessibility service is switched back on whenever the
+            // app holds the ADB-granted permission (a reboot/update can turn it
+            // off, which is what makes remote input stop working "sometimes").
             scheduler?.scheduleAtFixedRate({
                 try {
                     if (!Remote.connected) Remote.connect(this)
+                    if (!ControlService.isEnabled(this)) ControlService.enableSelf(this)
                 } catch (e: Exception) {
                     Log.d(TAG, "reconnect watchdog failed: ${e.message}")
                 }
@@ -89,7 +121,9 @@ class RemoteService : Service(), Remote.Callback {
             "start" -> {
                 val share = ShareService.instance
                 if (share == null || !share.projecting) {
-                    Remote.sendError("Autorize a partilha de ecrã na app EndpointX do telemóvel")
+                    // Report the missing permission instead of a hard error:
+                    // the console turns this into an actionable banner.
+                    Remote.sendCaps()
                     return
                 }
                 share.applyStream(message)
@@ -99,7 +133,14 @@ class RemoteService : Service(), Remote.Callback {
                 Remote.sendStopped()
             }
             "mouse", "wheel", "key", "type" -> {
-                ControlService.instance?.handle(message)
+                val control = ControlService.instance
+                if (control == null) {
+                    // Without the accessibility service the input would be
+                    // dropped with no feedback - tell the console why.
+                    Remote.sendCaps()
+                    return
+                }
+                control.handle(message)
             }
         }
     }
@@ -133,6 +174,12 @@ class RemoteService : Service(), Remote.Callback {
     }
 
     override fun onDestroy() {
+        try {
+            connectivity?.unregisterNetworkCallback(networkCallback)
+        } catch (e: Exception) {
+            // ignore: was never registered
+        }
+        connectivity = null
         scheduler?.shutdownNow()
         scheduler = null
         Remote.callback = null

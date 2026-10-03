@@ -116,6 +116,29 @@ def _clamp(value: Any, low: int, high: int, default: int) -> int:
         return default
 
 
+def ensure_dpi_awareness() -> None:
+    """Pin the process to physical pixels before any screen API is used.
+
+    mss grabs physical pixels while a DPI-unaware process sees virtualised
+    (logical) coordinates from GetCursorPos/SetCursorPos, so with Windows
+    display scaling above 100% the operator's clicks land away from the
+    pointer they saw. Doing it once at import keeps capture, cursor reading
+    and pyautogui in the same coordinate space.
+    """
+    try:
+        import ctypes
+
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+ensure_dpi_awareness()
+
+
 class RemoteAccess:
     """Persistent control channel to the EndpointX server."""
 
@@ -132,15 +155,25 @@ class RemoteAccess:
         self._binary_opcode = 0x2
         self._connected = False
         self._active_rect: Optional[dict[str, int]] = None
+        self._stream_params: dict[str, Any] = {}
+        self._cursor_thread: Optional[threading.Thread] = None
+        self._buttons_down: set[str] = set()
+        self._keys_down: set[str] = set()
 
     # -- lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
         thread = threading.Thread(target=self._run, name="remote-access", daemon=True)
         thread.start()
+        # Pointer position is reported on its own clock: tying it to the frame
+        # loop would cap it at the capture fps (8-10 Hz) and make the operator
+        # see the remote cursor trail behind their own mouse.
+        self._cursor_thread = threading.Thread(target=self._cursor_loop, name="remote-cursor", daemon=True)
+        self._cursor_thread.start()
 
     def stop(self) -> None:
         self._streaming = False
+        self._release_all()
         ws, self._ws = self._ws, None
         if ws is not None:
             try:
@@ -218,6 +251,7 @@ class RemoteAccess:
 
     def _on_close(self, *_args: Any) -> None:
         self._streaming = False
+        self._release_all()
         logger.info("Remote channel closed")
 
     def _on_error(self, _ws: Any, error: Any) -> None:
@@ -311,8 +345,15 @@ class RemoteAccess:
 
     def _start_stream(self, params: dict[str, Any]) -> None:
         with self._stream_lock:
-            if self._streaming and self._stream_thread and self._stream_thread.is_alive():
+            running = bool(self._streaming and self._stream_thread and self._stream_thread.is_alive())
+            if running and params == self._stream_params:
                 return
+            if running:
+                # Monitor/fps/quality changed: tear the loop down first,
+                # otherwise this early return keeps streaming the old screen.
+                self._streaming = False
+                self._stream_thread.join(timeout=3.0)
+            self._stream_params = dict(params)
             self._streaming = True
             self._stream_thread = threading.Thread(
                 target=self._capture_loop, args=(params,), name="remote-capture", daemon=True
@@ -321,6 +362,7 @@ class RemoteAccess:
 
     def _stop_stream(self) -> None:
         self._streaming = False
+        self._release_all()
 
     def _capture_loop(self, params: dict[str, Any]) -> None:
         try:
@@ -348,8 +390,6 @@ class RemoteAccess:
                     "width": int(monitor.get("width", 0)),
                     "height": int(monitor.get("height", 0)),
                 }
-                size = (monitor["width"], monitor["height"])
-                last_cursor = (0.0, 0.0, None)
                 while self._streaming and not self.stop_event.is_set():
                     started = time.time()
                     shot = sct.grab(monitor)
@@ -368,21 +408,6 @@ class RemoteAccess:
                         self._send(buffer.getvalue(), binary=True)
                         last_digest = digest
                         frame_no += 1
-                    cursor = self._cursor_state(self._active_rect)
-                    if (
-                        cursor[2] != last_cursor[2]
-                        or abs(cursor[0] - last_cursor[0]) > 0.002
-                        or abs(cursor[1] - last_cursor[1]) > 0.002
-                    ):
-                        last_cursor = cursor
-                        self._send(
-                            {
-                                "t": "cursor",
-                                "x": round(cursor[0], 4),
-                                "y": round(cursor[1], 4),
-                                "visible": cursor[2],
-                            }
-                        )
                     elapsed = time.time() - started
                     if elapsed < interval:
                         time.sleep(interval - elapsed)
@@ -396,6 +421,26 @@ class RemoteAccess:
             self._send({"t": "stopped"})
 
     # -- input -------------------------------------------------------------
+
+    def _cursor_loop(self) -> None:
+        """Report the pointer at ~60 Hz, independent of the capture fps."""
+        last: tuple[float, float, Optional[bool]] = (0.0, 0.0, None)
+        while not self.stop_event.is_set():
+            if not self._streaming or self._active_rect is None:
+                last = (0.0, 0.0, None)
+                time.sleep(0.05)
+                continue
+            state = self._cursor_state(self._active_rect)
+            if (
+                state[2] != last[2]
+                or abs(state[0] - last[0]) > 0.0015
+                or abs(state[1] - last[1]) > 0.0015
+            ):
+                last = state
+                self._send(
+                    {"t": "cursor", "x": round(state[0], 4), "y": round(state[1], 4), "visible": state[2]}
+                )
+            time.sleep(0.016)
 
     @staticmethod
     def _cursor_state(rect: Optional[dict[str, int]]) -> tuple[float, float, bool]:
@@ -494,12 +539,37 @@ class RemoteAccess:
             gui.moveTo(x, y)
         elif action == "down":
             gui.mouseDown(x=x, y=y, button=button)
+            self._buttons_down.add(button)
         elif action == "up":
             gui.mouseUp(x=x, y=y, button=button)
+            self._buttons_down.discard(button)
         elif action == "click":
             gui.click(x=x, y=y, button=button)
         elif action == "dblclick":
             gui.doubleClick(x=x, y=y, button=button)
+
+    def _release_all(self) -> None:
+        """Let go of every button/key still held (session end, socket drop)."""
+        buttons = list(self._buttons_down)
+        keys = list(self._keys_down)
+        self._buttons_down.clear()
+        self._keys_down.clear()
+        if not buttons and not keys:
+            return
+        try:
+            gui = self._gui()
+        except Exception:
+            return
+        for button in buttons:
+            try:
+                gui.mouseUp(button=button)
+            except Exception as exc:
+                logger.debug("Release button %s failed: %s", button, exc)
+        for key in keys:
+            try:
+                gui.keyUp(key)
+            except Exception as exc:
+                logger.debug("Release key %s failed: %s", key, exc)
 
     def _wheel(self, msg: dict[str, Any]) -> None:
         gui = self._gui()
@@ -509,9 +579,9 @@ class RemoteAccess:
         except (TypeError, ValueError):
             return
         if dx:
-            gui.hscroll(int(dx))
+            gui.hscroll(int(round(dx)))
         if dy:
-            gui.vscroll(int(dy))
+            gui.vscroll(int(round(dy)))
 
     def _resolve_key(self, code: Any) -> Optional[str]:
         if not isinstance(code, str):
@@ -531,8 +601,10 @@ class RemoteAccess:
         action = str(msg.get("action") or "press")
         if action == "down":
             gui.keyDown(key)
+            self._keys_down.add(key)
         elif action == "up":
             gui.keyUp(key)
+            self._keys_down.discard(key)
         else:
             gui.press(key)
 

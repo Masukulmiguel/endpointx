@@ -87,6 +87,7 @@ class ControlService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.i(TAG, "control service ready")
+        Remote.sendCaps(force = true)
     }
 
     override fun onInterrupt() {
@@ -99,6 +100,7 @@ class ControlService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        Remote.sendCaps(force = true)
         super.onDestroy()
     }
 

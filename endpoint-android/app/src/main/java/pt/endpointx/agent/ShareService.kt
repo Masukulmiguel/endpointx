@@ -141,6 +141,7 @@ class ShareService : Service() {
             startVirtualDisplay(mediaProjection)
             projecting = true
             Log.i(TAG, "screen sharing ready")
+            Remote.sendCaps(force = true)
         } catch (e: Exception) {
             Log.e(TAG, "could not start projection: ${e.message}")
             Remote.sendError("Autorize o ecrã na app do EndpointX e tente novamente")
@@ -261,6 +262,7 @@ class ShareService : Service() {
         }
         projection = null
         Remote.sendStopped()
+        Remote.sendCaps(force = true)
     }
 
     override fun onDestroy() {

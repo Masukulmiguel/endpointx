@@ -35,6 +35,12 @@ const BUTTONS: Record<number, 'left' | 'middle' | 'right'> = {
   2: 'right',
 };
 
+// How long the locally drawn pointer keeps priority over the remote one. While
+// the operator is moving the mouse the overlay echoes it instantly (zero
+// perceived latency); once they stop, the position reported by the endpoint
+// takes over again so the pointer of the person being helped is still visible.
+const POINTER_IDLE_MS = 700;
+
 interface Props {
   deviceId: string;
 }
@@ -48,6 +54,13 @@ export default function RemoteViewer({ deviceId }: Props) {
   const lastMoveRef = useRef(0);
   const touchRef = useRef<{ x: number; y: number; t: number; moved: number; fingers: number } | null>(null);
   const manualCloseRef = useRef(false);
+  const pointerElRef = useRef<HTMLDivElement | null>(null);
+  const localPosRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const remoteCursorRef = useRef<{ x: number; y: number; visible: boolean } | null>(null);
+  const lastPosRef = useRef({ x: 0.5, y: 0.5 });
+  const pressedRef = useRef<Set<string>>(new Set());
+  const heldKeysRef = useRef<Set<string>>(new Set());
+  const placedRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [message, setMessage] = useState('');
@@ -59,7 +72,11 @@ export default function RemoteViewer({ deviceId }: Props) {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [monitor, setMonitor] = useState<number | null>(null);
   const [minimized, setMinimized] = useState(false);
-  const [cursor, setCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
+  const [remoteVisible, setRemoteVisible] = useState(false);
+  const [placed, setPlaced] = useState(false);
+  // What the endpoint says it can do. Android reports it; desktop agents do
+  // not, so `null` means "assume everything is available".
+  const [caps, setCaps] = useState<{ control: boolean; share: boolean } | null>(null);
   const monitorRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -83,6 +100,39 @@ export default function RemoteViewer({ deviceId }: Props) {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   }, []);
+
+  // The overlay position is written straight to the DOM: a React state update
+  // per mousemove would re-render the whole viewer and reintroduce the lag.
+  const placePointer = useCallback((x: number, y: number) => {
+    const el = pointerElRef.current;
+    if (!el) return;
+    el.style.left = `${x * 100}%`;
+    el.style.top = `${y * 100}%`;
+    if (!placedRef.current) {
+      placedRef.current = true;
+      setPlaced(true);
+    }
+  }, []);
+
+  const setPointerEl = useCallback((el: HTMLDivElement | null) => {
+    pointerElRef.current = el;
+    if (el) el.style.display = 'none';
+  }, []);
+
+  // Never leave a button or key held down on the endpoint: releasing outside
+  // the video, losing focus or turning control off must all send the matching
+  // "up" event (the agent also releases everything when the socket drops).
+  const releaseInputs = useCallback(() => {
+    const p = lastPosRef.current;
+    for (const button of Array.from(pressedRef.current)) {
+      send({ t: 'mouse', action: 'up', x: p.x, y: p.y, button });
+    }
+    pressedRef.current.clear();
+    for (const code of Array.from(heldKeysRef.current)) {
+      send({ t: 'key', code, action: 'up' });
+    }
+    heldKeysRef.current.clear();
+  }, [send]);
 
   const draw = useCallback(async (buffer: ArrayBuffer) => {
     if (busyRef.current) return;
@@ -149,11 +199,20 @@ export default function RemoteViewer({ deviceId }: Props) {
           return typeof msg.primary === 'number' ? msg.primary : list[0]?.index ?? null;
         });
       } else if (msg.t === 'cursor') {
-        setCursor({
+        const next = {
           x: Number(msg.x) || 0,
           y: Number(msg.y) || 0,
           visible: msg.visible !== false,
-        });
+        };
+        remoteCursorRef.current = next;
+        setRemoteVisible((prev) => (prev === next.visible ? prev : next.visible));
+        // While the operator is actively moving, the local echo wins so the
+        // pointer never trails behind their own mouse; otherwise follow the
+        // endpoint (that is the pointer of the person being assisted).
+        const local = localPosRef.current;
+        if (!local || Date.now() - local.t > POINTER_IDLE_MS) placePointer(next.x, next.y);
+      } else if (msg.t === 'caps') {
+        setCaps({ control: msg.control !== false, share: msg.share !== false });
       } else if (msg.t === 'agent') {
         if (msg.connected) {
           setPhase('ready');
@@ -191,9 +250,10 @@ export default function RemoteViewer({ deviceId }: Props) {
         if (!manualCloseRef.current && !wsRef.current) connect();
       }, 3000);
     };
-  }, [deviceId, draw, fps, quality]);
+  }, [deviceId, draw, fps, quality, placePointer]);
 
   const disconnect = useCallback(() => {
+    releaseInputs();
     manualCloseRef.current = true;
     const ws = wsRef.current;
     wsRef.current = null;
@@ -207,7 +267,7 @@ export default function RemoteViewer({ deviceId }: Props) {
     }
     setPhase('idle');
     setMessage('');
-  }, []);
+  }, [releaseInputs]);
 
   useEffect(() => () => {
     manualCloseRef.current = true;
@@ -230,6 +290,53 @@ export default function RemoteViewer({ deviceId }: Props) {
     }
   };
 
+  const pointerShown = placed && phase === 'streaming' && (control || remoteVisible);
+
+  // Positions are mutated outside React; only visibility is driven by state.
+  useEffect(() => {
+    const el = pointerElRef.current;
+    if (el) el.style.display = pointerShown ? 'block' : 'none';
+  }, [pointerShown]);
+
+  // Hand the overlay back to the endpoint's reported pointer once the
+  // operator stops moving (so the remote user's own pointer stays visible).
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const remote = remoteCursorRef.current;
+      if (!remote) return;
+      const local = localPosRef.current;
+      if (local && Date.now() - local.t < POINTER_IDLE_MS) return;
+      placePointer(remote.x, remote.y);
+    }, 120);
+    return () => window.clearInterval(id);
+  }, [placePointer]);
+
+  useEffect(() => {
+    if (!control) releaseInputs();
+  }, [control, releaseInputs]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) releaseInputs();
+    };
+    window.addEventListener('blur', releaseInputs);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('blur', releaseInputs);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [releaseInputs]);
+
+  useEffect(() => {
+    if (!control) return;
+    // Seed the overlay the moment control is enabled, otherwise the pointer is
+    // hidden until the first move.
+    const remote = remoteCursorRef.current;
+    const local = localPosRef.current;
+    if (remote) placePointer(remote.x, remote.y);
+    else if (local) placePointer(local.x, local.y);
+  }, [control, placePointer]);
+
   // ---- pointer ---------------------------------------------------------
 
   const norm = (clientX: number, clientY: number) => {
@@ -241,41 +348,82 @@ export default function RemoteViewer({ deviceId }: Props) {
     };
   };
 
-  const onMouseMove = (e: React.MouseEvent) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return; // touch has its own handlers below
+    const p = norm(e.clientX, e.clientY);
+    if (!p) return;
+    lastPosRef.current = p;
     if (!controlRef.current) return;
+    localPosRef.current = { x: p.x, y: p.y, t: Date.now() };
+    placePointer(p.x, p.y);
     const now = Date.now();
-    if (now - lastMoveRef.current < 30) return;
+    if (now - lastMoveRef.current < 16) return;
     lastMoveRef.current = now;
-    const p = norm(e.clientX, e.clientY);
-    if (p) send({ t: 'mouse', action: 'move', x: p.x, y: p.y });
+    send({ t: 'mouse', action: 'move', x: p.x, y: p.y });
   };
 
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (!controlRef.current) return;
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch' || !controlRef.current) return;
+    e.preventDefault();
+    // Capture keeps pointerup arriving even when it happens outside the video,
+    // which is what used to leave the button pressed down on the endpoint.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore: some browsers reject capture on inactive pointers
+    }
+    e.currentTarget.focus();
     const p = norm(e.clientX, e.clientY);
-    if (p) send({ t: 'mouse', action: 'down', x: p.x, y: p.y, button: BUTTONS[e.button] || 'left' });
+    if (!p) return;
+    lastPosRef.current = p;
+    localPosRef.current = { x: p.x, y: p.y, t: Date.now() };
+    placePointer(p.x, p.y);
+    const button = BUTTONS[e.button] || 'left';
+    pressedRef.current.add(button);
+    send({ t: 'mouse', action: 'down', x: p.x, y: p.y, button });
   };
 
-  const onMouseUp = (e: React.MouseEvent) => {
-    if (!controlRef.current) return;
-    const p = norm(e.clientX, e.clientY);
-    if (p) send({ t: 'mouse', action: 'up', x: p.x, y: p.y, button: BUTTONS[e.button] || 'left' });
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
+    const p = norm(e.clientX, e.clientY) || lastPosRef.current;
+    lastPosRef.current = p;
+    if (controlRef.current) {
+      const button = BUTTONS[e.button] || 'left';
+      if (pressedRef.current.delete(button)) {
+        send({ t: 'mouse', action: 'up', x: p.x, y: p.y, button });
+      }
+    }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
   const onWheel = (e: React.WheelEvent) => {
     if (!controlRef.current) return;
-    send({ t: 'wheel', dx: Math.round(e.deltaX / 100), dy: -Math.round(e.deltaY / 100) });
+    const scale = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+    const notches = (delta: number) => {
+      if (!delta) return 0;
+      const n = Math.round((delta * scale) / 100);
+      return n === 0 ? Math.sign(delta) : n;
+    };
+    const dx = notches(e.deltaX);
+    const dy = -notches(e.deltaY);
+    if (dx || dy) send({ t: 'wheel', dx, dy });
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!controlRef.current) return;
     e.preventDefault();
+    heldKeysRef.current.add(e.code);
     send({ t: 'key', code: e.code, action: 'down' });
   };
 
   const onKeyUp = (e: React.KeyboardEvent) => {
     if (!controlRef.current) return;
     e.preventDefault();
+    heldKeysRef.current.delete(e.code);
     send({ t: 'key', code: e.code, action: 'up' });
   };
 
@@ -291,6 +439,12 @@ export default function RemoteViewer({ deviceId }: Props) {
       moved: 0,
       fingers: e.touches.length,
     };
+    const p = norm(t.clientX, t.clientY);
+    if (p) {
+      lastPosRef.current = p;
+      localPosRef.current = { x: p.x, y: p.y, t: Date.now() };
+      placePointer(p.x, p.y);
+    }
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
@@ -302,15 +456,25 @@ export default function RemoteViewer({ deviceId }: Props) {
       touch.y = t.clientY;
       touch.x = t.clientX;
       touch.moved += 100;
-      if (Math.abs(dy) > 4) send({ t: 'wheel', dy: Math.round(dy / 12) });
+      if (Math.abs(dy) > 4) {
+        const notches = Math.round(dy / 12) || (dy > 0 ? 1 : -1);
+        send({ t: 'wheel', dy: notches });
+      }
       return;
     }
     const t = e.touches[0];
     touch.moved += Math.abs(t.clientX - touch.x) + Math.abs(t.clientY - touch.y);
     const p = norm(t.clientX, t.clientY);
-    if (p) send({ t: 'mouse', action: 'move', x: p.x, y: p.y });
     touch.x = t.clientX;
     touch.y = t.clientY;
+    if (!p) return;
+    lastPosRef.current = p;
+    localPosRef.current = { x: p.x, y: p.y, t: Date.now() };
+    placePointer(p.x, p.y);
+    const now = Date.now();
+    if (now - lastMoveRef.current < 30) return;
+    lastMoveRef.current = now;
+    send({ t: 'mouse', action: 'move', x: p.x, y: p.y });
   };
 
   const onTouchEnd = (e: React.TouchEvent) => {
@@ -320,7 +484,12 @@ export default function RemoteViewer({ deviceId }: Props) {
     if (e.touches.length > 0) return;
     if (Date.now() - touch.t < 300 && touch.moved < 12) {
       const p = norm(touch.x, touch.y);
-      if (p) send({ t: 'mouse', action: 'click', x: p.x, y: p.y, button: 'left' });
+      if (p) {
+        lastPosRef.current = p;
+        localPosRef.current = { x: p.x, y: p.y, t: Date.now() };
+        placePointer(p.x, p.y);
+        send({ t: 'mouse', action: 'click', x: p.x, y: p.y, button: 'left' });
+      }
     }
   };
 
@@ -338,6 +507,10 @@ export default function RemoteViewer({ deviceId }: Props) {
   };
 
   const busy = phase === 'connecting';
+  // What the phone reports as unavailable: the console explains it instead of
+  // letting the operator click into silence.
+  const controlBlocked = !!caps && !caps.control;
+  const shareBlocked = !!caps && !caps.share;
   const statusLabel: Record<Phase, string> = {
     idle: 'Desligado',
     connecting: 'A ligar...',
@@ -428,16 +601,20 @@ export default function RemoteViewer({ deviceId }: Props) {
           </select>
           <button
             onClick={() => setControl((c) => !c)}
-            disabled={phase === 'idle' || phase === 'offline'}
+            disabled={phase === 'idle' || phase === 'offline' || controlBlocked}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 ${
-              control
+              control && !controlBlocked
                 ? 'bg-green-600 text-white hover:bg-green-700'
                 : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
             }`}
-            title="Ativar controlo de rato e teclado"
+            title={
+              controlBlocked
+                ? 'Controlo indisponível: ative a acessibilidade da app no telemóvel'
+                : 'Ativar controlo de rato e teclado'
+            }
           >
             <MousePointer2 className="w-3.5 h-3.5" />
-            {control ? 'Controlo ativo' : 'Só visualizar'}
+            {controlBlocked ? 'Controlo indisponível' : control ? 'Controlo ativo' : 'Só visualizar'}
           </button>
           {monitors.length > 1 && (
             <select
@@ -493,38 +670,37 @@ export default function RemoteViewer({ deviceId }: Props) {
         tabIndex={0}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
-        onMouseMove={onMouseMove}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
+        onPointerMove={onPointerMove}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
         onContextMenu={(e) => controlRef.current && e.preventDefault()}
         onWheel={onWheel}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         className={`relative rounded-xl overflow-hidden bg-black outline-none ${
-          control ? (cursor && !cursor.visible ? 'cursor-crosshair' : 'cursor-none') : 'cursor-default'
+          control ? (placed ? 'cursor-none' : 'cursor-crosshair') : 'cursor-default'
         }`}
         style={{ touchAction: control ? 'none' : 'auto' }}
       >
         <canvas ref={canvasRef} className="block w-full h-auto" />
 
-        {cursor && cursor.visible && phase === 'streaming' && (
-          <div
-            className="absolute z-10 pointer-events-none"
-            style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%`, transform: 'translate(-1px, -1px)' }}
-            aria-hidden="true"
-          >
-            <svg width="20" height="28" viewBox="0 0 12 18" className="drop-shadow-md">
-              <path
-                d="M1 1 L1 15.2 L4.55 11.95 L6.85 17.35 L9.15 16.35 L6.9 11.1 L11.2 11.1 Z"
-                fill="#ffffff"
-                stroke="#111827"
-                strokeWidth="1.1"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-        )}
+        <div
+          ref={setPointerEl}
+          className="absolute z-10 pointer-events-none"
+          style={{ transform: 'translate(-1.5px, -1.5px)', willChange: 'left, top' }}
+          aria-hidden="true"
+        >
+          <svg width="18" height="27" viewBox="0 0 12 18" className="drop-shadow-md">
+            <path
+              d="M1 1 L1 15.2 L4.55 11.95 L6.85 17.35 L9.15 16.35 L6.9 11.1 L11.2 11.1 Z"
+              fill="#ffffff"
+              stroke="#111827"
+              strokeWidth="1.1"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
 
         {phase !== 'streaming' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
@@ -540,9 +716,21 @@ export default function RemoteViewer({ deviceId }: Props) {
           </div>
         )}
 
-        {control && phase === 'streaming' && (
+        {control && phase === 'streaming' && !controlBlocked && (
           <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-[11px] text-green-300">
             controlo ativo
+          </div>
+        )}
+
+        {shareBlocked && (phase === 'streaming' || phase === 'ready') && (
+          <div className="absolute top-2 right-2 max-w-[70%] px-2 py-1 rounded bg-amber-400/95 text-[11px] font-medium text-gray-900 text-right">
+            Partilha de ecrã desligada no telemóvel - abra a app EndpointX e autorize o ecrã
+          </div>
+        )}
+
+        {control && controlBlocked && (
+          <div className="absolute bottom-2 left-2 max-w-[80%] px-2 py-1 rounded bg-red-500/95 text-[11px] font-medium text-white">
+            Controlo indisponível - ative a acessibilidade no telemóvel (Acessibilidade &gt; EndpointX)
           </div>
         )}
       </div>
