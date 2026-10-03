@@ -59,7 +59,12 @@ export default function NotificationsPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data: notificationsData, loading, error } = useApi<{ notifications: NotificationEntry[] }>('/notifications');
-  const { data: settingsData, loading: settingsLoading, error: settingsError } = useApi<{ settings: { key: string; value: string }[] }>('/notifications/settings', {
+  // The API answers with a plain { "notification_SMTP_HOST": "..." } map; older
+  // builds returned a {key,value} array. Accept both so a shape change can
+  // never blank the page again (an exception here used to unmount the app).
+  const { data: settingsData, loading: settingsLoading, error: settingsError } = useApi<{
+    settings: { key: string; value: string }[] | Record<string, string>;
+  }>('/notifications/settings', {
     immediate: canViewSettings,
   });
   const { loading: savingSettings, mutate: updateSettings } = useApiMutation('/notifications/settings', 'PUT');
@@ -68,17 +73,25 @@ export default function NotificationsPage() {
   const notifications = Array.isArray(notificationsData?.notifications) ? notificationsData.notifications : [];
 
   React.useEffect(() => {
-    if (settingsData?.settings) {
-      const obj: EmailSettings = { SMTP_HOST: '', SMTP_PORT: '587', SMTP_USER: '', SMTP_PASS: '', SMTP_FROM: '' };
-      settingsData.settings.forEach((s) => {
-        if (s.key in obj) (obj as any)[s.key] = s.value;
-      });
-      setSettings(obj);
+    const raw = settingsData?.settings;
+    if (!raw) return;
+    const obj: EmailSettings = { SMTP_HOST: '', SMTP_PORT: '587', SMTP_USER: '', SMTP_PASS: '', SMTP_FROM: '' };
+    const target = obj as unknown as Record<string, unknown>;
+    const entries: Array<[string | undefined, unknown]> = Array.isArray(raw)
+      ? raw.map((s) => [s?.key, s?.value])
+      : Object.entries(raw);
+    for (const [key, value] of entries) {
+      if (typeof key !== 'string') continue;
+      // Stored keys carry the "notification_" prefix the backend adds on save.
+      const name = key.startsWith('notification_') ? key.slice('notification_'.length) : key;
+      if (name in target) target[name] = String(value ?? '');
     }
+    setSettings(obj);
   }, [settingsData]);
 
   const handleSaveSettings = useCallback(async () => {
-    const result = await updateSettings(settings);
+    // The backend expects { settings: {...} } and prefixes the keys itself.
+    const result = await updateSettings({ settings });
     if (result !== null) {
       setToast({ type: 'success', message: 'Email settings saved' });
     } else {
