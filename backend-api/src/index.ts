@@ -14,9 +14,11 @@ import logger from './utils/logger';
 import { initDatabase, closeDatabase } from './config/database';
 import { validateSecrets } from './config/constants';
 import { RATE_LIMIT } from './config/constants';
-import { updateOfflineDevices } from './routes/devices';
 import { errorHandler } from './middleware/errorHandler';
 import { initRemoteAccess } from './remote';
+import { setIO } from './websocket';
+import { startBackgroundJobs } from './jobs';
+import { renderPrometheusMetrics } from './services/prometheus';
 
 // Validate secrets before starting
 try {
@@ -41,6 +43,10 @@ export const io = new SocketIOServer(server, {
   pingTimeout: 60000,
   pingInterval: 25000,
 });
+
+// Hand the server to the websocket helper so emitToDevice/emitToUser/
+// broadcastEvent actually reach clients instead of silently returning.
+setIO(io);
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
@@ -149,6 +155,26 @@ app.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+// Prometheus scrape target. Unauthenticated like /health by design — scrapers
+// hold no session — and strictly read-only. Still rate-limited: each scrape
+// runs several aggregate queries, so we bound how often anyone can trigger them.
+const metricsLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  message: { error: 'Too many scrape requests, please try again later.' },
+  standardHeaders: RATE_LIMIT.STANDARD_HEADERS,
+  legacyHeaders: false,
+});
+
+app.get('/metrics', metricsLimiter, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = await renderPrometheusMetrics();
+    res.status(200).set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8').send(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Import routes
 import authRoutes from './routes/auth';
 import deviceRoutes from './routes/devices';
@@ -170,6 +196,7 @@ import hermesRoutes from './routes/hermes';
 import forensicsRoutes from './routes/forensics';
 import netsentinelRoutes from './routes/netsentinel';
 import reportsRoutes from './routes/reports';
+import alertRulesRoutes from './routes/alertRules';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -178,6 +205,7 @@ app.use('/api/commands', commandRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/alert-rules', alertRulesRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -242,15 +270,9 @@ initDatabase().then(() => {
     logger.info(`Health check: http://localhost:${PORT}/health`);
     logger.info(`API base URL: http://localhost:${PORT}/api`);
 
-    // Periodically mark devices as offline (every 60 seconds)
-    setInterval(() => {
-      try {
-        updateOfflineDevices();
-      } catch (err) {
-        logger.error('Error in offline device check', { error: (err as Error).message });
-      }
-    }, 60000);
-    logger.info('Offline device check running every 60s');
+    // All recurring work lives in src/jobs: offline sweep, threshold alerting,
+    // heartbeat retention, metric rollups and the scheduled HERMES scan.
+    startBackgroundJobs();
   });
 }).catch((err) => {
   logger.error('Failed to initialize database', { error: err.message });

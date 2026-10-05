@@ -15,6 +15,8 @@ import {
   localRecommendForFinding,
   freeModelsForProvider,
 } from '../services/opencode';
+import { matchProductVersion } from '../services/cveFeed';
+import { broadcastEvent } from '../websocket';
 
 const router = Router();
 
@@ -199,7 +201,8 @@ async function syncAssetFromDevice(device: any) {
   }
 }
 
-async function discoverUnknownAsset(ip: string) {
+/** Register a host we can see on the network but have no agent for. */
+export async function discoverUnknownAsset(ip: string) {
   const existing = await query('SELECT id FROM hermes_assets WHERE ip_address = $1 AND device_id IS NULL', [ip]);
   if (existing.rows.length > 0) return;
   const id = newId();
@@ -423,9 +426,15 @@ async function runScan(scanId: string, scanType: string, startedBy: string | nul
       [newId(), 'scan_completed', startedBy, 'scan', scanId, JSON.stringify({ assetsScanned, portsFound, servicesFound })]
     );
     logger.info('HERMES scan completed', { scanId, assetsScanned, portsFound });
+    broadcastEvent('hermes:scan', {
+      scan_id: scanId,
+      status: 'completed',
+      stats: { assets: assetsScanned, ports_found: portsFound, services_found: servicesFound },
+    });
   } catch (err) {
     logger.error('HERMES scan failed', { scanId, error: (err as Error).message });
     await query(`UPDATE hermes_scans SET status = 'failed', completed_at = NOW(), error_message = $1 WHERE id = $2`, [(err as Error).message, scanId]);
+    broadcastEvent('hermes:scan', { scan_id: scanId, status: 'failed', error: (err as Error).message });
   }
 }
 
@@ -492,6 +501,94 @@ const LOCAL_CVE_RULES: Array<{
   },
 ];
 
+interface VulnerabilityHit {
+  cveId: string;
+  severity: string;
+  cvss: number;
+  description: string;
+  remediation: string;
+  title?: string;
+  product?: string;
+  version?: string;
+  potential?: boolean;
+  confidence?: number;
+}
+
+/**
+ * Record one CVE as a finding on an asset — deduped on (asset, cve), and
+ * escalating critical/high into a HERMES alert + remediation recommendation.
+ * Shared by the local rule set and the NVD feed so both produce identical
+ * artefacts.
+ */
+async function recordVulnerability(
+  scanId: string,
+  assetId: string,
+  portId: string | null,
+  hit: VulnerabilityHit,
+  evidence: Array<Record<string, unknown>>
+): Promise<boolean> {
+  const existing = await query(
+    `SELECT id FROM hermes_findings
+      WHERE asset_id = $1 AND cve_id = $2 AND finding_type = 'vulnerability' AND status = 'open'`,
+    [assetId, hit.cveId]
+  );
+  if (existing.rows.length > 0) return false;
+
+  const findingId = newId();
+  const product = hit.product ?? String(evidence.find((e) => e.check === 'Product fingerprint')?.value ?? '');
+  const version = hit.version ?? String(evidence.find((e) => e.check === 'Version detected')?.value ?? '');
+  const title = hit.title ?? `${hit.cveId}${product ? ` - ${product}${version ? ` ${version}` : ''}` : ''}`;
+
+  await query(
+    `INSERT INTO hermes_findings
+       (id, scan_id, asset_id, port_id, cve_id, finding_type, severity, title, description,
+        evidence, confidence, risk_score, risk_reasons, is_potential, status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'vulnerability', $6, $7, $8, $9, $10, $11, $12, $13, 'open', NOW(), NOW())`,
+    [
+      findingId, scanId, assetId, portId, hit.cveId, hit.severity,
+      title,
+      hit.description,
+      JSON.stringify(evidence),
+      hit.confidence ?? 85,
+      hit.cvss * 10,
+      ['CVSS', 'Version match'],
+      !!hit.potential,
+    ]
+  );
+
+  if (hit.severity === 'critical' || hit.severity === 'high') {
+    await query(
+      `INSERT INTO hermes_alerts (id, alert_type, severity, asset_id, title, description, evidence, recommended_action, is_open, created_at)
+       VALUES ($1, 'critical_vulnerability', $2, $3, $4, $5, $6, $7, true, NOW())`,
+      [
+        newId(), hit.severity, assetId,
+        `CRITICAL VULNERABILITY: ${hit.cveId}`,
+        `${product} ${version} may be affected by ${hit.cveId} (CVSS ${hit.cvss}).`,
+        JSON.stringify([{ cve: hit.cveId, cvss: hit.cvss, product, version }]),
+        hit.remediation,
+      ]
+    );
+    await query(
+      `INSERT INTO hermes_recommendations (id, finding_id, asset_id, title, description, action_type, action_payload, status, requires_approval, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'install_update', $6, 'pending', true, NOW())`,
+      [newId(), findingId, assetId, `Apply security update for ${product}`, hit.remediation,
+       JSON.stringify({ product, cve: hit.cveId })]
+    );
+  }
+
+  broadcastEvent('hermes:finding', {
+    finding_id: findingId,
+    scan_id: scanId,
+    asset_id: assetId,
+    cve_id: hit.cveId,
+    severity: hit.severity,
+    cvss: hit.cvss,
+    title,
+  });
+
+  return true;
+}
+
 async function correlateSoftwareVulns(scanId: string) {
   const ports = await query(
     `SELECT p.id as port_id, p.asset_id, p.product, p.version, p.port, p.service
@@ -515,56 +612,34 @@ async function correlateSoftwareVulns(scanId: string) {
         ]
       );
 
-      const existing = await query(
-        `SELECT id FROM hermes_findings WHERE asset_id = $1 AND cve_id = $2 AND finding_type = 'vulnerability' AND status = 'open'`,
-        [row.asset_id, rule.cve]
-      );
-      if (existing.rows.length > 0) continue;
-
-      const findingId = newId();
-      await query(
-        `INSERT INTO hermes_findings (id, scan_id, asset_id, port_id, cve_id, finding_type, severity, title, description, evidence, confidence, risk_score, risk_reasons, is_potential, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'vulnerability', $6, $7, $8, $9, $10, $11, $12, $13, 'open', NOW(), NOW())`,
+      await recordVulnerability(
+        scanId,
+        row.asset_id,
+        row.port_id,
+        {
+          cveId: rule.cve,
+          severity: rule.severity,
+          cvss: rule.cvss,
+          description: rule.description,
+          remediation: rule.remediation,
+          potential: rule.potential,
+          confidence: rule.potential ? 70 : 90,
+          product: row.product,
+          version: row.version,
+          title: `${rule.cve} - ${row.product} ${row.version}`,
+        },
         [
-          findingId, scanId, row.asset_id, row.port_id, rule.cve, rule.severity,
-          `${rule.cve} - ${rule.product} ${row.version}`,
-          rule.description,
-          JSON.stringify([
-            { check: 'Port open', value: row.port },
-            { check: 'Product fingerprint', value: row.product },
-            { check: 'Version detected', value: row.version },
-            { check: 'CVE database match', value: rule.cve },
-            { check: 'Source', value: 'local rule + NVD reference' },
-          ]),
-          rule.potential ? 70 : 90,
-          rule.cvss * 10,
-          ['CVSS', 'Version match', 'Service exposure'],
-          !!rule.potential,
+          { check: 'Port open', value: row.port },
+          { check: 'Product fingerprint', value: row.product },
+          { check: 'Version detected', value: row.version },
+          { check: 'CVE database match', value: rule.cve },
+          { check: 'Source', value: 'local rule + NVD reference' },
         ]
       );
-
-      if (rule.severity === 'critical' || rule.severity === 'high') {
-        await query(
-          `INSERT INTO hermes_alerts (id, alert_type, severity, asset_id, title, description, evidence, recommended_action, is_open, created_at)
-           VALUES ($1, 'critical_vulnerability', $2, $3, $4, $5, $6, $7, true, NOW())`,
-          [
-            newId(), rule.severity, row.asset_id,
-            `CRITICAL VULNERABILITY: ${rule.cve}`,
-            `${rule.product} ${row.version} may be affected by ${rule.cve} (CVSS ${rule.cvss}).`,
-            JSON.stringify([{ cve: rule.cve, cvss: rule.cvss, product: row.product, version: row.version }]),
-            rule.remediation,
-          ]
-        );
-        await query(
-          `INSERT INTO hermes_recommendations (id, finding_id, asset_id, title, description, action_type, action_payload, status, requires_approval, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', true, NOW())`,
-          [newId(), findingId, row.asset_id, `Apply security update for ${rule.product}`, rule.remediation, 'install_update', JSON.stringify({ product: rule.product, cve: rule.cve })]
-        );
-      }
     }
   }
 
-  // Software inventory correlation (endpoint apps)
+  // Software inventory correlation (endpoint apps) — local rule set first.
   const apps = await query(
     `SELECT DISTINCT s.name, s.version, a.id as asset_id, a.device_id
      FROM device_software s
@@ -575,23 +650,91 @@ async function correlateSoftwareVulns(scanId: string) {
     for (const rule of LOCAL_CVE_RULES) {
       if (rule.product.toLowerCase() !== String(app.name).toLowerCase()) continue;
       if (rule.matchVersion && !rule.matchVersion(String(app.version))) continue;
-      const existing = await query(
-        `SELECT id FROM hermes_findings WHERE asset_id = $1 AND cve_id = $2 AND finding_type = 'vulnerability' AND status = 'open'`,
-        [app.asset_id, rule.cve]
+      await recordVulnerability(
+        scanId,
+        app.asset_id,
+        null,
+        {
+          cveId: rule.cve,
+          severity: rule.severity,
+          cvss: rule.cvss,
+          description: rule.description,
+          remediation: rule.remediation,
+          potential: rule.potential,
+          confidence: 75,
+          product: String(app.name),
+          version: String(app.version),
+          title: `${rule.cve} - ${app.name} ${app.version} (endpoint application)`,
+        },
+        [{ source: 'endpoint inventory', application: app.name, version: app.version }]
       );
-      if (existing.rows.length > 0) continue;
-      await query(
-        `INSERT INTO hermes_findings (id, scan_id, asset_id, cve_id, finding_type, severity, title, description, evidence, confidence, risk_score, risk_reasons, is_potential, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'vulnerability', $5, $6, $7, $8, 75, $9, $10, true, 'open', NOW(), NOW())`,
-        [
-          newId(), scanId, app.asset_id, rule.cve, rule.severity,
-          `${rule.cve} - ${app.name} ${app.version} (endpoint application)`,
-          rule.description,
-          JSON.stringify([{ source: 'endpoint inventory', application: app.name, version: app.version }]),
-          rule.cvss * 10,
-          ['CVSS', 'Installed application match'],
-        ]
-      );
+    }
+  }
+
+  // NVD pass: real CVE feed against every fingerprinted service and installed
+  // application. This replaces the "only five products known to the scanner"
+  // limitation without changing the local rules, which still act as a floor
+  // when the feed has never been synchronised.
+  const products = new Map<string, { product: string; version: string; assetId: string; portId: string | null }>();
+
+  for (const row of (
+    await query(
+      `SELECT p.asset_id, p.id as port_id, p.product, p.version
+         FROM hermes_ports p
+        WHERE p.state = 'open' AND p.product IS NOT NULL AND p.version IS NOT NULL AND p.version <> ''`
+    )
+  ).rows) {
+    products.set(`${row.asset_id}|${row.product}|${row.version}`, {
+      product: row.product,
+      version: row.version,
+      assetId: row.asset_id,
+      portId: row.port_id,
+    });
+  }
+  for (const app of apps.rows) {
+    products.set(`${app.asset_id}|${app.name}|${app.version}`, {
+      product: app.name,
+      version: app.version,
+      assetId: app.asset_id,
+      portId: null,
+    });
+  }
+
+  for (const entry of products.values()) {
+    try {
+      const matches = await matchProductVersion(entry.product, entry.version);
+      for (const match of matches) {
+        await recordVulnerability(
+          scanId,
+          entry.assetId,
+          entry.portId,
+          {
+            cveId: match.cve_id,
+            severity: match.severity,
+            cvss: match.cvss_score,
+            description: match.description,
+            remediation: match.remediation,
+            confidence: 85,
+            product: entry.product,
+            version: entry.version,
+            title: `${match.cve_id} - ${entry.product} ${entry.version}`,
+          },
+          [
+            { check: 'Product fingerprint', value: entry.product },
+            { check: 'Version detected', value: entry.version },
+            { check: 'CVE database match', value: match.cve_id },
+            { check: 'Source', value: match.source },
+            ...(match.references.length
+              ? [{ check: 'References', value: match.references.slice(0, 3).join(', ') }]
+              : []),
+          ]
+        );
+      }
+    } catch (error) {
+      logger.warn('NVD correlation failed', {
+        product: entry.product,
+        error: (error as Error).message,
+      });
     }
   }
 }
@@ -692,6 +835,37 @@ router.get('/status', authenticate, requirePermission('hermes.view'), async (_re
     next(error);
   }
 });
+
+/**
+ * Programmatic entry point for the daily scheduler. Reuses the same policy
+ * lookup and audit trail as the HTTP route, without a request context.
+ */
+async function startScheduledScan(scanType: string): Promise<string | null> {
+  if (await isEmergencyStopped()) {
+    logger.warn('Scheduled HERMES scan skipped — emergency stop is active', { scanType });
+    return null;
+  }
+
+  const id = newId();
+  const policy = await loadPolicy(scanType);
+  await query(
+    `INSERT INTO hermes_scans (id, scan_type, policy_id, status, scope, started_by, created_at)
+     VALUES ($1, $2, $3, 'pending', $4, NULL, NOW())`,
+    [id, scanType, policy.id, []]
+  );
+  await query(
+    `INSERT INTO hermes_audit_logs (id, action, target_type, target_id, details)
+     VALUES ($1, 'scan_started', 'scan', $2, $3)`,
+    [newId(), id, JSON.stringify({ scanType, trigger: 'scheduler' })]
+  );
+
+  setImmediate(() => {
+    runScan(id, scanType, null, null).catch((e) =>
+      logger.error('Scheduled HERMES scan runner error', { error: e.message })
+    );
+  });
+  return id;
+}
 
 router.post('/scans', authenticate, requirePermission('hermes.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -1329,4 +1503,4 @@ router.post('/ai/chat', authenticate, requirePermission('hermes.view'), async (r
 });
 
 export default router;
-export { runScan, parsePortList, detectService, portRisk };
+export { runScan, startScheduledScan, parsePortList, detectService, portRisk };

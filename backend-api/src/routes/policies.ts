@@ -189,6 +189,43 @@ router.post('/:id/check', authenticate, requirePermission('policies.manage'), as
           rulePassed = osCheck.rows.length > 0;
         }
 
+        // Capacity limits the UI has always offered but the backend ignored.
+        // `normalizeRules` renders these as `{type:'max_cpu_usage', operator:'equals', value}`.
+        if (rule.type === 'max_cpu_usage' || rule.type === 'max_disk_usage') {
+          const limit = Number(rule.value);
+          if (Number.isFinite(limit)) {
+            const column = rule.type === 'max_cpu_usage' ? 'cpu_usage' : 'disk_usage';
+            const actual = device[column] === null || device[column] === undefined
+              ? null
+              : Number(device[column]);
+            if (actual === null) {
+              // No telemetry yet — do not fail the device for missing data.
+              rulePassed = true;
+            } else {
+              rulePassed = actual <= limit;
+              if (!rulePassed) {
+                violations.push(`${rule.type}: ${actual}% exceeds the ${limit}% limit`);
+                deviceCompliant = false;
+                continue;
+              }
+            }
+          }
+        }
+
+        if (rule.type === 'required_agent_version' && rule.value) {
+          const current = String(device.agent_version || '');
+          const required = String(rule.value);
+          const rank = (v: string) => v.split('.').map((n) => parseInt(n, 10) || 0);
+          const [a1 = 0, a2 = 0, a3 = 0] = rank(current);
+          const [b1 = 0, b2 = 0, b3 = 0] = rank(required);
+          rulePassed = a1 > b1 || (a1 === b1 && (a2 > b2 || (a2 === b2 && a3 >= b3)));
+          if (!rulePassed) {
+            violations.push(`required_agent_version: ${current || 'unknown'} is older than ${required}`);
+            deviceCompliant = false;
+            continue;
+          }
+        }
+
         if (!rulePassed) {
           deviceCompliant = false;
           violations.push(`${rule.type}: expected ${rule.operator || 'match'} ${rule.value}`);

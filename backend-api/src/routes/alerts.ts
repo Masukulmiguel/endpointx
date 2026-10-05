@@ -2,7 +2,12 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
-import { sendAlertNotification } from '../services/emailService';
+import {
+  acknowledgeAlert,
+  createAlert,
+  dismissAlert,
+  rearmAlert,
+} from '../services/alertService';
 import { canAccessDevice, canSeeDevice, visibleDeviceRowsSql } from '../utils/tenant';
 
 const router = Router();
@@ -23,9 +28,21 @@ function buildAlertFilters(req: AuthRequest): { where: string; params: unknown[]
     clauses.push(`a.alert_type = $${params.length}`);
   }
 
+  // Backwards-compatible boolean filter kept alongside the richer `status` one.
   const dismissed = req.query.dismissed as string | undefined;
   if (dismissed === 'true' || dismissed === 'false') {
     clauses.push(`a.is_dismissed = ${dismissed === 'true' ? 'true' : 'false'}`);
+  }
+
+  const status = req.query.status as string | undefined;
+  if (status === 'open') clauses.push(`a.is_dismissed = false AND a.acknowledged_at IS NULL`);
+  else if (status === 'acknowledged') clauses.push(`a.is_dismissed = false AND a.acknowledged_at IS NOT NULL`);
+  else if (status === 'resolved') clauses.push(`a.is_dismissed = true`);
+
+  const source = req.query.source as string | undefined;
+  if (source) {
+    params.push(source);
+    clauses.push(`a.source = $${params.length}`);
   }
 
   const search = req.query.search as string | undefined;
@@ -89,6 +106,14 @@ router.get('/stats', authenticate, requirePermission('alerts.view'), async (req:
       `SELECT COUNT(*) as count FROM alerts a${join}${w} AND a.is_dismissed = false`,
       p
     );
+    const openResult = await query(
+      `SELECT COUNT(*) as count FROM alerts a${join}${w} AND a.is_dismissed = false AND a.acknowledged_at IS NULL`,
+      p
+    );
+    const ackResult = await query(
+      `SELECT COUNT(*) as count FROM alerts a${join}${w} AND a.is_dismissed = false AND a.acknowledged_at IS NOT NULL`,
+      p
+    );
 
     const sevMap: Record<string, number> = {};
     for (const row of bySeverity.rows) {
@@ -104,6 +129,8 @@ router.get('/stats', authenticate, requirePermission('alerts.view'), async (req:
         medium: sevMap.medium || 0,
         low: sevMap.low || 0,
         unresolved: parseInt(String(unresolvedResult.rows[0]?.count || 0), 10),
+        open: parseInt(String(openResult.rows[0]?.count || 0), 10),
+        acknowledged: parseInt(String(ackResult.rows[0]?.count || 0), 10),
         by_severity: bySeverity.rows,
         by_type: byType.rows,
       },
@@ -162,36 +189,86 @@ router.post('/', authenticate, requirePermission('alerts.manage'), async (req: A
       return;
     }
 
-    const result = await query(
-      'INSERT INTO alerts (severity, title, description, device_id, alert_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [severity, title, message || '', device_id, alert_type || 'general']
-    );
+    const { created, alert } = await createAlert({
+      device_id,
+      alert_type: alert_type || 'general',
+      severity,
+      title,
+      description: message || '',
+      source: 'manual',
+      notify: true,
+    });
 
-    const alert = result.rows[0];
-
-    // Send email notification asynchronously (non-blocking)
-    sendAlertNotification({ severity, title, message: message || '', device_id }).catch((err) =>
-      console.error('Failed to send alert notification:', err.message)
-    );
-
-    res.status(201).json({ success: true, data: { alert } });
+    res.status(201).json({ success: true, data: { alert, created } });
   } catch (error) { next(error); }
 });
 
+/** Load an alert and enforce device-level visibility, or null when hidden. */
+async function loadVisibleAlert(req: AuthRequest, id: string): Promise<Record<string, any> | null> {
+  const existing = await query(
+    'SELECT a.id, a.device_id, d.created_by as device_created_by FROM alerts a LEFT JOIN devices d ON a.device_id = d.id WHERE a.id = $1',
+    [id]
+  );
+  if (existing.rows.length === 0) return null;
+  const alert = existing.rows[0];
+  if (alert.device_id && !canSeeDevice(req.user, alert.device_created_by)) return null;
+  return alert;
+}
+
 router.post('/:id/dismiss', authenticate, requirePermission('alerts.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const existing = await query(
-      'SELECT a.id, a.device_id, d.created_by as device_created_by FROM alerts a LEFT JOIN devices d ON a.device_id = d.id WHERE a.id = $1',
-      [req.params.id]
-    );
-    if (existing.rows.length === 0) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
-    const alert = existing.rows[0];
-    if (alert.device_id && !canSeeDevice(req.user, alert.device_created_by)) {
-      res.status(404).json({ success: false, error: { message: 'Alert not found' } });
+    const alert = await loadVisibleAlert(req, req.params.id);
+    if (!alert) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
+    await dismissAlert(req.params.id, req.user?.id);
+    res.json({ success: true, data: { message: 'Alert dismissed' } });
+  } catch (error) { next(error); }
+});
+
+// Acknowledge: owns the alert, stops paging, keeps it open.
+router.post('/:id/acknowledge', authenticate, requirePermission('alerts.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const alert = await loadVisibleAlert(req, req.params.id);
+    if (!alert) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
+    const updated = await acknowledgeAlert(req.params.id, req.user?.id);
+    if (!updated) {
+      res.status(409).json({ success: false, error: { message: 'Alert is already resolved' } });
       return;
     }
-    await query("UPDATE alerts SET is_dismissed = true, dismissed_by = $1, dismissed_at = NOW() WHERE id = $2", [req.user?.id, req.params.id]);
-    res.json({ success: true, data: { message: 'Alert dismissed' } });
+    res.json({ success: true, data: { alert: updated, message: 'Alert acknowledged' } });
+  } catch (error) { next(error); }
+});
+
+// Re-arm: clears the acknowledgement (and any manual dismissal) so the alert
+// surfaces again — used when a condition is still true after being muted.
+router.post('/:id/rearm', authenticate, requirePermission('alerts.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const alert = await loadVisibleAlert(req, req.params.id);
+    if (!alert) { res.status(404).json({ success: false, error: { message: 'Alert not found' } }); return; }
+    const updated = await rearmAlert(req.params.id);
+    res.json({ success: true, data: { alert: updated, message: 'Alert re-armed' } });
+  } catch (error) { next(error); }
+});
+
+// Bulk acknowledge
+router.post('/acknowledge', authenticate, requirePermission('alerts.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((id: unknown) => typeof id === 'string' && id) : [];
+    if (ids.length === 0) {
+      res.status(400).json({ success: false, error: { message: 'ids array is required' } });
+      return;
+    }
+    const owned = await query(
+      `SELECT a.id FROM alerts a LEFT JOIN devices d ON a.device_id = d.id
+       WHERE a.id = ANY($1::uuid[]) AND ${visibleDeviceRowsSql('a.device_id', 'd.created_by', 2, req.user)}`,
+      [ids, req.user!.id]
+    );
+    const allowedIds = owned.rows.map((r: { id: string }) => r.id);
+    const result = await query(
+      `UPDATE alerts SET acknowledged_by = $1, acknowledged_at = NOW()
+        WHERE id = ANY($2::uuid[]) AND is_dismissed = false`,
+      [req.user?.id, allowedIds]
+    );
+    res.json({ success: true, data: { message: `${result.rowCount || 0} alert(s) acknowledged`, count: result.rowCount || 0 } });
   } catch (error) { next(error); }
 });
 

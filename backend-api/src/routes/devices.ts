@@ -11,6 +11,9 @@ import { JWT } from '../config/constants';
 import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
 import { remoteSecretFor } from '../remote';
 import { onForensicCommandResult } from '../hermes/forensics';
+import { createAlert } from '../services/alertService';
+import { broadcastEvent, emitToDevice } from '../websocket';
+import { fetchHeartbeatSeries, resolveInterval, resolveRange } from '../services/metrics';
 
 const router = Router();
 
@@ -145,15 +148,31 @@ export async function updateOfflineDevices() {
     const mobileThresholdSeconds = parseInt(process.env.MOBILE_OFFLINE_THRESHOLD || '1800', 10);
     const agentMinutes = Math.max(1, Math.ceil(offlineThresholdSeconds / 60));
     const mobileMinutes = Math.max(agentMinutes, Math.ceil(mobileThresholdSeconds / 60));
-    await query(
+    const wentOffline = await query(
       `UPDATE devices SET status = 'offline'
         WHERE status = 'online'
-          AND last_heartbeat < NOW() - ((CASE WHEN agent_id LIKE 'mobile-%' THEN $1::int ELSE $2::int END) * INTERVAL '1 minute')`,
+          AND last_heartbeat < NOW() - ((CASE WHEN agent_id LIKE 'mobile-%' THEN $1::int ELSE $2::int END) * INTERVAL '1 minute')
+        RETURNING id, hostname, status, last_heartbeat`,
       [mobileMinutes, agentMinutes]
     );
+    for (const device of wentOffline.rows) {
+      emitToDevice(device.id, 'device:status', { device_id: device.id, status: device.status, hostname: device.hostname });
+      broadcastEvent('device:status', { device_id: device.id, status: device.status, hostname: device.hostname });
+    }
   } catch (e) {
     // ignore
   }
+}
+
+/** Push a device state change to connected dashboards over Socket.IO. */
+async function emitDeviceStatus(deviceId: string, status: string, hostname?: string): Promise<void> {
+  const name =
+    hostname ||
+    (await query('SELECT hostname FROM devices WHERE id = $1', [deviceId])).rows[0]?.hostname ||
+    deviceId;
+  const payload = { device_id: deviceId, status, hostname: name };
+  emitToDevice(deviceId, 'device:status', payload);
+  broadcastEvent('device:status', payload);
 }
 
 // Agent registration (no auth required, uses agent secret)
@@ -248,6 +267,7 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
     );
 
     logger.info('New device registered', { deviceId: id, agent_id });
+    await emitDeviceStatus(inserted.rows[0].id, 'online', hostname || agent_id);
     res.status(201).json({ success: true, data: { id: inserted.rows[0].id, agent_id, status: 'online', is_new: true } });
   } catch (error) {
     next(error);
@@ -271,6 +291,77 @@ function claimPendingCommandsSql(limit: number, contained: boolean): string {
       RETURNING id, command_type, parameters, created_at
     )
     SELECT id, command_type, parameters FROM picked ORDER BY created_at ASC`;
+}
+
+const asNumber = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const asText = (v: unknown, max: number): string | null =>
+  typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
+
+/**
+ * Persist the optional deeper-telemetry arrays an agent can attach to a
+ * heartbeat. Older agents simply omit them and nothing here runs.
+ * Never throws: a malformed row must not cost the device its heartbeat.
+ */
+async function ingestHeartbeatTelemetry(deviceId: string, body: Record<string, unknown>): Promise<void> {
+  try {
+    const partitions = Array.isArray(body.partitions) ? (body.partitions as Array<Record<string, unknown>>) : [];
+    for (const p of partitions.slice(0, 64)) {
+      const mount = asText(p?.mount_point, 255);
+      if (!mount) continue;
+      await query(
+        `INSERT INTO device_partitions
+           (device_id, mount_point, device_name, fstype, total_bytes, used_bytes, free_bytes, usage_percent, recorded_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (device_id, mount_point) DO UPDATE SET
+           device_name = EXCLUDED.device_name,
+           fstype = EXCLUDED.fstype,
+           total_bytes = EXCLUDED.total_bytes,
+           used_bytes = EXCLUDED.used_bytes,
+           free_bytes = EXCLUDED.free_bytes,
+           usage_percent = EXCLUDED.usage_percent,
+           recorded_at = NOW()`,
+        [
+          deviceId,
+          mount,
+          asText(p.device_name, 255),
+          asText(p.fstype, 50),
+          asNumber(p.total_bytes),
+          asNumber(p.used_bytes),
+          asNumber(p.free_bytes),
+          asNumber(p.usage_percent),
+        ]
+      );
+    }
+
+    const interfaces = Array.isArray(body.interface_metrics)
+      ? (body.interface_metrics as Array<Record<string, unknown>>)
+      : [];
+    for (const iface of interfaces.slice(0, 64)) {
+      const name = asText(iface?.name, 100);
+      if (!name) continue;
+      await query(
+        `INSERT INTO device_interface_metrics
+           (device_id, interface_name, bytes_in, bytes_out, rate_in, rate_out, recorded_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [
+          deviceId,
+          name,
+          asNumber(iface.bytes_in),
+          asNumber(iface.bytes_out),
+          asNumber(iface.rate_in),
+          asNumber(iface.rate_out),
+        ]
+      );
+    }
+  } catch (error) {
+    logger.warn('Heartbeat telemetry ingest failed', {
+      device_id: deviceId,
+      error: (error as Error).message,
+    });
+  }
 }
 
 // Agent heartbeat
@@ -356,21 +447,20 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     // Store agent hash if provided; detect tamper if it changes
     if (agent_hash) {
       if (device.last_agent_hash && device.last_agent_hash !== agent_hash) {
-        // Hash mismatch - create a tamper alert
-        const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        // Hash mismatch — raise a critical alert through the shared helper so
+        // it is deduped, emailed and pushed over the socket like every other.
         const hostname = (await query('SELECT hostname FROM devices WHERE id = $1', [device.id])).rows[0]?.hostname || device.id;
-        await query(
-          'INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-          [
-            alertId,
-            device.id,
-            'tamper_detected',
-            'critical',
-            'Agent Integrity Check Failed',
-            `Agent file hash changed on ${hostname}. Expected: ${device.last_agent_hash}, Got: ${agent_hash}`,
-            JSON.stringify({ device_hostname: hostname, expected_hash: device.last_agent_hash, current_hash: agent_hash }),
-          ]
-        );
+        await createAlert({
+          device_id: device.id,
+          alert_type: 'tamper_detected',
+          severity: 'critical',
+          title: 'Agent Integrity Check Failed',
+          description: `Agent file hash changed on ${hostname}. Expected: ${device.last_agent_hash}, Got: ${agent_hash}`,
+          metadata: { device_hostname: hostname, expected_hash: device.last_agent_hash, current_hash: agent_hash },
+          dedup_key: `tamper:${device.id}`,
+          source: 'agent',
+          dedup_window_minutes: 60 * 24,
+        });
         logger.warn('Agent tamper detected via heartbeat', { agent_id, expected: device.last_agent_hash, actual: agent_hash });
       }
       await query('UPDATE devices SET last_agent_hash = $1 WHERE id = $2', [agent_hash, device.id]);
@@ -380,6 +470,10 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     await query('INSERT INTO device_heartbeats (id, device_id, cpu_usage, ram_usage, disk_usage, network_in, network_out, active_processes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [hbId, device.id, cpu_usage || 0, ram_usage || 0, disk_usage || 0, network_in || 0, network_out || 0, active_processes || 0]);
 
+    // v1.2.0 M3: per-partition disk and per-interface traffic ride along with
+    // the heartbeat, so deeper telemetry costs the agent no extra round trip.
+    await ingestHeartbeatTelemetry(device.id, req.body);
+
     const commands = await query(claimPendingCommandsSql(isContained ? 5 : 10, isContained), [device.id]);
 
     res.json({
@@ -387,7 +481,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       data: {
         device_id: device.id,
         commands: commands.rows,
-        agent_version: '1.6.0',
+        agent_version: '1.7.0',
         status: device.status,
         contained: isContained,
       },
@@ -607,11 +701,27 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
     }
 
     const heartbeats = await query('SELECT * FROM device_heartbeats WHERE device_id = $1 ORDER BY recorded_at DESC LIMIT 24', [id]);
+    // Genuine 24h window for the device history chart. The old chart plotted
+    // the 24 most recent samples (~24 minutes) under a "Last 24h" heading.
+    const historySeries = await fetchHeartbeatSeries({ deviceId: id, interval: '5m' });
     const events = await query('SELECT * FROM security_events WHERE device_id = $1 ORDER BY created_at DESC LIMIT 10', [id]);
     const software = await query('SELECT * FROM device_software WHERE device_id = $1 ORDER BY name ASC', [id]);
     const services = await query('SELECT * FROM device_services WHERE device_id = $1 ORDER BY name ASC', [id]);
     const processes = await query('SELECT * FROM device_processes WHERE device_id = $1 ORDER BY cpu_usage DESC LIMIT 100', [id]);
     const networkInterfaces = await query('SELECT * FROM device_network_interfaces WHERE device_id = $1', [id]);
+    const partitions = await query(
+      `SELECT mount_point, device_name, fstype, total_bytes, used_bytes, free_bytes, usage_percent, recorded_at
+         FROM device_partitions WHERE device_id = $1 ORDER BY mount_point ASC`,
+      [id]
+    );
+    const interfaceMetrics = await query(
+      `SELECT interface_name, bytes_in, bytes_out, rate_in, rate_out, recorded_at
+         FROM device_interface_metrics
+        WHERE device_id = $1 AND recorded_at > NOW() - INTERVAL '1 hour'
+        ORDER BY recorded_at DESC
+        LIMIT 500`,
+      [id]
+    );
     const commands = await query('SELECT * FROM agent_commands WHERE device_id = $1 ORDER BY created_at DESC LIMIT 50', [id]);
 
     res.json({
@@ -620,15 +730,64 @@ router.get('/:id', authenticate, requirePermission('devices.view'), async (req: 
         device: {
           ...deviceResult.rows[0],
           recent_heartbeats: heartbeats.rows,
+          history_series: historySeries,
           recent_events: events.rows,
           software: software.rows,
           services: services.rows,
           processes: processes.rows,
           network_interfaces: networkInterfaces.rows,
+          partitions: partitions.rows,
+          interface_metrics: interfaceMetrics.rows,
           recent_commands: commands.rows,
         },
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// OS event log (Windows Event Log / journald) for one device.
+router.get('/:id/events', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const level = typeof req.query.level === 'string' && req.query.level ? req.query.level : null;
+    const source = typeof req.query.source === 'string' && req.query.source ? req.query.source : null;
+
+    const deviceResult = await query('SELECT id, created_by FROM devices WHERE id = $1', [id]);
+    if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    const owner = deviceResult.rows[0].created_by as string | null;
+    if (!(owner === req.user?.id || (owner == null && canViewUnownedDevices(req.user)))) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+
+    const clauses = ['device_id = $1'];
+    const params: unknown[] = [id];
+    if (level) {
+      params.push(level);
+      clauses.push(`LOWER(level) = LOWER($${params.length})`);
+    }
+    if (source) {
+      params.push(source);
+      clauses.push(`log_source = $${params.length}`);
+    }
+    params.push(limit);
+
+    const rows = await query(
+      `SELECT id, log_source, channel, event_id, level, provider, message, detail, occurred_at, recorded_at
+         FROM device_event_logs
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY COALESCE(occurred_at, recorded_at) DESC
+        LIMIT $${params.length}`,
+      params
+    );
+
+    res.json({ success: true, data: { events: rows.rows } });
   } catch (error) {
     next(error);
   }
@@ -787,6 +946,7 @@ router.post('/:id/block', authenticate, requirePermission('devices.block'), asyn
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_block', 'device', id, 'Device blocked + isolate queued', req.ip]);
+    await emitDeviceStatus(id, 'blocked');
 
     res.json({ success: true, data: { message: 'Device blocked', command_id: cmdId } });
   } catch (error) {
@@ -833,6 +993,7 @@ router.post('/:id/unblock', authenticate, requirePermission('devices.block'), as
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_unblock', 'device', id, 'Device unblocked + unisolate queued', req.ip]);
+    await emitDeviceStatus(id, 'online');
 
     res.json({ success: true, data: { message: 'Device unblocked', command_id: cmdId } });
   } catch (error) {
@@ -853,6 +1014,7 @@ router.post('/:id/quarantine', authenticate, requirePermission('devices.quaranti
 
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'device_quarantine', 'device', id, 'Device quarantined + isolate queued', req.ip]);
+    await emitDeviceStatus(id, 'quarantine');
 
     res.json({ success: true, data: { message: 'Device quarantined', command_id: cmdId } });
   } catch (error) {
@@ -865,8 +1027,42 @@ router.get('/:id/history', authenticate, requirePermission('devices.view'), asyn
   try {
     const { id } = req.params;
     if (!(await denyUnlessOwns(req, res, id))) return;
-    const heartbeats = await query('SELECT * FROM device_heartbeats WHERE device_id = $1 ORDER BY recorded_at DESC LIMIT 100', [id]);
-    res.json({ success: true, data: { heartbeats: heartbeats.rows } });
+
+    // ?from=&to=&interval= select the range; without them we keep the legacy
+    // "latest 100 samples" behaviour so existing callers are unaffected.
+    const hasRange = Boolean(req.query.from || req.query.to || req.query.interval);
+    if (!hasRange) {
+      const heartbeats = await query(
+        'SELECT * FROM device_heartbeats WHERE device_id = $1 ORDER BY recorded_at DESC LIMIT 100',
+        [id]
+      );
+      res.json({ success: true, data: { heartbeats: heartbeats.rows } });
+      return;
+    }
+
+    const range = resolveRange(req.query.from, req.query.to);
+    const interval = resolveInterval(req.query.interval as string | undefined, range.seconds);
+    const series = await fetchHeartbeatSeries({
+      deviceId: id,
+      from: range.from,
+      to: range.to,
+      interval,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        series,
+        interval,
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+        // Kept for older clients: newest-first raw samples inside the window.
+        heartbeats: await query(
+          'SELECT * FROM device_heartbeats WHERE device_id = $1 AND recorded_at >= $2 AND recorded_at < $3 ORDER BY recorded_at DESC LIMIT 500',
+          [id, range.from, range.to]
+        ).then((r) => r.rows),
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -1126,9 +1322,17 @@ router.post('/security-scan', async (req: AuthRequest, res: Response, next: Next
 
       // Auto-create alerts for critical and high severity
       if (evt.severity === 'critical' || evt.severity === 'high') {
-        const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        await query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-          [alertId, device.id, evt.event_type, evt.severity, evt.title, evt.description, JSON.stringify({ device_hostname: device.hostname })]);
+        await createAlert({
+          device_id: device.id,
+          alert_type: evt.event_type,
+          severity: evt.severity,
+          title: evt.title,
+          description: evt.description,
+          metadata: { device_hostname: device.hostname, source_event: eventId },
+          dedup_key: `scan:${device.id}:${evt.event_type}`,
+          source: 'security-scan',
+          dedup_window_minutes: 60 * 6,
+        });
       }
     }
 
@@ -1165,18 +1369,97 @@ router.post('/alerts', async (req: AuthRequest, res: Response, next: NextFunctio
     let created = 0;
 
     for (const alert of alerts) {
-      // Check if similar alert already exists in last hour
-      const existing = await query("SELECT id FROM alerts WHERE device_id = $1 AND alert_type = $2 AND created_at > NOW() - INTERVAL '1 hour' LIMIT 1",
-        [device.id, alert.alert_type || alert.type]);
-      if (existing.rows.length > 0) continue;
+      const alertType = alert.alert_type || alert.type;
+      if (!alertType || !alert.title) continue;
 
-      const alertId = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      await query('INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [alertId, device.id, alert.alert_type || alert.type, alert.severity || 'medium', alert.title, alert.description || '', JSON.stringify({ device_hostname: device.hostname })]);
-      created++;
+      // createAlert folds repeats of the same type into one open alert for an
+      // hour, and raises email/webhook/socket only on the first occurrence —
+      // which is exactly what the hand-rolled "SELECT ... last hour" did, minus
+      // the notifications.
+      const result = await createAlert({
+        device_id: device.id,
+        alert_type: alertType,
+        severity: alert.severity || 'medium',
+        title: alert.title,
+        description: alert.description || '',
+        metadata: { device_hostname: device.hostname, ...(alert.metadata || {}) },
+        dedup_key: `agent:${device.id}:${alertType}`,
+        source: 'agent',
+        dedup_window_minutes: 60,
+      });
+      if (result.created) created++;
     }
 
     res.json({ success: true, data: { message: 'Alerts processed', created } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Agent OS event-log upload (Windows Event Log, journald, unified log).
+// Stored newest-first and deduped on (device, source, event key) so the agent
+// can re-send the same window after a network failure without flooding the table.
+router.post('/events', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { agent_id, events } = req.body;
+    if (!agent_id || !Array.isArray(events)) {
+      res.status(400).json({ success: false, error: { message: 'agent_id and events array required' } });
+      return;
+    }
+
+    const agentSecret = req.headers['x-agent-secret'];
+    if (agentSecret !== process.env.AGENT_SECRET) {
+      res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
+      return;
+    }
+
+    const deviceResult = await query('SELECT id FROM devices WHERE agent_id = $1', [agent_id]);
+    if (deviceResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: { message: 'Device not found' } });
+      return;
+    }
+    const deviceId = deviceResult.rows[0].id;
+
+    let stored = 0;
+    for (const e of (events as Array<Record<string, unknown>>).slice(0, 200)) {
+      const message = asText(e?.message, 4000);
+      if (!message) continue;
+
+      const logSource = asText(e?.log_source, 40) || 'system';
+      const rawOccurred = e?.occurred_at ? new Date(String(e.occurred_at)) : null;
+      const occurredAt = rawOccurred && !Number.isNaN(rawOccurred.getTime()) ? rawOccurred.toISOString() : null;
+      const providedKey = asText(e?.dedup_key, 300);
+      const dedupKey = providedKey || `${logSource}:${asText(e?.event_id, 40) || ''}:${occurredAt || ''}:${message.slice(0, 160)}`;
+
+      const r = await query(
+        `INSERT INTO device_event_logs
+           (device_id, log_source, channel, event_id, level, provider, message, detail, occurred_at, dedup_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (device_id, log_source, dedup_key)
+         DO UPDATE SET
+           level = EXCLUDED.level,
+           message = EXCLUDED.message,
+           detail = EXCLUDED.detail,
+           occurred_at = COALESCE(EXCLUDED.occurred_at, device_event_logs.occurred_at),
+           recorded_at = NOW()
+         RETURNING (xmax = 0) AS inserted`,
+        [
+          deviceId,
+          logSource,
+          asText(e?.channel, 100),
+          asText(e?.event_id, 40),
+          asText(e?.level, 20),
+          asText(e?.provider, 255),
+          message,
+          e?.detail !== undefined && e?.detail !== null ? JSON.stringify(e.detail) : null,
+          occurredAt,
+          dedupKey,
+        ]
+      );
+      if (r.rows[0]?.inserted) stored++;
+    }
+
+    res.json({ success: true, data: { received: events.length, stored } });
   } catch (error) {
     next(error);
   }

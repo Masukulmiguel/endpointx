@@ -997,6 +997,136 @@ const createInlineSchema = async (): Promise<void> => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type);
+
+    -- ── v1.2.0 M4: NVD-backed CVE knowledge base ─────────────────────────
+    ALTER TABLE hermes_cves ADD COLUMN IF NOT EXISTS criteria JSONB DEFAULT '[]';
+    ALTER TABLE hermes_cves ADD COLUMN IF NOT EXISTS product_keys TEXT[] DEFAULT '{}';
+    ALTER TABLE hermes_cves ADD COLUMN IF NOT EXISTS last_modified_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_hermes_cves_product_keys ON hermes_cves USING GIN (product_keys);
+    CREATE INDEX IF NOT EXISTS idx_hermes_cves_source ON hermes_cves(source);
+
+    -- ── v1.2.0 M1: alerting ──────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS alert_rules (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(150) NOT NULL,
+      metric VARCHAR(30) NOT NULL,
+      operator VARCHAR(10) NOT NULL DEFAULT 'gte',
+      threshold DECIMAL(10,2) NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 5,
+      severity VARCHAR(20) NOT NULL DEFAULT 'high',
+      scope_device_ids UUID[],
+      scope_group_id UUID REFERENCES device_groups(id) ON DELETE SET NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      notify_email BOOLEAN NOT NULL DEFAULT TRUE,
+      notify_webhook BOOLEAN NOT NULL DEFAULT TRUE,
+      last_fired_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
+    CREATE INDEX IF NOT EXISTS idx_alert_rules_metric ON alert_rules(metric);
+
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS dedup_key VARCHAR(255);
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS rule_id UUID REFERENCES alert_rules(id) ON DELETE SET NULL;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'system';
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS occurrences INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_by UUID REFERENCES users(id);
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+    ALTER TABLE alerts ADD COLUMN IF NOT EXISTS auto_resolved_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_alerts_dedup_key ON alerts(dedup_key);
+    CREATE INDEX IF NOT EXISTS idx_alerts_rule_id ON alerts(rule_id);
+    CREATE INDEX IF NOT EXISTS idx_alerts_acknowledged ON alerts(acknowledged_at);
+
+    ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS channel VARCHAR(20) DEFAULT 'email';
+    ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL;
+
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) NOT NULL,
+      url TEXT NOT NULL,
+      secret VARCHAR(255),
+      events VARCHAR(255) DEFAULT 'alert',
+      min_severity VARCHAR(20) DEFAULT 'low',
+      is_enabled BOOLEAN DEFAULT TRUE,
+      last_status INTEGER,
+      last_delivered_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- ── v1.2.0 M2: metric retention & rollups ────────────────────────────
+    CREATE TABLE IF NOT EXISTS metric_rollups (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      bucket_size VARCHAR(10) NOT NULL,
+      bucket_start TIMESTAMPTZ NOT NULL,
+      cpu_avg DECIMAL(5,2),
+      cpu_max DECIMAL(5,2),
+      ram_avg DECIMAL(5,2),
+      ram_max DECIMAL(5,2),
+      disk_avg DECIMAL(5,2),
+      disk_max DECIMAL(5,2),
+      network_in BIGINT DEFAULT 0,
+      network_out BIGINT DEFAULT 0,
+      samples INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (device_id, bucket_size, bucket_start)
+    );
+    CREATE INDEX IF NOT EXISTS idx_metric_rollups_lookup
+      ON metric_rollups(device_id, bucket_size, bucket_start);
+
+    -- ── v1.2.0 M3: deeper telemetry ──────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS device_partitions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      mount_point VARCHAR(255) NOT NULL,
+      device_name VARCHAR(255),
+      fstype VARCHAR(50),
+      total_bytes BIGINT DEFAULT 0,
+      used_bytes BIGINT DEFAULT 0,
+      free_bytes BIGINT DEFAULT 0,
+      usage_percent DECIMAL(5,2) DEFAULT 0,
+      recorded_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (device_id, mount_point)
+    );
+    CREATE INDEX IF NOT EXISTS idx_device_partitions_device ON device_partitions(device_id);
+
+    CREATE TABLE IF NOT EXISTS device_interface_metrics (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      interface_name VARCHAR(100) NOT NULL,
+      bytes_in BIGINT DEFAULT 0,
+      bytes_out BIGINT DEFAULT 0,
+      rate_in BIGINT DEFAULT 0,
+      rate_out BIGINT DEFAULT 0,
+      recorded_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_device_interface_metrics_device
+      ON device_interface_metrics(device_id, recorded_at);
+
+    CREATE TABLE IF NOT EXISTS device_event_logs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+      log_source VARCHAR(40) NOT NULL,
+      channel VARCHAR(100),
+      event_id VARCHAR(40),
+      level VARCHAR(20),
+      provider VARCHAR(255),
+      message TEXT NOT NULL,
+      detail JSONB,
+      occurred_at TIMESTAMPTZ,
+      recorded_at TIMESTAMPTZ DEFAULT NOW(),
+      dedup_key VARCHAR(300)
+    );
+    CREATE INDEX IF NOT EXISTS idx_device_event_logs_device
+      ON device_event_logs(device_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_device_event_logs_dedup
+      ON device_event_logs(device_id, log_source, dedup_key);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_device_event_logs_dedup
+      ON device_event_logs(device_id, log_source, dedup_key);
   `;
 
   await pool.query(schema);
@@ -1076,6 +1206,26 @@ const seedDefaults = async (): Promise<void> => {
       `INSERT INTO hermes_scan_policies (name, description, ports, excluded_ports, excluded_hosts)
        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name) DO NOTHING`,
       [name, description, ports, excludedPorts, excludedHosts]
+    );
+  }
+
+  // v1.2.0 settings — idempotent so existing databases pick them up on boot.
+  // (The block below only runs when `roles` is empty, i.e. brand new installs.)
+  const v120Settings: Array<[string, string, string]> = [
+    ['alerting_enabled', 'true', 'Evaluate threshold alert rules every minute'],
+    ['alert_evaluation_interval', '60', 'Seconds between threshold rule evaluations'],
+    ['alert_notification_recipients', '', 'Comma-separated alert recipients (defaults to admin users)'],
+    ['data_retention_days', '90', 'Days of raw device_heartbeats to keep before purging'],
+    ['metric_rollup_enabled', 'true', 'Aggregate heartbeats into 5m/1h/1d rollups for long-range charts'],
+    ['notifications_webhooks_enabled', 'true', 'Deliver outgoing webhooks for alerts'],
+    ['hermes_daily_scan_hour', '3', 'Hour of day (UTC) for the scheduled HERMES scan'],
+    ['hermes_cve_feed_enabled', 'true', 'Refresh the CVE knowledge base from NVD'],
+    ['netsentinel_enabled', 'false', 'Expose the NetSentinel/NAC surface (discovery + topology)'],
+  ];
+  for (const [key, value, desc] of v120Settings) {
+    await pool.query(
+      'INSERT INTO app_settings (key, value, description) VALUES ($1, $2, $3) ON CONFLICT (key) DO NOTHING',
+      [key, value, desc]
     );
   }
 

@@ -1,9 +1,11 @@
 import { Router, Response, NextFunction } from 'express';
+import net from 'net';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { canAccessDevice, canViewUnownedDevices, moderateDeviceAccess, visibleDeviceRowsSql, visibleDevicesSql } from '../utils/tenant';
 import logger from '../utils/logger';
+import { discoverUnknownAsset } from './hermes';
 
 const router = Router();
 
@@ -447,14 +449,109 @@ router.put('/devices/:id', authenticate, requirePermission('devices.manage'), as
   }
 });
 
-// Network discovery (from authorized inventory + optional connectors)
+// ── Active discovery sweep ────────────────────────────────────────────────
+// A TCP connect probe is used instead of ICMP: it needs no raw sockets or
+// elevated privileges, and a listening service is the signal we actually care
+// about when deciding "is this an asset we should know about?".
+const PROBE_PORTS = [80, 443, 22, 445, 3389, 8080, 161];
+const PROBE_TIMEOUT_MS = 400;
+const PROBE_CONCURRENCY = 32;
+const MAX_SWEEP_HOSTS = 1024;
+
+/** Expand a CIDR into host addresses. Refuses ranges wider than /24. */
+function expandCidr(cidr: string): string[] | null {
+  const [base, prefixRaw] = cidr.split('/');
+  const prefix = Number(prefixRaw);
+  const octets = (base || '').split('.').map(Number);
+  if (octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  if (!Number.isInteger(prefix) || prefix < 24 || prefix > 30) return null;
+
+  const baseInt =
+    ((octets[0] << 24) >>> 0) + (octets[1] << 16) + (octets[2] << 8) + octets[3];
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  const netAddr = (baseInt & mask) >>> 0;
+  const size = 2 ** (32 - prefix);
+  if (size > MAX_SWEEP_HOSTS) return null;
+
+  const hosts: string[] = [];
+  for (let i = 1; i < size - 1; i++) {
+    const ip = (netAddr + i) >>> 0;
+    hosts.push([(ip >>> 24) & 255, (ip >>> 16) & 255, (ip >>> 8) & 255, ip & 255].join('.'));
+  }
+  return hosts;
+}
+
+function probePort(ip: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const settle = (open: boolean) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(PROBE_TIMEOUT_MS);
+    socket.once('connect', () => settle(true));
+    socket.once('timeout', () => settle(false));
+    socket.once('error', () => settle(false));
+    socket.connect(port, ip);
+  });
+}
+
+/** First open port on the host, or null when nothing answered. */
+async function probeHost(ip: string): Promise<number | null> {
+  for (const port of PROBE_PORTS) {
+    if (await probePort(ip, port)) return port;
+  }
+  return null;
+}
+
+async function sweepRange(
+  hosts: string[],
+  knownIps: Set<string>,
+  onFind: (ip: string, port: number) => Promise<void>
+): Promise<{ probed: number; found: number }> {
+  let cursor = 0;
+  let probed = 0;
+  let found = 0;
+
+  const worker = async () => {
+    while (cursor < hosts.length) {
+      const ip = hosts[cursor++];
+      if (knownIps.has(ip)) continue;
+      probed++;
+      const port = await probeHost(ip);
+      if (port !== null) {
+        found++;
+        await onFind(ip, port);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(PROBE_CONCURRENCY, hosts.length) }, () => worker())
+  );
+  return { probed, found };
+}
+
+// Network discovery (from authorized inventory + optional active sweep)
 router.post('/discovery/run', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const runId = newId();
     const source = (req.body?.source as string) || 'agent_inventory';
+    const range = typeof req.body?.range === 'string' ? req.body.range.trim() : '';
+
+    const hosts = range ? expandCidr(range) : [];
+    if (range && !hosts) {
+      res.status(400).json({
+        success: false,
+        error: { message: 'Invalid range: use a CIDR from /24 to /30 (e.g. 192.168.1.0/24)' },
+      });
+      return;
+    }
+
     await query(
       `INSERT INTO network_discovery_runs (id, source, status, started_by, started_at) VALUES ($1, $2, 'running', $3, NOW())`,
-      [runId, source, req.user?.id || null]
+      [runId, range ? 'active_sweep' : source, req.user?.id || null]
     );
 
     let nodes = 0;
@@ -462,7 +559,9 @@ router.post('/discovery/run', authenticate, requirePermission('network.view'), a
 
     // Sync authorized devices into network_nodes
     const devices = await query(`SELECT id, hostname, ip_address, mac_address, device_type, vlan, location, status FROM devices`);
+    const knownIps = new Set<string>();
     for (const d of devices.rows) {
+      if (d.ip_address) knownIps.add(String(d.ip_address));
       const nodeType = d.device_type && d.device_type !== 'UNKNOWN' ? d.device_type : 'ENDPOINT';
       const existing = await query(`SELECT id FROM network_nodes WHERE device_id = $1`, [d.id]);
       if (existing.rows.length === 0) {
@@ -482,6 +581,33 @@ router.post('/discovery/run', authenticate, requirePermission('network.view'), a
       if (d.device_type === 'UNKNOWN' && d.status) newUnknowns++;
     }
 
+    // Active sweep: probe hosts that are not registered endpoints, and let
+    // HERMES register whatever responds as an unknown asset.
+    let probed = 0;
+    let discovered = 0;
+    if (hosts && hosts.length > 0) {
+      const sweep = await sweepRange(hosts, knownIps, async (ip, port) => {
+        await discoverUnknownAsset(ip);
+        const exists = await query(
+          `SELECT id FROM network_nodes WHERE device_id IS NULL AND ip_address = $1`,
+          [ip]
+        );
+        if (exists.rows.length === 0) {
+          await query(
+            `INSERT INTO network_nodes (id, node_type, name, hostname, ip_address, mac_address, parent_id, vlan, site, source, device_id, metadata, first_seen, last_seen, updated_at)
+             VALUES ($1, 'UNKNOWN', $2, $2, $3, NULL, NULL, NULL, NULL, 'active_sweep', NULL, $4, NOW(), NOW(), NOW())`,
+            [newId(), ip, ip, JSON.stringify({ open_port: port, discovered_by: 'tcp_probe' })]
+          );
+        } else {
+          await query(`UPDATE network_nodes SET last_seen = NOW(), updated_at = NOW() WHERE device_id IS NULL AND ip_address = $1`, [ip]);
+        }
+        newUnknowns++;
+        logger.info('NetSentinel sweep found unknown host', { ip, port });
+      });
+      probed = sweep.probed;
+      discovered = sweep.found;
+    }
+
     // Create VLAN grouping nodes if missing
     const vlans = await query(`SELECT DISTINCT vlan FROM devices WHERE vlan IS NOT NULL AND vlan <> ''`);
     for (const v of vlans.rows) {
@@ -496,13 +622,14 @@ router.post('/discovery/run', authenticate, requirePermission('network.view'), a
       }
     }
 
+    const stats = { nodes_synced: nodes, unknown: newUnknowns, range, probed, discovered };
     await query(
       `UPDATE network_discovery_runs SET status = 'completed', completed_at = NOW(), stats = $1 WHERE id = $2`,
-      [JSON.stringify({ nodes_synced: nodes, unknown: newUnknowns }), runId]
+      [JSON.stringify(stats), runId]
     );
-    await audit('network_discovery_run', req, 'discovery', runId, { source, nodes });
+    await audit('network_discovery_run', req, 'discovery', runId, stats);
 
-    res.json({ success: true, data: { id: runId, nodes_synced: nodes, status: 'completed' } });
+    res.json({ success: true, data: { id: runId, nodes_synced: nodes, unknown: newUnknowns, probed, discovered, status: 'completed' } });
   } catch (error) {
     next(error);
   }

@@ -7,6 +7,7 @@ import { JWT, AUTH } from '../config/constants';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService';
+import { createAlert } from '../services/alertService';
 
 function hexId(): string {
   return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -54,25 +55,19 @@ async function recordFailedLogin(
   );
 
   if (lockout) {
-    const existing = await query(
-      `SELECT id FROM alerts WHERE alert_type = $1 AND is_dismissed = false
-         AND created_at > NOW() - INTERVAL '15 minutes' AND title = $2 LIMIT 1`,
-      [eventType, `Brute force suspected: ${email}`]
-    );
-    if (existing.rows.length === 0) {
-      await query(
-        `INSERT INTO alerts (id, device_id, alert_type, severity, title, description, metadata)
-         VALUES ($1, NULL, $2, $3, $4, $5, $6)`,
-        [
-          hexId(),
-          eventType,
-          severity,
-          `Brute force suspected: ${email}`,
-          `${failCount} failed login(s) from ${ip || 'unknown'} in ${windowMin} minutes`,
-          JSON.stringify({ email, ip, fail_count: failCount, reason }),
-        ]
-      );
-    }
+    // Dedup on (email, type) for 15 minutes; only the first fire notifies, and
+    // now that first fire actually reaches an inbox.
+    await createAlert({
+      device_id: null,
+      alert_type: eventType,
+      severity,
+      title: `Brute force suspected: ${email}`,
+      description: `${failCount} failed login(s) from ${ip || 'unknown'} in ${windowMin} minutes`,
+      metadata: { email, ip, fail_count: failCount, reason },
+      dedup_key: `auth:${eventType}:${email}`,
+      source: 'auth',
+      dedup_window_minutes: 15,
+    });
   }
 }
 

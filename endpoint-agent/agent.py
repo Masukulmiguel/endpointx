@@ -33,6 +33,9 @@ from system_info import (
     get_disk_info,
     get_network_traffic,
     get_network_interfaces,
+    get_partitions,
+    get_interface_metrics,
+    collect_event_logs,
     get_running_processes,
     get_installed_software,
     get_running_services,
@@ -54,7 +57,7 @@ SYSTEM = platform.system()
 # Bumped whenever agent files change. The server advertises the latest version
 # and endpoints only self-update when it is strictly newer than this one, so a
 # server that is behind an installed agent never causes an update loop.
-CURRENT_AGENT_VERSION = "1.6.0"
+CURRENT_AGENT_VERSION = "1.7.0"
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -69,6 +72,19 @@ def _version_key(version: str) -> tuple[int, ...]:
 def _is_newer(candidate: str, current: str) -> bool:
     """True only when the advertised version is ahead of the installed one."""
     return _version_key(candidate) > _version_key(current)
+
+
+def _safe(fn, default):
+    """Call ``fn`` and fall back to ``default`` on any failure.
+
+    Optional telemetry must never break the heartbeat it travels on.
+    """
+    try:
+        value = fn()
+        return value if value is not None else default
+    except Exception as exc:
+        logger.debug("Optional collector %s failed: %s", getattr(fn, "__name__", fn), exc)
+        return default
 
 
 def _get_platform_paths() -> dict[str, Path]:
@@ -586,6 +602,32 @@ class EndpointAgent:
             logger.error("Inventory send failed with status %d: %s", resp.status_code, resp.text[:200])
             return False
 
+    def send_event_logs(self) -> bool:
+        """Upload recent OS event-log entries (Windows Event Log / journald / unified log).
+
+        The server dedupes on (device, source, key), so re-sending the same
+        window after a network failure is safe.
+        """
+        events = _safe(lambda: collect_event_logs(50), [])
+        if not events:
+            return False
+
+        payload = {
+            "agent_id": self.config.get("agent_id", get_hostname()),
+            "events": events,
+        }
+        resp = self._make_request("POST", "/devices/events", payload, timeout=45)
+        if resp is None:
+            return False
+
+        if resp.status_code == 200:
+            stored = (resp.json().get("data") or {}).get("stored", 0)
+            logger.info("Event logs sent: %d received, %d new", len(events), stored)
+            return True
+
+        logger.error("Event log send failed with status %d: %s", resp.status_code, resp.text[:200])
+        return False
+
     def heartbeat(self) -> Optional[dict[str, Any]]:
         """Send a heartbeat with system metrics and receive pending commands.
         
@@ -615,6 +657,11 @@ class EndpointAgent:
                     "network_out": net_traffic.get("bytes_sent", 0),
                     "active_processes": proc_count,
                     "current_version": CURRENT_AGENT_VERSION,
+                    # Deeper telemetry rides along with the heartbeat so the
+                    # agent needs no extra round trip. Omitted on failure so a
+                    # psutil hiccup never costs the device its heartbeat.
+                    "partitions": _safe(get_partitions, []),
+                    "interface_metrics": _safe(get_interface_metrics, []),
                 }
 
                 if self._tamper:
@@ -1232,6 +1279,7 @@ class EndpointAgent:
         self._last_inventory = 0.0
         self._security_sent = False
         self._last_security_check = 0
+        self._last_event_log_check = 0
 
         # Remote assistance channel: the agent dials out to the server and only
         # captures the screen while an operator is actually watching.
@@ -1307,6 +1355,16 @@ class EndpointAgent:
                                 self._last_security_check = now
                             except Exception as exc:
                                 logger.error("Auto security scan error: %s", exc)
+
+                        # OS event logs: the first run happens on the first
+                        # heartbeat so a freshly deployed endpoint is not blank,
+                        # then every 10 minutes. Failure must not stall the loop.
+                        if now - self._last_event_log_check >= 600:
+                            self._last_event_log_check = now
+                            try:
+                                self.send_event_logs()
+                            except Exception as exc:
+                                logger.error("Event log send error: %s", exc)
 
                     # Periodic integrity check via tamper protection
                     if self._tamper:

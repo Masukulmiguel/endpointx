@@ -1,112 +1,208 @@
 import nodemailer from 'nodemailer';
 import { query } from '../config/database';
+import logger from '../utils/logger';
+import { getSetting, getSettingsMap } from './settings';
 
-// Environment variables:
-// SMTP_HOST - SMTP server hostname
-// SMTP_PORT - SMTP server port (default 587)
-// SMTP_USER - SMTP username
-// SMTP_PASS - SMTP password
-// SMTP_FROM - From address (default: 'EndpointX <noreply@endpointx.local>')
+/**
+ * Email delivery.
+ *
+ * SMTP settings are resolved at send time in this order:
+ *   1. app_settings `notification_*` keys (what the Notifications UI edits)
+ *   2. `process.env.SMTP_*` (docker / render style deployments)
+ *   3. built-in defaults
+ *
+ * The previous version read the environment once at module load, so saving
+ * SMTP settings in the UI had no effect until a restart — and no effect at all
+ * when the env vars were absent.
+ */
 
-const SMTP_HOST = process.env.SMTP_HOST || '';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587');
-const SMTP_USER = process.env.SMTP_USER || '';
-const SMTP_PASS = process.env.SMTP_PASS || '';
-const SMTP_FROM = process.env.SMTP_FROM || 'EndpointX <noreply@endpointx.local>';
+const ENV_FALLBACK = {
+  host: process.env.SMTP_HOST || '',
+  port: process.env.SMTP_PORT || '587',
+  user: process.env.SMTP_USER || '',
+  pass: process.env.SMTP_PASS || '',
+  from: process.env.SMTP_FROM || 'EndpointX <noreply@endpointx.local>',
+};
 
-let transporter: any = null;
-
-function getTransporter(): any {
-  if (!transporter) {
-    if (!SMTP_HOST) {
-      throw new Error('SMTP not configured');
-    }
-    transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
-  }
-  return transporter;
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
 }
 
+/** Read the effective SMTP config (UI settings first, env as fallback). */
+export async function getSmtpConfig(): Promise<SmtpConfig> {
+  const stored = await getSettingsMap([
+    'notification_SMTP_HOST',
+    'notification_SMTP_PORT',
+    'notification_SMTP_USER',
+    'notification_SMTP_PASS',
+    'notification_SMTP_FROM',
+  ]);
+
+  const host = stored.notification_SMTP_HOST || ENV_FALLBACK.host;
+  const port = parseInt(stored.notification_SMTP_PORT || ENV_FALLBACK.port, 10) || 587;
+  const user = stored.notification_SMTP_USER || ENV_FALLBACK.user;
+  const pass = stored.notification_SMTP_PASS || ENV_FALLBACK.pass;
+  const from = stored.notification_SMTP_FROM || ENV_FALLBACK.from;
+
+  return { host, port, secure: port === 465, user, pass, from };
+}
+
+/** A fresh transporter per call: settings can change between sends. */
+async function createTransporter(config: SmtpConfig): Promise<any> {
+  if (!config.host) {
+    throw new Error('SMTP not configured — set it in Settings → Notifications or via SMTP_HOST');
+  }
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    ...(config.user ? { auth: { user: config.user, pass: config.pass } } : {}),
+    // Self-signed / internal SMTP relays are common on LAN installs.
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10_000,
+  });
+}
+
+async function logMail(
+  to: string,
+  subject: string,
+  body: string,
+  status: 'sent' | 'failed',
+  errorMessage?: string
+): Promise<void> {
+  await query(
+    `INSERT INTO notification_log (recipient_email, subject, body, status, error_message, sent_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, CASE WHEN $4 = 'sent' THEN NOW() ELSE NULL END, NOW())`,
+    [to, subject, body, status, errorMessage ?? null]
+  ).catch((error) => logger.warn('Failed to write notification_log', { error: error.message }));
+}
+
+/** Send one email. Returns true on success; failures are logged, never thrown. */
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   try {
-    const transport = getTransporter();
-    await transport.sendMail({ from: SMTP_FROM, to, subject, html });
-
-    // Log to notification_log table
-    await query(
-      'INSERT INTO notification_log (recipient_email, subject, body, status, sent_at) VALUES ($1, $2, $3, $4, NOW())',
-      [to, subject, html, 'sent']
-    );
+    const config = await getSmtpConfig();
+    const transporter = await createTransporter(config);
+    await transporter.sendMail({ from: config.from, to, subject, html });
+    await logMail(to, subject, html, 'sent');
     return true;
   } catch (error) {
-    // Log failure
-    await query(
-      'INSERT INTO notification_log (recipient_email, subject, body, status, error_message) VALUES ($1, $2, $3, $4, $5)',
-      [to, subject, html, 'failed', (error as Error).message]
-    ).catch(() => {});
+    const message = (error as Error).message;
+    logger.warn('Email send failed', { to, subject, error: message });
+    await logMail(to, subject, html, 'failed', message);
     return false;
   }
 }
 
-export async function sendAlertNotification(alert: { severity: string; title: string; message: string; device_id: string }): Promise<void> {
+/** Is SMTP configured enough to actually deliver mail? */
+export async function isSmtpConfigured(): Promise<boolean> {
+  const config = await getSmtpConfig();
+  return Boolean(config.host);
+}
+
+/** Recipients for automatic (non-manual) alert notifications. */
+async function alertRecipients(): Promise<string[]> {
+  const configured = await getSetting('notification_alert_recipients', '');
+  if (configured.trim()) {
+    return configured
+      .split(',')
+      .map((e) => e.trim())
+      .filter(Boolean);
+  }
+
+  const admins = await query(
+    `SELECT u.email FROM users u
+     JOIN roles r ON r.id = u.role_id
+     WHERE u.is_active = true AND r.name = 'admin' AND u.email IS NOT NULL`
+  );
+  return admins.rows.map((row: { email: string }) => row.email).filter(Boolean);
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+export interface AlertEmailInput {
+  severity: string;
+  title: string;
+  message: string;
+  device_id: string;
+  device_name?: string;
+  alert_type?: string;
+  url?: string;
+}
+
+/**
+ * Email an alert to the configured recipients.
+ *
+ * Called for automatic alerts too (threshold breaches, tamper, security scans,
+ * brute force) — previously only the manual POST /api/alerts path sent mail.
+ */
+export async function sendAlertNotification(alert: AlertEmailInput): Promise<void> {
   try {
-    // Get all admin users
-    const admins = await query(
-      `SELECT email FROM users WHERE is_active = true AND role_id IN (
-        SELECT id FROM roles WHERE name = 'admin'
-      )`
-    );
+    const recipients = await alertRecipients();
+    if (recipients.length === 0) {
+      logger.debug('No alert recipients configured; skipping email');
+      return;
+    }
 
-    for (const admin of admins.rows) {
-      const severityColor = { critical: '#dc2626', high: '#f97316', medium: '#eab308', low: '#22c55e' }[alert.severity] || '#6b7280';
+    const severityColor =
+      { critical: '#dc2626', high: '#f97316', medium: '#eab308', low: '#22c55e', info: '#3b82f6' }[
+        alert.severity
+      ] || '#6b7280';
 
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px;">
-          <h2 style="color: ${severityColor};">${alert.severity.toUpperCase()} Alert</h2>
-          <h3>${alert.title}</h3>
-          <p>${alert.message}</p>
-          <p><strong>Device ID:</strong> ${alert.device_id}</p>
-          <hr/>
-          <p style="color: #6b7280; font-size: 12px;">EndpointX Security Alert</p>
-        </div>
-      `;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px;">
+        <h2 style="color: ${severityColor};">${escapeHtml(alert.severity.toUpperCase())} Alert</h2>
+        <h3>${escapeHtml(alert.title)}</h3>
+        <p>${escapeHtml(alert.message)}</p>
+        ${alert.device_name ? `<p><strong>Device:</strong> ${escapeHtml(alert.device_name)}</p>` : ''}
+        <p><strong>Device ID:</strong> ${escapeHtml(alert.device_id || 'n/a')}</p>
+        ${alert.url ? `<p><a href="${escapeHtml(alert.url)}">Open in EndpointX</a></p>` : ''}
+        <hr/>
+        <p style="color: #6b7280; font-size: 12px;">EndpointX Security Alert</p>
+      </div>`;
 
-      await sendEmail(admin.email, `[EndpointX] ${alert.severity.toUpperCase()}: ${alert.title}`, html);
+    const subject = `[EndpointX] ${alert.severity.toUpperCase()}: ${alert.title}`;
+    for (const recipient of recipients) {
+      await sendEmail(recipient, subject, html);
     }
   } catch (error) {
-    console.error('Failed to send alert notification:', error);
+    logger.error('Failed to send alert notification', { error: (error as Error).message });
   }
 }
 
-export async function sendComplianceAlert(deviceId: string, deviceHostname: string, violations: string[]): Promise<void> {
+export async function sendComplianceAlert(
+  deviceId: string,
+  deviceHostname: string,
+  violations: string[]
+): Promise<void> {
   try {
-    const admins = await query(
-      `SELECT email FROM users WHERE is_active = true AND role_id IN (
-        SELECT id FROM roles WHERE name = 'admin'
-      )`
-    );
-
-    for (const admin of admins.rows) {
+    const recipients = await alertRecipients();
+    for (const recipient of recipients) {
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px;">
           <h2 style="color: #f97316;">Compliance Violation</h2>
-          <h3>Device: ${deviceHostname}</h3>
+          <h3>Device: ${escapeHtml(deviceHostname)}</h3>
           <p>The following compliance violations were detected:</p>
-          <ul>${violations.map(v => `<li>${v}</li>`).join('')}</ul>
-          <p><strong>Device ID:</strong> ${deviceId}</p>
+          <ul>${violations.map((v) => `<li>${escapeHtml(v)}</li>`).join('')}</ul>
+          <p><strong>Device ID:</strong> ${escapeHtml(deviceId)}</p>
           <hr/>
           <p style="color: #6b7280; font-size: 12px;">EndpointX Compliance Monitor</p>
-        </div>
-      `;
+        </div>`;
 
-      await sendEmail(admin.email, `[EndpointX] Compliance Violation: ${deviceHostname}`, html);
+      await sendEmail(recipient, `[EndpointX] Compliance Violation: ${deviceHostname}`, html);
     }
   } catch (error) {
-    console.error('Failed to send compliance alert:', error);
+    logger.error('Failed to send compliance alert', { error: (error as Error).message });
   }
 }
 
@@ -114,29 +210,31 @@ export async function sendWelcomeEmail(email: string, name: string, tempPassword
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px;">
       <h2>Welcome to EndpointX</h2>
-      <p>Hi ${name},</p>
+      <p>Hi ${escapeHtml(name)},</p>
       <p>Your account has been created. Here are your credentials:</p>
-      <p><strong>Email:</strong> ${email}</p>
-      <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+      <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+      <p><strong>Temporary Password:</strong> ${escapeHtml(tempPassword)}</p>
       <p>Please change your password after first login.</p>
       <hr/>
       <p style="color: #6b7280; font-size: 12px;">EndpointX Admin</p>
-    </div>
-  `;
+    </div>`;
   await sendEmail(email, 'Welcome to EndpointX - Your Account', html);
 }
 
-export async function sendPasswordResetEmail(email: string, name: string, resetUrl: string): Promise<boolean> {
+export async function sendPasswordResetEmail(
+  email: string,
+  name: string,
+  resetUrl: string
+): Promise<boolean> {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px;">
       <h2>Reset your EndpointX password</h2>
-      <p>Hi ${name},</p>
+      <p>Hi ${escapeHtml(name)},</p>
       <p>Click the link below to choose a new password. This link expires in 1 hour.</p>
-      <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#0080ff;color:#fff;text-decoration:none;border-radius:6px;">Reset password</a></p>
+      <p><a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:10px 16px;background:#0080ff;color:#fff;text-decoration:none;border-radius:6px;">Reset password</a></p>
       <p style="color:#6b7280;font-size:12px;">If you did not request this, you can ignore this email.</p>
       <hr/>
       <p style="color: #6b7280; font-size: 12px;">EndpointX Security</p>
-    </div>
-  `;
+    </div>`;
   return sendEmail(email, 'EndpointX - Reset your password', html);
 }

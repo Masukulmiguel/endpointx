@@ -242,6 +242,350 @@ def get_network_traffic() -> dict[str, int]:
     }
 
 
+# Pseudo filesystems that report a size but hold no user data.
+_PSEUDO_FS = {
+    "proc", "sysfs", "devtmpfs", "devfs", "cgroup", "cgroup2", "cgroup2fs",
+    "overlay", "tmpfs", "squashfs", "rpc_pipefs", "nfsd", "bpf", "securityfs",
+    "debugfs", "tracefs", "pstore", "mqueue", "hugetlbfs", "fusectl", "configfs",
+    "binfmt_misc", "autofs", "efivarfs",
+}
+
+
+def get_partitions() -> list[dict[str, Any]]:
+    """Per-mount disk usage, so the dashboard can show which volume is full.
+
+    ``get_disk_info`` only reports the boot volume, which hides a full data
+    drive or a nearly-exhausted Windows recovery partition.
+    """
+    parts: list[dict[str, Any]] = []
+    try:
+        raw = psutil.disk_partitions(all=False)
+    except Exception:
+        return parts
+
+    for part in raw:
+        mount = part.mountpoint
+        if not mount:
+            continue
+        if part.fstype.lower() in _PSEUDO_FS:
+            continue
+        if platform.system() != "Windows" and mount.startswith(("/proc", "/sys", "/dev", "/run")):
+            continue
+        try:
+            usage = psutil.disk_usage(mount)
+        except (PermissionError, OSError, FileNotFoundError):
+            continue
+        if usage.total <= 0:
+            continue
+        parts.append(
+            {
+                "mount_point": mount,
+                "device_name": part.device,
+                "fstype": part.fstype,
+                "total_bytes": int(usage.total),
+                "used_bytes": int(usage.used),
+                "free_bytes": int(usage.free),
+                "usage_percent": round(float(usage.percent), 2),
+            }
+        )
+    return parts
+
+
+# name -> (monotonic timestamp, bytes_sent, bytes_recv) of the previous sample
+_iface_previous: dict[str, tuple[float, int, int]] = {}
+
+
+def get_interface_metrics() -> list[dict[str, Any]]:
+    """Per-interface byte counters plus the rate since the previous call.
+
+    Rates are computed here rather than on the server: the server only ever
+    sees cumulative counters, and without a known sampling interval it would
+    have to guess at throughput.
+    """
+    global _iface_previous
+
+    now = time.monotonic()
+    try:
+        counters = psutil.net_io_counters(pernic=True) or {}
+    except Exception:
+        return []
+
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for name, c in counters.items():
+        if name == "lo" or name.lower().startswith(("loopback", "lo")):
+            continue
+        seen.add(name)
+
+        prev = _iface_previous.get(name)
+        rate_in = 0
+        rate_out = 0
+        if prev is not None:
+            elapsed = now - prev[0]
+            if elapsed > 0:
+                if c.bytes_recv >= prev[2]:
+                    rate_in = int((c.bytes_recv - prev[2]) / elapsed)
+                if c.bytes_sent >= prev[1]:
+                    rate_out = int((c.bytes_sent - prev[1]) / elapsed)
+
+        _iface_previous[name] = (now, int(c.bytes_sent), int(c.bytes_recv))
+        results.append(
+            {
+                "name": name,
+                "bytes_in": int(c.bytes_recv),
+                "bytes_out": int(c.bytes_sent),
+                "rate_in": rate_in,
+                "rate_out": rate_out,
+            }
+        )
+
+    # Drop interfaces that disappeared (docked laptop, USB NIC).
+    for gone in set(_iface_previous) - seen:
+        _iface_previous.pop(gone, None)
+
+    return results
+
+
+_EVENT_LEVEL_MAP = {
+    # journal/syslog priorities (0 = emergency ... 7 = debug)
+    0: "critical", 1: "critical", 2: "critical", 3: "error",
+    4: "warn", 5: "info", 6: "info", 7: "debug",
+}
+
+_WINDOWS_LEVEL_MAP = {
+    "critical": "critical",
+    "error": "error",
+    "warning": "warn",
+    "information": "info",
+    "verbose": "debug",
+    "log always": "info",
+}
+
+
+def _clean_message(value: Any, limit: int = 4000) -> str:
+    text = str(value or "").replace("\x00", " ").strip()
+    if not text:
+        return ""
+    return text[:limit]
+
+
+def _collect_windows_event_logs(max_events: int) -> list[dict[str, Any]]:
+    """Read recent Application + System entries via the built-in PowerShell cmdlet.
+
+    pywin32 is not a dependency, and `Get-WinEvent` is present on every
+    supported Windows version. Security is queried too but tolerated if the
+    agent is not elevated.
+    """
+    script = (
+        "$ErrorActionPreference='SilentlyContinue';"
+        "$cut=(Get-Date).AddHours(-24);"
+        "$out=@();"
+        "foreach ($log in @('System','Application','Security')) {"
+        "  try {"
+        "    $out += Get-WinEvent -FilterHashtable @{LogName=$log; StartTime=$cut} "
+        "-MaxEvents " + str(max_events) + " -ErrorAction Stop | "
+        "      Select-Object @{n='channel';e={$log}}, Id, LevelDisplayName, ProviderName, "
+        "                     TimeCreated, Message;"
+        "  } catch {}"
+        "};"
+        "$out | Sort-Object TimeCreated -Descending | Select-Object -First " + str(max_events) +
+        " | ConvertTo-Json -Compress -Depth 3"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return []
+
+    import json
+
+    try:
+        payload = json.loads(proc.stdout)
+    except Exception:
+        return []
+    if isinstance(payload, dict):
+        payload = [payload]
+
+    events: list[dict[str, Any]] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        message = _clean_message(row.get("Message"))
+        if not message:
+            continue
+        channel = str(row.get("channel") or "System")
+        event_id = str(row.get("Id") or "")
+        created = row.get("TimeCreated")
+        occurred = None
+        if created:
+            try:
+                occurred = str(created)
+            except Exception:
+                occurred = None
+        level = _WINDOWS_LEVEL_MAP.get(str(row.get("LevelDisplayName") or "").lower(), "info")
+        events.append(
+            {
+                "log_source": "windows",
+                "channel": channel,
+                "event_id": event_id,
+                "level": level,
+                "provider": str(row.get("ProviderName") or "")[:255] or None,
+                "message": message,
+                "occurred_at": occurred,
+                "dedup_key": f"{channel}:{event_id}:{occurred or ''}:{message[:120]}",
+                "detail": {"level_display_name": row.get("LevelDisplayName")},
+            }
+        )
+    return events
+
+
+def _collect_journal_logs(max_events: int) -> list[dict[str, Any]]:
+    """Read recent journald entries as JSON."""
+    import json
+
+    try:
+        proc = subprocess.run(
+            ["journalctl", "--since", "24 hours ago", "-n", str(max_events),
+             "--no-pager", "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return []
+
+    events: list[dict[str, Any]] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        message = _clean_message(row.get("MESSAGE"))
+        if not message:
+            continue
+
+        priority = row.get("PRIORITY")
+        try:
+            level = _EVENT_LEVEL_MAP.get(int(priority), "info")
+        except (TypeError, ValueError):
+            level = "info"
+
+        unit = str(row.get("_SYSTEMD_UNIT") or row.get("SYSLOG_IDENTIFIER") or "")
+        stamp = str(row.get("__REALTIME_TIMESTAMP") or "")
+        occurred = None
+        if stamp.isdigit():
+            occurred = time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(stamp) / 1_000_000)
+            )
+
+        events.append(
+            {
+                "log_source": "journald",
+                "channel": unit[:100] or None,
+                "event_id": str(row.get("MESSAGE_ID") or "")[:40] or None,
+                "level": level,
+                "provider": (str(row.get("SYSLOG_IDENTIFIER") or unit))[:255] or None,
+                "message": message,
+                "occurred_at": occurred,
+                "dedup_key": f"{unit}:{stamp}:{message[:120]}",
+                "detail": {
+                    "unit": unit,
+                    "hostname": row.get("_HOSTNAME"),
+                    "priority": priority,
+                },
+            }
+        )
+    return events
+
+
+def _collect_macos_logs(max_events: int) -> list[dict[str, Any]]:
+    """Read recent unified-log entries as JSON.
+
+    `log show` is comparatively slow, so the window is kept short and any
+    failure degrades to "no events" rather than blocking the agent loop.
+    """
+    import json
+
+    try:
+        proc = subprocess.run(
+            ["log", "show", "--last", "30m", "--style", "json",
+             "--info", "--debug", "--predicate",
+             "messageType == error OR messageType == fault OR messageType == default"],
+            capture_output=True,
+            text=True,
+            timeout=40,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return []
+
+    try:
+        payload = json.loads(proc.stdout)
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    events: list[dict[str, Any]] = []
+    for row in payload[:max_events]:
+        if not isinstance(row, dict):
+            continue
+        message = _clean_message(row.get("eventMessage") or row.get("composedMessage"))
+        if not message:
+            continue
+        level_raw = str(row.get("messageType") or "").lower()
+        level = {"error": "error", "fault": "critical"}.get(level_raw, "info")
+        stamp = str(row.get("timestamp") or "")
+        event_id = str(row.get("eventIdentifier") or row.get("activityIdentifier") or "")
+        events.append(
+            {
+                "log_source": "unified_log",
+                "channel": str(row.get("processImagePath") or "")[:100] or None,
+                "event_id": event_id[:40] or None,
+                "level": level,
+                "provider": str(row.get("subsystem") or row.get("senderImageUUID") or "")[:255] or None,
+                "message": message,
+                "occurred_at": stamp or None,
+                "dedup_key": f"{event_id}:{stamp}:{message[:120]}",
+                "detail": {"message_type": row.get("messageType")},
+            }
+        )
+    return events
+
+
+def collect_event_logs(max_events: int = 50) -> list[dict[str, Any]]:
+    """Recent OS event-log entries, ready to POST to /devices/events.
+
+    Returns an empty list on unsupported platforms or collection failure —
+    telemetry collection must never take down the heartbeat loop.
+    """
+    system = platform.system()
+    try:
+        if system == "Windows":
+            return _collect_windows_event_logs(max_events)
+        if system == "Linux":
+            return _collect_journal_logs(max_events)
+        if system == "Darwin":
+            return _collect_macos_logs(max_events)
+    except Exception:
+        return []
+    return []
+
+
 def get_installed_software() -> list[dict[str, Any]]:
     """Return list of installed software.
 
