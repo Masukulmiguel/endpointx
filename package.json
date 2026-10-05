@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "npm run dev:backend",
     "dev:backend": "cd backend-api && npx tsx src/index.ts",
-    "dev:frontend": "cd admin-dashboard && npx vite --host"
+    "dev:frontend": "cd admin-dashboard && npx vite --host",
+    "dist:dashboard": "cd admin-dashboard && npm run build && cd ../endpoint-desktop-dashboard && npm run dist"
   }
 }
