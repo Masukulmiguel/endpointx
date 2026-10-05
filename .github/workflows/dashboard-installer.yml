@@ -1,0 +1,53 @@
+name: dashboard-installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'admin-dashboard/**'
+      - 'endpoint-desktop-dashboard/**'
+      - '.github/workflows/dashboard-installer.yml'
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dashboard dependencies
+        run: npm install
+        working-directory: admin-dashboard
+
+      - name: Install shell dependencies
+        run: npm install
+        working-directory: endpoint-desktop-dashboard
+
+      - name: Build dashboard
+        run: npm run build
+        working-directory: admin-dashboard
+
+      - name: Build NSIS installer
+        run: npm run dist
+        working-directory: endpoint-desktop-dashboard
+
+      # The runner has no interactive desktop, so a window may not appear;
+      # report the result without blocking the artifact upload.
+      - name: Smoke test the packaged app
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist\win-unpacked\*.exe | Where-Object { $_.Name -notlike '*Setup*' } | Select-Object -First 1
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList '--smoke' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "smoke test failed with exit $($p.ExitCode)" }
+        working-directory: endpoint-desktop-dashboard
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EndpointX-Dashboard-Setup
+          path: endpoint-desktop-dashboard/dist/*.exe
+          if-no-files-found: error
