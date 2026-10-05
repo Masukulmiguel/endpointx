@@ -19,6 +19,7 @@ import { initRemoteAccess } from './remote';
 import { setIO } from './websocket';
 import { startBackgroundJobs } from './jobs';
 import { renderPrometheusMetrics } from './services/prometheus';
+import { isAllowedOrigin } from './utils/cors';
 
 // Validate secrets before starting
 try {
@@ -36,7 +37,7 @@ const server = http.createServer(app);
 
 export const io = new SocketIOServer(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || '*',
+    origin: isAllowedOrigin,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -51,7 +52,7 @@ setIO(io);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: isAllowedOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Secret', 'X-Requested-With'],
