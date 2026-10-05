@@ -1,0 +1,51 @@
+{
+  "name": "endpointx-dashboard",
+  "productName": "EndpointX Dashboard",
+  "version": "1.2.0",
+  "description": "Consola de administracao do EndpointX para o PC do administrador",
+  "main": "main.js",
+  "author": "EndpointX",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "copy-ui": "node scripts/copy-ui.mjs",
+    "test": "node tests/server.test.mjs",
+    "start": "npm run copy-ui && electron .",
+    "dist": "npm run copy-ui && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "pt.endpointx.dashboard",
+    "productName": "EndpointX Dashboard",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "ui/**",
+      "assets/**"
+    ],
+    "win": {
+      "icon": "assets/logo.png",
+      "target": [
+        "nsis"
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EndpointX Dashboard",
+      "installerLanguages": [
+        "pt-PT"
+      ]
+    }
+  }
+}
