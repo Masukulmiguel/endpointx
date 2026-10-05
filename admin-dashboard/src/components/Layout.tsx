@@ -77,6 +77,37 @@ const routeTitleKeys: Record<string, string> = {
   '/settings': 'nav.settings',
 };
 
+// The model groups the rail under small muted headings. Membership is by exact
+// path so /security and /security/mfa never land in the same bucket by prefix
+// accident; items the user cannot see are dropped with their group.
+const navGroups: { key: string; label: Record<Locale, string>; paths: string[] }[] = [
+  {
+    key: 'overview',
+    label: { pt: 'Visão geral', en: 'Overview' },
+    paths: ['/dashboard', '/hermes', '/map', '/reports'],
+  },
+  {
+    key: 'fleet',
+    label: { pt: 'Dispositivos', en: 'Devices' },
+    paths: ['/devices', '/install', '/software', '/groups'],
+  },
+  {
+    key: 'access',
+    label: { pt: 'Acesso e segurança', en: 'Access & security' },
+    paths: ['/users', '/roles', '/security', '/security/mfa', '/policies'],
+  },
+  {
+    key: 'monitoring',
+    label: { pt: 'Monitorização', en: 'Monitoring' },
+    paths: ['/alerts', '/notifications', '/network', '/audit-logs', '/agents'],
+  },
+  {
+    key: 'system',
+    label: { pt: 'Sistema', en: 'System' },
+    paths: ['/settings'],
+  },
+];
+
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -170,7 +201,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-[#F6F8FB]">
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
@@ -179,48 +210,60 @@ export default function Layout() {
       )}
 
       <aside
-        className={`fixed top-0 left-0 z-50 h-full w-[260px] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed top-0 left-0 z-50 h-full w-[260px] bg-navy-900 border-r border-navy-800 transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-200 dark:border-gray-700">
-          <img src="/logotipo-fundo-branco.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain dark:hidden" />
-          <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-10 h-10 rounded-lg object-contain hidden dark:block" />
+        <div className="flex items-center gap-3 px-6 h-16 border-b border-white/5">
+          <img src="/logotipo-fundo-branco.png" alt="EndpointX" className="w-9 h-9 rounded-lg object-contain" />
           <button
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 lg:hidden"
+            className="ml-auto p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/5 lg:hidden"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
-          <ul className="space-y-1">
-            {visibleNavItems.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.path);
-              return (
-                <li key={item.path}>
-                  <Link
-                    to={item.path}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                      active
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'
-                    }`}
-                  >
-                    <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                    {t(item.key)}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+        <nav className="flex-1 overflow-y-auto py-2 px-3">
+          {navGroups.map((group) => {
+            const items = visibleNavItems.filter((item) => group.paths.includes(item.path));
+            if (items.length === 0) return null;
+            return (
+              <div key={group.key}>
+                <p className="sidebar-group">{group.label[locale]}</p>
+                <ul className="space-y-1">
+                  {items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    return (
+                      <li key={item.path}>
+                        <Link
+                          to={item.path}
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium border transition-all duration-200 ${
+                            active
+                              ? 'bg-primary-500 text-white border-primary-500 shadow-lg shadow-primary-500/30'
+                              : 'text-slate-400 border-transparent hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <Icon
+                            className={`w-5 h-5 flex-shrink-0 ${
+                              active ? 'text-white' : 'text-slate-500'
+                            }`}
+                          />
+                          {t(item.key)}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
 
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+        <div className="border-t border-white/5 p-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-semibold text-sm">
+            <div className="w-9 h-9 rounded-full bg-primary-500/20 flex items-center justify-center text-primary-300 font-semibold text-sm">
               {(() => {
                 const name = user?.full_name || user?.email || '?';
                 const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -228,16 +271,16 @@ export default function Layout() {
               })()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+              <p className="text-sm font-medium text-white truncate">
                 {user?.full_name || user?.email || 'User'}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              <p className="text-xs text-slate-400 truncate">
                 {user?.role_name || '-'}
               </p>
             </div>
             <button
               onClick={handleLogout}
-              className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-white/5 transition-colors"
               title={t('nav.logout')}
             >
               <LogOut className="w-4 h-4" />
@@ -247,37 +290,37 @@ export default function Layout() {
       </aside>
 
       <div className="lg:ml-[260px]">
-        <header className="sticky top-0 z-30 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center px-4 lg:px-6 gap-4">
+        <header className="sticky top-0 z-30 h-16 bg-white/80 backdrop-blur border-b border-slate-200 flex items-center px-4 lg:px-6 gap-4">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 lg:hidden"
+            className="p-2 rounded-md text-slate-500 hover:bg-slate-100 lg:hidden"
           >
             <Menu className="w-5 h-5" />
           </button>
 
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{pageTitle}</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{pageTitle}</h1>
 
           <div className="flex-1 max-w-md mx-auto hidden md:block">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
                 placeholder={t('nav.search')}
-                className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full pl-9 pr-4 py-2 text-sm bg-slate-100 border border-transparent rounded-full text-slate-900 placeholder-slate-500 focus:ring-2 focus:ring-primary-500/40 focus:bg-white focus:border-primary-500 outline-none transition-all"
               />
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center rounded-lg bg-gray-100 dark:bg-gray-700 p-0.5 text-xs font-medium">
+            <div className="hidden sm:flex items-center rounded-full bg-slate-100 p-0.5 text-xs font-medium">
               {(['pt', 'en'] as Locale[]).map((code) => (
                 <button
                   key={code}
                   onClick={() => setLocale(code)}
-                  className={`px-2.5 py-1 rounded-md transition-colors ${
+                  className={`px-2.5 py-1 rounded-full transition-colors ${
                     locale === code
-                      ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                      ? 'bg-white text-primary-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
                   }`}
                   title={code === 'pt' ? t('common.portuguese') : t('common.english')}
                 >
@@ -289,7 +332,7 @@ export default function Layout() {
             <div ref={notifRef} className="relative">
               <button
                 onClick={() => setNotifOpen(!notifOpen)}
-                className="relative p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
+                className="relative p-2 rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
@@ -305,8 +348,8 @@ export default function Layout() {
               {notifOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t('nav.notifications.title')}</h3>
-                    <button onClick={() => { setNotifOpen(false); navigate('/alerts'); }} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                    <h3 className="text-sm font-semibold text-slate-900">{t('nav.notifications.title')}</h3>
+                    <button onClick={() => { setNotifOpen(false); navigate('/alerts'); }} className="text-xs text-primary-700 hover:underline">
                       {t('nav.notifications.viewAll')}
                     </button>
                   </div>
@@ -350,16 +393,16 @@ export default function Layout() {
             <div ref={dropdownRef} className="relative">
               <button
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
               >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-semibold text-sm">
+                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm">
                   {(() => {
                     const name = user?.full_name || user?.email || '?';
                     const parts = name.trim().split(/\s+/).filter(Boolean);
                     return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
                   })()}
                 </div>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {userDropdownOpen && (
