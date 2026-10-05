@@ -52,7 +52,7 @@ export default function SearchInput({
         value={localValue}
         onChange={handleChange}
         placeholder={placeholder}
-        className="w-full pl-9 pr-9 py-2.5 text-sm bg-gray-100 dark:bg-gray-700 border border-transparent rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+        className="w-full pl-9 pr-9 py-2.5 text-sm bg-slate-100 border border-transparent rounded-full text-slate-900 placeholder-slate-500 focus:ring-2 focus:ring-primary-500/40 focus:bg-white focus:border-primary-500 outline-none transition-all"
       />
       {localValue && (
         <button
