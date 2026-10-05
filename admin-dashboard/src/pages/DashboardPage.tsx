@@ -7,13 +7,14 @@ import {
   ShieldOff,
   Users,
   Clock,
+  RefreshCw,
 } from 'lucide-react';
 import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   BarChart,
   Bar,
   XAxis,
@@ -40,6 +41,18 @@ const SEVERITY_COLORS: Record<string, string> = {
   critical: '#dc2626',
 };
 
+// Chart chrome for white cards: light grid, muted axes, white tooltip.
+const GRID_STROKE = '#e2e8f0';
+const AXIS_STROKE = '#94a3b8';
+const TOOLTIP_STYLE = {
+  backgroundColor: '#ffffff',
+  border: '1px solid #e2e8f0',
+  borderRadius: '8px',
+  color: '#0f172a',
+  boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
+};
+const AREA_GRADIENT_ID = 'heartbeat-fill';
+
 function formatTimeAgo(dateStr: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
@@ -55,24 +68,22 @@ function formatTimeAgo(dateStr: string): string {
 
 function SkeletonStatCard() {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 animate-pulse">
-      <div className="flex items-start justify-between">
-        <div className="w-11 h-11 rounded-lg bg-gray-200 dark:bg-gray-700" />
-        <div className="w-12 h-4 rounded bg-gray-200 dark:bg-gray-700" />
+    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm shadow-slate-200/60 animate-pulse">
+      <div className="flex items-start justify-between gap-3">
+        <div className="w-20 h-3 rounded bg-slate-200" />
+        <div className="w-10 h-10 rounded-lg bg-slate-200" />
       </div>
-      <div className="mt-4">
-        <div className="w-16 h-8 rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="w-24 h-4 rounded bg-gray-200 dark:bg-gray-700 mt-2" />
-      </div>
+      <div className="mt-3 w-16 h-8 rounded bg-slate-200" />
+      <div className="mt-2 w-14 h-3 rounded bg-slate-200" />
     </div>
   );
 }
 
 function SkeletonChart() {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 animate-pulse">
-      <div className="w-40 h-5 rounded bg-gray-200 dark:bg-gray-700 mb-4" />
-      <div className="w-full h-64 rounded bg-gray-100 dark:bg-gray-700/50" />
+    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm shadow-slate-200/60 animate-pulse">
+      <div className="w-40 h-5 rounded bg-slate-200 mb-4" />
+      <div className="w-full h-64 rounded bg-slate-100" />
     </div>
   );
 }
@@ -107,12 +118,23 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('dashboard.title')}</h1>
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <Clock className="w-4 h-4" />
-          {t('dashboard.autoRefresh')}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('dashboard.title')}</h1>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+            <Clock className="w-4 h-4" />
+            {t('dashboard.autoRefresh')}
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={loading}
+          className="btn-secondary text-sm disabled:opacity-60"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          {t('common.refresh')}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -130,18 +152,46 @@ export default function DashboardPage() {
             ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {loading && !overview ? (
           <>
-            <SkeletonChart />
-            <SkeletonChart />
-            <SkeletonChart />
+            <div className="lg:col-span-2">
+              <SkeletonChart />
+            </div>
             <SkeletonChart />
           </>
         ) : (
           <>
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6 shadow-sm shadow-slate-200/60">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">
+                {t('dashboard.heartbeat')}
+              </h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={overview?.heartbeat_trend || []}>
+                  <defs>
+                    <linearGradient id={AREA_GRADIENT_ID} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                  <XAxis dataKey="time" stroke={AXIS_STROKE} fontSize={12} tickLine={false} />
+                  <YAxis stroke={AXIS_STROKE} fontSize={12} tickLine={false} width={36} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    stroke="#0891b2"
+                    strokeWidth={2.5}
+                    fill={`url(#${AREA_GRADIENT_ID})`}
+                    activeDot={{ r: 4 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm shadow-slate-200/60">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">
                 {t('dashboard.deviceStatus')}
               </h3>
               <div className="relative">
@@ -161,19 +211,12 @@ export default function DashboardPage() {
                         <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1f2937',
-                        border: '1px solid #374151',
-                        borderRadius: '8px',
-                        color: '#f3f4f6',
-                      }}
-                    />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <Monitor className="w-9 h-9 text-gray-400 dark:text-gray-500" strokeWidth={1.5} />
-                  <span className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{statusTotal}</span>
+                  <Monitor className="w-9 h-9 text-slate-400" strokeWidth={1.5} />
+                  <span className="mt-1 text-lg font-semibold text-slate-900">{statusTotal}</span>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2">
@@ -192,74 +235,43 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
-                {t('dashboard.heartbeat')}
-              </h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={overview?.heartbeat_trend || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
-                  <YAxis stroke="#9ca3af" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2937',
-                      border: '1px solid #374151',
-                      borderRadius: '8px',
-                      color: '#f3f4f6',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="count"
-                    stroke="#0080ff"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+          </>
+        )}
+      </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {loading && !overview ? (
+          <>
+            <SkeletonChart />
+            <SkeletonChart />
+          </>
+        ) : (
+          <>
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm shadow-slate-200/60">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">
                 {t('dashboard.alertsByType')}
               </h3>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={overview?.alerts_by_type || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="type" stroke="#9ca3af" fontSize={12} />
-                  <YAxis stroke="#9ca3af" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2937',
-                      border: '1px solid #374151',
-                      borderRadius: '8px',
-                      color: '#f3f4f6',
-                    }}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                  <XAxis dataKey="type" stroke={AXIS_STROKE} fontSize={12} tickLine={false} />
+                  <YAxis stroke={AXIS_STROKE} fontSize={12} tickLine={false} width={36} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
                   <Bar dataKey="count" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm shadow-slate-200/60">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4">
                 {t('dashboard.eventsBySeverity')}
               </h3>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={overview?.events_by_severity || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="severity" stroke="#9ca3af" fontSize={12} />
-                  <YAxis stroke="#9ca3af" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1f2937',
-                      border: '1px solid #374151',
-                      borderRadius: '8px',
-                      color: '#f3f4f6',
-                    }}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
+                  <XAxis dataKey="severity" stroke={AXIS_STROKE} fontSize={12} tickLine={false} />
+                  <YAxis stroke={AXIS_STROKE} fontSize={12} tickLine={false} width={36} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
                   <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                     {(overview?.events_by_severity || []).map((entry, index) => (
                       <Cell
