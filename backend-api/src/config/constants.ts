@@ -136,6 +136,21 @@ export const validateSecrets = (): void => {
   }
 };
 
+/**
+ * The shared secret that gets baked into downloaded install scripts.
+ * Never falls back to a constant: a well-known default would hand every
+ * customer the same credential, so fail closed instead.
+ */
+export const requireAgentSecret = (): string => {
+  const secret = process.env.AGENT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      'AGENT_SECRET is missing or too short (minimum 32 characters), cannot serve agent install scripts.'
+    );
+  }
+  return secret;
+};
+
 export const RATE_LIMIT = {
   WINDOW_MS: 15 * 60 * 1000,
   MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX || '500', 10),

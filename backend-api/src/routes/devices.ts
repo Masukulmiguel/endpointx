@@ -7,7 +7,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import logger from '../utils/logger';
 import jwt from 'jsonwebtoken';
-import { JWT } from '../config/constants';
+import { JWT, requireAgentSecret } from '../config/constants';
 import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
 import { remoteSecretFor } from '../remote';
 import { onForensicCommandResult } from '../hermes/forensics';
@@ -1469,7 +1469,7 @@ router.post('/events', async (req: AuthRequest, res: Response, next: NextFunctio
 router.get('/download/installer', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const serverUrl = `${req.protocol}://${req.get('host')}/api`;
-    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+    const agentSecret = requireAgentSecret();
     const platform = (req.query.platform as string) || 'windows';
     const enrollToken = req.user?.id
       ? jwt.sign({ sub: req.user.id, typ: 'enroll' }, JWT.ACCESS_SECRET, { expiresIn: '30d' })
@@ -1611,7 +1611,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
-    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+    const agentSecret = requireAgentSecret();
 
     const filePath = join(__dirname, '..', '..', 'public', 'install.ps1');
     if (!existsSync(filePath)) {
@@ -1639,7 +1639,7 @@ router.get('/public/install-linux.sh', async (req: AuthRequest, res: Response, n
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
-    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+    const agentSecret = requireAgentSecret();
 
     const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-linux.sh');
     if (!existsSync(filePath)) {
@@ -1666,7 +1666,7 @@ router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, n
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
-    const agentSecret = process.env.AGENT_SECRET || 'dev_agent_secret_123';
+    const agentSecret = requireAgentSecret();
 
     const filePath = join(__dirname, '..', '..', 'endpoint-agent', 'install-macos.sh');
     if (!existsSync(filePath)) {
