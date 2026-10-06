@@ -1,6 +1,7 @@
 import { query } from '../config/database';
 import logger from '../utils/logger';
 import { getSetting } from './settings';
+import { checkWebhookUrl } from '../utils/webhookUrl';
 
 /**
  * Outgoing webhooks (Slack / Discord / Teams compatible).
@@ -62,6 +63,18 @@ async function deliverOne(record: WebhookRecord, body: string): Promise<void> {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    // Defense in depth: rows created before the guard existed must not make
+    // the API fetch loopback or link-local addresses.
+    const urlCheck = await checkWebhookUrl(record.url);
+    if (!urlCheck.ok) {
+      await query(
+        `UPDATE webhooks SET last_status = NULL, last_delivered_at = NOW(), last_error = $1, updated_at = NOW() WHERE id = $2`,
+        [urlCheck.reason || 'url is not an allowed webhook target', record.id]
+      ).catch(() => {});
+      logger.warn('Webhook delivery blocked', { webhook: record.name, reason: urlCheck.reason });
+      return;
+    }
+
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (record.secret) {
       // Slack/Discord-style signature header; harmless for receivers that ignore it.

@@ -5,6 +5,7 @@ import { requirePermission } from '../middleware/rbac';
 import { isSmtpConfigured, sendEmail } from '../services/emailService';
 import { dispatchWebhooks } from '../services/webhookService';
 import { invalidateSettingsCache } from '../services/settings';
+import { checkWebhookUrl } from '../utils/webhookUrl';
 
 const router = Router();
 
@@ -145,17 +146,14 @@ router.get('/webhooks', authenticate, requirePermission('settings.view'), async 
   } catch (error) { next(error); }
 });
 
-function validateWebhook(body: any): string | null {
+async function validateWebhook(body: any): Promise<string | null> {
   if (!body?.name || typeof body.name !== 'string' || !body.name.trim()) return 'name is required';
   if (body.name.length > 100) return 'name must be 100 characters or fewer';
   if (!body.url || typeof body.url !== 'string') return 'url is required';
-  let parsed: URL;
-  try {
-    parsed = new URL(body.url);
-  } catch {
-    return 'url must be a valid absolute URL';
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return 'url must be http(s)';
+  // Rejects bad schemes, credentials, and loopback/private/link-local
+  // targets — including hostnames that resolve to them (SSRF guard).
+  const urlCheck = await checkWebhookUrl(body.url);
+  if (!urlCheck.ok) return urlCheck.reason || 'url is not an allowed webhook target';
   if (body.min_severity && !['info', 'low', 'medium', 'high', 'critical'].includes(body.min_severity)) {
     return 'min_severity must be info, low, medium, high or critical';
   }
@@ -164,7 +162,7 @@ function validateWebhook(body: any): string | null {
 
 router.post('/webhooks', authenticate, requirePermission('settings.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const invalid = validateWebhook(req.body);
+    const invalid = await validateWebhook(req.body);
     if (invalid) { res.status(400).json({ success: false, error: { message: invalid } }); return; }
 
     const { name, url, secret = null, events = 'alert', min_severity = 'low', is_enabled = true } = req.body;
@@ -186,7 +184,7 @@ router.put('/webhooks/:id', authenticate, requirePermission('settings.manage'), 
       return;
     }
     const merged = { ...existing.rows[0], ...req.body };
-    const invalid = validateWebhook(merged);
+    const invalid = await validateWebhook(merged);
     if (invalid) { res.status(400).json({ success: false, error: { message: invalid } }); return; }
 
     // A blank secret in the payload means "keep the stored one".
@@ -228,6 +226,13 @@ router.post('/webhooks/:id/test', authenticate, requirePermission('settings.mana
       return;
     }
     const webhook = existing.rows[0];
+
+    // Stored rows can predate the guard, so re-check before fetching.
+    const urlCheck = await checkWebhookUrl(webhook.url);
+    if (!urlCheck.ok) {
+      res.status(400).json({ success: false, error: { message: urlCheck.reason || 'url is not an allowed webhook target' } });
+      return;
+    }
 
     const response = await fetch(webhook.url, {
       method: 'POST',
