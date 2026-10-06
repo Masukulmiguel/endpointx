@@ -20,6 +20,8 @@ const cases: Array<[string, string | undefined, boolean]> = [
   ['suffix spoofing', 'https://endpointx.onrender.com.evil.com', false],
   ['scheme downgrade spoof', 'http://endpointx.onrender.com', false],
   ['credentials in origin', 'https://user@endpointx.onrender.com', false],
+  ['hosted dashboard (default allowlist)', 'https://endpointx-dashboard.onrender.com', true],
+  ['dashboard spoof', 'https://endpointx-dashboard.onrender.com.evil.com', false],
 ];
 
 let failed = 0;

@@ -270,7 +270,14 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 // creation plus seeding can exceed that window. Route handlers that need the
 // database are safe before init completes: the pool exists as soon as
 // initDatabase() runs, and background jobs only start after it resolves.
-server.listen(PORT, () => {
+// Bind 0.0.0.0 explicitly: Render requires it, and an implicit bind can land
+// on IPv6-only where the platform's scanner (which probes 0.0.0.0) sees
+// nothing and routes traffic elsewhere.
+server.on('error', (err) => {
+  logger.error('HTTP server error', { error: err.message });
+  process.exit(1);
+});
+server.listen({ port: PORT, host: '0.0.0.0' }, () => {
   logger.info(`EndpointX API server started on port ${PORT}`);
   logger.info(`Health check: http://localhost:${PORT}/health`);
   logger.info(`API base URL: http://localhost:${PORT}/api`);

@@ -13,8 +13,17 @@
  */
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1)$/;
 
-/** Deployment used when FRONTEND_URL is not configured. */
-const DEFAULT_ORIGINS = ['https://endpointx.onrender.com'];
+/**
+ * Deployments used when FRONTEND_URL is not configured: the API's own origin
+ * (agent install pages, same-origin dashboard) and the hosted dashboard SPA,
+ * which is a different Render service and reaches this API cross-origin.
+ * Render's live service never received the render.yaml FRONTEND_URL, so the
+ * dashboard origin must be allowed by default or every login is CORS-blocked.
+ */
+const DEFAULT_ORIGINS = [
+  'https://endpointx.onrender.com',
+  'https://endpointx-dashboard.onrender.com',
+];
 
 const configuredOrigins = (): string[] => {
   const raw = process.env.FRONTEND_URL;
