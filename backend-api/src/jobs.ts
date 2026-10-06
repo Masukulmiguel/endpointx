@@ -1,6 +1,6 @@
 import { query } from './config/database';
 import logger from './utils/logger';
-import { getSettingBool, getSettingNumber } from './services/settings';
+import { getSettingBool, getSettingNumber, setSetting } from './services/settings';
 import { updateOfflineDevices } from './routes/devices';
 import {
   alertEvaluationIntervalMs,
@@ -16,6 +16,7 @@ const RETENTION_SWEEP_MS = 60 * 60_000;
 const ROLLUP_SWEEP_MS = 5 * 60_000;
 const CVE_FEED_SWEEP_MS = 6 * 60 * 60_000;
 const SCHEDULER_TICK_MS = 60_000;
+const SELF_PROBE_MS = 30_000;
 
 const timers: NodeJS.Timeout[] = [];
 let running = false;
@@ -200,6 +201,38 @@ async function scheduleAlertEvaluation(): Promise<void> {
   every('alert-evaluation', ms, true, evaluateAlertRules);
 }
 
+/**
+ * Ask the three ways an HTTP request can reach this process and persist the
+ * answers to app_settings.self_probe (readable from SQL when the public API
+ * itself is unreachable):
+ *   local - loopback straight to the app port (Express alive?),
+ *   alt   - loopback to the 10000 relay (relay alive?),
+ *   publik- the public https URL, which exercises Cloudflare -> Render LB ->
+ *           router -> instance end to end.
+ * Comparing the three localizes where the chain is broken.
+ */
+async function probe(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const body = await res.text();
+    return `http=${res.status} body=${body.slice(0, 80)}`;
+  } catch (error) {
+    return `erro=${(error as Error).message}`;
+  }
+}
+
+async function selfProbe(): Promise<void> {
+  const port = process.env.PORT || '3001';
+  const [local, alt, publik] = await Promise.all([
+    probe(`http://127.0.0.1:${port}/health`),
+    probe('http://127.0.0.1:10000/health'),
+    probe('https://endpointx.onrender.com/health'),
+  ]);
+  const payload = JSON.stringify({ at: new Date().toISOString(), local, alt, public: publik });
+  logger.info(`Self probe ${payload}`);
+  await setSetting('self_probe', payload, 'Internal HTTP reachability diagnostics');
+}
+
 export function startBackgroundJobs(): void {
   if (running) return;
   running = true;
@@ -229,6 +262,8 @@ export function startBackgroundJobs(): void {
   every('cve-feed-initial-sync', 30_000, false, syncCveFeed);
 
   every('hermes-daily-scan', SCHEDULER_TICK_MS, true, maybeRunDailyHermesScan);
+
+  every('self-probe', SELF_PROBE_MS, true, selfProbe);
 
   refreshRetentionCache().catch(() => undefined);
 }

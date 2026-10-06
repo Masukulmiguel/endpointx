@@ -3,6 +3,7 @@ dotenv.config();
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import http from 'http';
+import net from 'net';
 import path from 'path';
 import { Server as SocketIOServer } from 'socket.io';
 import helmet from 'helmet';
@@ -282,6 +283,53 @@ server.listen({ port: PORT, host: '0.0.0.0' }, () => {
   logger.info(`Health check: http://localhost:${PORT}/health`);
   logger.info(`API base URL: http://localhost:${PORT}/api`);
 });
+
+// Render forwards public traffic to ONE port: whatever its scanner detected,
+// or the configured default 10000 when detection failed ("no open HTTP ports
+// detected"). Keep a dumb relay on 10000 that forwards plain HTTP and
+// WebSocket upgrades to the real server, so routing works under either
+// configuration and no handler logic has to care which port was hit.
+if (PORT !== 10000) {
+  const altServer = http.createServer((req, res) => {
+    const upstream = http.request(
+      { host: '127.0.0.1', port: PORT, method: req.method, path: req.url, headers: req.headers },
+      (upRes) => {
+        res.writeHead(upRes.statusCode || 502, upRes.headers);
+        upRes.pipe(res);
+      }
+    );
+    upstream.on('error', () => {
+      if (!res.headersSent) res.writeHead(502);
+      res.end('alt relay error');
+    });
+    req.pipe(upstream);
+  });
+  altServer.on('upgrade', (req, socket, head) => {
+    const upstream = net.connect(PORT, '127.0.0.1', () => {
+      let raw = `${req.method} ${req.url} HTTP/1.1\r\n`;
+      for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) {
+        raw += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
+      }
+      raw += '\r\n';
+      upstream.write(raw);
+      if (head && head.length) upstream.write(head);
+      socket.pipe(upstream);
+      upstream.pipe(socket);
+    });
+    const destroy = () => {
+      upstream.destroy();
+      socket.destroy();
+    };
+    upstream.on('error', destroy);
+    socket.on('error', destroy);
+  });
+  altServer.on('error', (err) => {
+    logger.error('Alt port relay error', { port: 10000, error: err.message });
+  });
+  altServer.listen({ port: 10000, host: '0.0.0.0' }, () => {
+    logger.info(`Alt port relay listening on 10000 -> ${PORT}`);
+  });
+}
 
 initDatabase()
   .then(() => {
