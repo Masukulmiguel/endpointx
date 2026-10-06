@@ -62,3 +62,17 @@ export const isAllowedOrigin = (origin?: string | null): boolean => {
 
   return configuredOrigins().some((allowed) => candidate === allowed);
 };
+
+/**
+ * Callback-shaped adapter for the `cors` package and engine.io: they invoke
+ * origin checks as (origin, callback) and WAIT for callback(err, allow).
+ * Passing isAllowedOrigin directly meant the callback never fired, next()
+ * never ran and every HTTP request hung in the middleware (websocket
+ * upgrades bypass it, so agents kept working and hid the outage).
+ */
+export const corsOriginCheck = (
+  origin: string | undefined,
+  callback: (error: Error | null, allow?: boolean) => void
+): void => {
+  callback(null, isAllowedOrigin(origin));
+};
