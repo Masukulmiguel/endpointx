@@ -1,4 +1,5 @@
 import { query } from './config/database';
+import net from 'net';
 import logger from './utils/logger';
 import { getSettingBool, getSettingNumber, setSetting } from './services/settings';
 import { updateOfflineDevices } from './routes/devices';
@@ -221,14 +222,53 @@ async function probe(url: string): Promise<string> {
   }
 }
 
+/**
+ * Raw TCP probe without undici: connect, send a bare GET, report whatever
+ * comes back. Distinguishes "connection refused" from "accepted but silence",
+ * which is exactly the ambiguity the fetch probe cannot resolve.
+ */
+function rawProbe(port: number): Promise<string> {
+  return new Promise((resolve) => {
+    const socket = net.connect(port, '127.0.0.1');
+    let buf = '';
+    let settled = false;
+    const done = (value: string) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(`timeout sem resposta; recebido=${JSON.stringify(buf.slice(0, 160))}`), 8000);
+    socket.on('connect', () => {
+      socket.write(`GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`);
+    });
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      if (buf.length >= 20) {
+        clearTimeout(timer);
+        done(`resp=${JSON.stringify(buf.slice(0, 160))}`);
+      }
+    });
+    socket.on('error', (error) => {
+      clearTimeout(timer);
+      done(`erro=${error.message}`);
+    });
+    socket.on('close', () => {
+      clearTimeout(timer);
+      done(`conexao fechada sem resposta; recebido=${JSON.stringify(buf.slice(0, 160))}`);
+    });
+  });
+}
+
 async function selfProbe(): Promise<void> {
-  const port = process.env.PORT || '3001';
-  const [local, alt, publik] = await Promise.all([
+  const port = parseInt(process.env.PORT || '3001', 10);
+  const [local, alt, publik, raw] = await Promise.all([
     probe(`http://127.0.0.1:${port}/health`),
     probe('http://127.0.0.1:10000/health'),
     probe('https://endpointx.onrender.com/health'),
+    rawProbe(port),
   ]);
-  const payload = JSON.stringify({ at: new Date().toISOString(), local, alt, public: publik });
+  const payload = JSON.stringify({ at: new Date().toISOString(), local, alt, public: publik, raw });
   logger.info(`Self probe ${payload}`);
   await setSetting('self_probe', payload, 'Internal HTTP reachability diagnostics');
 }

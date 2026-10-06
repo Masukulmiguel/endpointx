@@ -21,6 +21,7 @@ import { setIO } from './websocket';
 import { startBackgroundJobs } from './jobs';
 import { renderPrometheusMetrics } from './services/prometheus';
 import { isAllowedOrigin } from './utils/cors';
+import { setSetting } from './services/settings';
 
 // Validate secrets before starting
 try {
@@ -34,6 +35,17 @@ const app: Express = express();
 // Behind Render's reverse proxy: trust exactly 1 hop so req.ip (and rate-limit keys)
 // resolve to the real client instead of the proxy - without this every client shares one bucket
 app.set('trust proxy', 1);
+
+// Diagnostics while the public API was answering nothing: persist where each
+// request stops (fire-and-forget; a failed write must never affect traffic).
+const markRequest = (key: string, detail: string) => {
+  setSetting(key, detail, 'HTTP request path diagnostics').catch(() => undefined);
+};
+app.use((req, _res, next) => {
+  markRequest('dbg_req_entry', `${req.method} ${req.url} ${new Date().toISOString()}`);
+  next();
+});
+
 const server = http.createServer(app);
 
 export const io = new SocketIOServer(server, {
@@ -63,6 +75,10 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use((req, _res, next) => {
+  markRequest('dbg_req_post_mw', `${req.method} ${req.url} ${new Date().toISOString()}`);
+  next();
+});
 
 const authLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOW_MS,
@@ -150,6 +166,7 @@ app.use('/api/devices/security-scan', agentIpLimiter);
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
+  markRequest('dbg_req_health', `GET /health ${new Date().toISOString()}`);
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
