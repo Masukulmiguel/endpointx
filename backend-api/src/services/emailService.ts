@@ -75,10 +75,13 @@ async function logMail(
   status: 'sent' | 'failed',
   errorMessage?: string
 ): Promise<void> {
+  // sent_at is its own parameter: reusing $4 here (CASE WHEN $4 = 'sent')
+  // made postgres deduce text for the comparison and varchar for the column,
+  // and one parameter cannot have two types - the insert was rejected.
   await query(
     `INSERT INTO notification_log (recipient_email, subject, body, status, error_message, sent_at, created_at)
-     VALUES ($1, $2, $3, $4, $5, CASE WHEN $4 = 'sent' THEN NOW() ELSE NULL END, NOW())`,
-    [to, subject, body, status, errorMessage ?? null]
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [to, subject, body, status, errorMessage ?? null, status === 'sent' ? new Date() : null]
   ).catch((error) => logger.warn('Failed to write notification_log', { error: error.message }));
 }
 
