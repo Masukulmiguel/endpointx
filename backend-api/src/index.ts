@@ -264,21 +264,28 @@ logger.info('Remote access relay listening on /remote');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-// Initialize database then start server
-initDatabase().then(() => {
-  server.listen(PORT, () => {
-    logger.info(`EndpointX API server started on port ${PORT}`);
-    logger.info(`Health check: http://localhost:${PORT}/health`);
-    logger.info(`API base URL: http://localhost:${PORT}/api`);
+// Listen first, initialize the database second. Render's deploy runs a port
+// scan right after the container starts and fails the whole deploy ("no open
+// HTTP ports detected") if nothing is bound within its window - and schema
+// creation plus seeding can exceed that window. Route handlers that need the
+// database are safe before init completes: the pool exists as soon as
+// initDatabase() runs, and background jobs only start after it resolves.
+server.listen(PORT, () => {
+  logger.info(`EndpointX API server started on port ${PORT}`);
+  logger.info(`Health check: http://localhost:${PORT}/health`);
+  logger.info(`API base URL: http://localhost:${PORT}/api`);
+});
 
+initDatabase()
+  .then(() => {
     // All recurring work lives in src/jobs: offline sweep, threshold alerting,
     // heartbeat retention, metric rollups and the scheduled HERMES scan.
     startBackgroundJobs();
+  })
+  .catch((err) => {
+    logger.error('Failed to initialize database', { error: err.message });
+    process.exit(1);
   });
-}).catch((err) => {
-  logger.error('Failed to initialize database', { error: err.message });
-  process.exit(1);
-});
 
 export { app, server };
 export default server;
