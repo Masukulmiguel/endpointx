@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+﻿import dotenv from 'dotenv';
 dotenv.config();
 
 import express, { Express, Request, Response, NextFunction } from 'express';
@@ -174,8 +174,8 @@ app.get('/health', (_req: Request, res: Response) => {
   });
 });
 
-// Prometheus scrape target. Unauthenticated like /health by design — scrapers
-// hold no session — and strictly read-only. Still rate-limited: each scrape
+// Prometheus scrape target. Unauthenticated like /health by design â€” scrapers
+// hold no session â€” and strictly read-only. Still rate-limited: each scrape
 // runs several aggregate queries, so we bound how often anyone can trigger them.
 const metricsLimiter = rateLimit({
   windowMs: 60_000,
@@ -235,7 +235,6 @@ app.use('/api/policies', policiesRoutes);
 app.use('/api/compliance', policiesRoutes);
 app.use('/api/software', softwareRoutes);
 app.use('/api/notifications', notificationsRoutes);
-app.use('/api/hermes', forensicsRoutes);
 app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/reports', reportsRoutes);
