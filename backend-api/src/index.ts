@@ -153,7 +153,7 @@ const agentIpLimiter = rateLimit({
 });
 
 app.use('/api/auth', authLimiter);
-app.use('/api', apiLimiter);\napp.get('/api/health', (_req: Request, res: Response) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() }));\napp.use('/api/devices/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
+app.use('/api', apiLimiter);\n// app.get('/api/health', (_req: Request, res: Response) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() }));\napp.use('/api/devices/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
 app.use('/api/devices/mobile/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
 app.use('/api/devices/command-poll', commandPollLimiter, agentIpLimiter);
 // Remaining agent endpoints are low frequency but still machine traffic: give
@@ -378,6 +378,7 @@ const gracefulShutdown = async (signal: string) => {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 
 
 
