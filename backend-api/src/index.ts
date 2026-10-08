@@ -6,7 +6,6 @@ import http from 'http';
 import net from 'net';
 import path from 'path';
 import { Server as SocketIOServer } from 'socket.io';
-import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
@@ -17,11 +16,12 @@ import { validateSecrets } from './config/constants';
 import { RATE_LIMIT } from './config/constants';
 import { errorHandler } from './middleware/errorHandler';
 import { initRemoteAccess } from './remote';
-import { setIO } from './websocket';
+import { setIO, socketAuthMiddleware, canJoinRoom } from './websocket';
 import { startBackgroundJobs } from './jobs';
 import { renderPrometheusMetrics } from './services/prometheus';
 import { isAllowedOrigin, corsOriginCheck } from './utils/cors';
 import { setSetting } from './services/settings';
+import { securityHeadersMiddleware } from './config/securityHeaders';
 
 // Validate secrets before starting
 try {
@@ -62,7 +62,7 @@ export const io = new SocketIOServer(server, {
 // broadcastEvent actually reach clients instead of silently returning.
 setIO(io);
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(securityHeadersMiddleware);
 app.use(
   cors({
     origin: corsOriginCheck,
@@ -153,7 +153,8 @@ const agentIpLimiter = rateLimit({
 });
 
 app.use('/api/auth', authLimiter);
-app.use('/api', apiLimiter);\n// app.get('/api/health', (_req: Request, res: Response) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() }));\napp.use('/api/devices/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
+app.use('/api', apiLimiter);
+app.use('/api/devices/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
 app.use('/api/devices/mobile/heartbeat', heartbeatLimiter, heartbeatIpLimiter);
 app.use('/api/devices/command-poll', commandPollLimiter, agentIpLimiter);
 // Remaining agent endpoints are low frequency but still machine traffic: give
@@ -266,9 +267,17 @@ app.use((req: Request, res: Response) => {
 app.use(errorHandler);
 
 // Socket.IO
+io.use(socketAuthMiddleware);
 io.on('connection', (socket) => {
   logger.debug('Client connected', { socketId: socket.id });
-  socket.on('join_room', (room: string) => socket.join(room));
+  socket.on('join_room', (room: string) => {
+    const user = socket.data.user;
+    if (!user || !canJoinRoom(user, room)) {
+      logger.warn('Rejected room join', { socketId: socket.id, room, userId: user?.id });
+      return;
+    }
+    void socket.join(room);
+  });
   socket.on('leave_room', (room: string) => socket.leave(room));
   socket.on('disconnect', (reason) => logger.debug('Client disconnected', { socketId: socket.id, reason }));
 });

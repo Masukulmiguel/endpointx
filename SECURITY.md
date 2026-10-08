@@ -14,7 +14,7 @@ You will be credited in the release notes unless you prefer otherwise.
 
 | Version | Supported |
 | ------- | --------- |
-| 1.1.x   | ✅ current |
+| 1.2.x   | ✅ current |
 | < 1.1   | ❌ upgrade required |
 
 ## Scope

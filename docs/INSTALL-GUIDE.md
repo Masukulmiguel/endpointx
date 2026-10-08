@@ -223,18 +223,30 @@ python agent.py
 ## Instalação Linux e macOS (linha única)
 
 Os scripts públicos fazem download do agent, criam o `config.yaml` com o servidor/token
-automaticamente e registam o serviço (systemd no Linux, launchd no macOS):
+automaticamente e registam o serviço (systemd no Linux, launchd no macOS).
+
+**v1.2.0 — token obrigatório:** cada comando inclui `?t=<ENROLL_TOKEN>`, o token de
+enrolamento da tua conta (o script devolve 403 sem ele). Copia o comando já completo —
+com o token — a partir da página **Install** do dashboard, ou gera o token com uma
+sessão admin:
+
+```bash
+curl -H "Authorization: Bearer <ADMIN_JWT>" https://endpointx.onrender.com/api/devices/enroll-token
+```
+
+Os tokens duram 30 dias, pertencem à conta que os emitiu, e nunca devem ser
+commitados (é uma credencial).
 
 ### Linux (Debian/Ubuntu/Fedora — requer sudo)
 
 ```bash
-curl -fsSL https://endpointx.onrender.com/api/devices/public/install-linux.sh | sudo bash
+curl -fsSL "https://endpointx.onrender.com/api/devices/public/install-linux.sh?t=<ENROLL_TOKEN>" | sudo bash
 ```
 
 ### macOS (utilizador normal)
 
 ```bash
-curl -fsSL https://endpointx.onrender.com/api/devices/public/install-macos.sh | bash
+curl -fsSL "https://endpointx.onrender.com/api/devices/public/install-macos.sh?t=<ENROLL_TOKEN>" | bash
 ```
 
 ### Gestão do serviço

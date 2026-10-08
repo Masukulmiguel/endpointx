@@ -42,6 +42,11 @@ export default function AgentsPage() {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Enrolment token for the install commands below (v1.2.0: the public
+  // install scripts return 403 without ?t=). Minted for devices.manage users.
+  const { data: tokenData } = useApi<{ token: string }>('/devices/enroll-token');
+  const tokenQS = tokenData?.token ? `?t=${tokenData.token}` : '';
+
   const params = useMemo(() => {
     return { page: String(page), limit: '15' };
   }, [page]);
@@ -202,11 +207,11 @@ export default function AgentsPage() {
         </div>
         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 font-mono text-sm text-gray-700 dark:text-gray-300 space-y-2">
           <p className="text-xs text-gray-500 dark:text-gray-400"># Windows (PowerShell)</p>
-          <p className="break-all">irm {API_ORIGIN}/api/devices/public/install.ps1 | iex</p>
+          <p className="break-all">irm {API_ORIGIN}/api/devices/public/install.ps1{tokenQS} | iex</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 pt-2"># Linux</p>
-          <p className="break-all">curl -fsSL {API_ORIGIN}/api/devices/public/install-linux.sh | sudo bash</p>
+          <p className="break-all">curl -fsSL {API_ORIGIN}/api/devices/public/install-linux.sh{tokenQS} | sudo bash</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 pt-2"># macOS</p>
-          <p className="break-all">curl -fsSL {API_ORIGIN}/api/devices/public/install-macos.sh | bash</p>
+          <p className="break-all">curl -fsSL {API_ORIGIN}/api/devices/public/install-macos.sh{tokenQS} | bash</p>
           <p className="text-xs text-gray-500 dark:text-gray-400 pt-2">
             Full guide on the <span className="text-blue-500">Install Agent</span> page
           </p>

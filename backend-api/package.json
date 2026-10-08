@@ -10,7 +10,8 @@
     "migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/cors.test.ts && tsx tests/webhookUrl.test.ts && tsx tests/installAccess.test.ts && tsx tests/socketAuth.test.ts && tsx tests/emailRedaction.test.ts && tsx tests/agentAuth.test.ts && tsx tests/authGuard.test.ts && tsx tests/mfaKeyGuard.test.ts && tsx tests/securityHeaders.test.ts && tsx tests/networkStats.test.ts && tsx src/hermes/forensics.test.ts && tsx src/hermes/hermes.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

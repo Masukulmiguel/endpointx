@@ -34,7 +34,7 @@ export default function InstallPage() {
 
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-6">
         <p className="text-blue-400 text-sm">
-          Use este guia para conectar PCs e telemóveis da rede ao sistema EndpointX (v1.1.0).
+          Use este guia para conectar PCs e telemóveis da rede ao sistema EndpointX (v1.2.0).
         </p>
       </div>
 

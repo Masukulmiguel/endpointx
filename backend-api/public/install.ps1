@@ -1,5 +1,5 @@
 # EndpointX Agent Installer v1.1.0
-# Safe for: irm https://.../install.ps1 | iex
+# Safe for: irm https://.../install.ps1?t=<ENROLL_TOKEN> | iex
 # Does NOT use exit/Read-Host/Set-Location (those break iex pipelines).
 
 $serverUrl = "##SERVER_URL##"

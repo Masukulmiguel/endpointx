@@ -1133,6 +1133,26 @@ const createInlineSchema = async (): Promise<void> => {
   logger.info('Inline database schema created');
 };
 
+// Role → permission grants applied at seed time (admin derives from the full
+// permission catalog inside seedDefaults). Exported so tests can assert the
+// free "user" role never regains account-scoped permissions like logs.view.
+export const SEED_ROLE_PERMISSIONS: Record<string, string[]> = {
+  supervisor: ['devices.view', 'devices.manage', 'devices.block', 'devices.commands', 'users.view', 'security.view', 'security.manage', 'logs.view', 'alerts.view', 'alerts.manage', 'agents.view', 'network.view', 'hermes.view'],
+  technician: ['devices.view', 'devices.commands', 'security.view', 'agents.view', 'network.view', 'alerts.view', 'hermes.view'],
+  user: [
+    'devices.view',
+    'alerts.view',
+    'security.view',
+    'hermes.view',
+    'agents.view',
+    'network.view',
+    'groups.view',
+    'policies.view',
+    'software.view',
+    'compliance.view',
+  ],
+};
+
 // Seed default data
 const seedDefaults = async (): Promise<void> => {
   // Full permission catalog (safe for existing DBs)
@@ -1262,25 +1282,11 @@ const seedDefaults = async (): Promise<void> => {
       );
     }
 
-    // Assign permissions to roles
-    // Free early-access ("user"): view-only demo including HERMES (no manage/approve)
+    // Assign permissions to roles. Free early-access ("user") is view-only —
+    // no logs.view (notification bodies / audit history are account-scoped).
     const rolePerms: Record<string, string[]> = {
       admin: permissions.map(p => p[0]),
-      supervisor: ['devices.view', 'devices.manage', 'devices.block', 'devices.commands', 'users.view', 'security.view', 'security.manage', 'logs.view', 'alerts.view', 'alerts.manage', 'agents.view', 'network.view', 'hermes.view'],
-      technician: ['devices.view', 'devices.commands', 'security.view', 'agents.view', 'network.view', 'alerts.view', 'hermes.view'],
-      user: [
-        'devices.view',
-        'alerts.view',
-        'security.view',
-        'hermes.view',
-        'agents.view',
-        'network.view',
-        'groups.view',
-        'policies.view',
-        'software.view',
-        'compliance.view',
-        'logs.view',
-      ],
+      ...SEED_ROLE_PERMISSIONS,
     };
 
     for (const [roleName, permCodes] of Object.entries(rolePerms)) {
@@ -1295,6 +1301,14 @@ const seedDefaults = async (): Promise<void> => {
         );
       }
     }
+
+    // Idempotent cleanup: installs seeded before this change still carry
+    // logs.view on the free "user" role; strip it on every boot.
+    await client.query(
+      `DELETE FROM role_permissions
+        WHERE role_id = (SELECT id FROM roles WHERE name = 'user')
+          AND permission_id = (SELECT id FROM permissions WHERE code = 'logs.view')`
+    );
 
     // Admin account - password comes exclusively from SEED_ADMIN_PASSWORD (never hardcoded)
     const adminPassword = process.env.SEED_ADMIN_PASSWORD;

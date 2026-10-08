@@ -1,0 +1,9 @@
+.env
+**/.env
+node_modules
+**/node_modules
+.git
+.superpowers
+*.log
+docs
+*.md

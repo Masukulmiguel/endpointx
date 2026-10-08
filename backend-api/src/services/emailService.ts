@@ -68,6 +68,20 @@ async function createTransporter(config: SmtpConfig): Promise<any> {
   });
 }
 
+/**
+ * Strip credentials from email HTML before it lands in notification_log.
+ * The log is readable by anyone with logs.view — reset links and temporary
+ * passwords must not survive there. Plain alert bodies pass through unchanged.
+ */
+export function redactEmailBody(body: string): string {
+  return body
+    .replace(/([?&]token=)[^"&\s]+/gi, '$1[REDACTED]')
+    .replace(
+      /(<strong>\s*Temporary Password:\s*<\/strong>)[\s\S]*?(<\/p>)/gi,
+      '$1 [REDACTED]$2'
+    );
+}
+
 async function logMail(
   to: string,
   subject: string,
@@ -81,7 +95,7 @@ async function logMail(
   await query(
     `INSERT INTO notification_log (recipient_email, subject, body, status, error_message, sent_at, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-    [to, subject, body, status, errorMessage ?? null, status === 'sent' ? new Date() : null]
+    [to, subject, redactEmailBody(body), status, errorMessage ?? null, status === 'sent' ? new Date() : null]
   ).catch((error) => logger.warn('Failed to write notification_log', { error: error.message }));
 }
 

@@ -33,6 +33,17 @@ interface JwtPayload {
 const permCache = new Map<string, { perms: string[]; exp: number }>();
 const PERM_CACHE_TTL_MS = 60_000;
 
+// A token may only act as a session if it carries a role binding and is not
+// an MFA step-up temp token (those must never pass the login gate).
+function isSessionPayload(decoded: JwtPayload): boolean {
+  const payload = decoded as JwtPayload & { role_id?: unknown; type?: unknown };
+  return (
+    typeof payload.role_id === 'string' &&
+    payload.role_id !== '' &&
+    payload.type !== 'mfa_temp'
+  );
+}
+
 async function loadRolePermissions(roleId: string): Promise<string[] | null> {
   const hit = permCache.get(roleId);
   if (hit && hit.exp > Date.now()) return hit.perms;
@@ -95,6 +106,17 @@ async function authenticate(
       issuer: JWT.ISSUER,
       audience: JWT.AUDIENCE,
     }) as JwtPayload;
+
+    if (!isSessionPayload(decoded)) {
+      res.status(401).json({
+        success: false,
+        error: {
+          message: 'Invalid session token.',
+          code: 'AUTH_TOKEN_INVALID',
+        },
+      });
+      return;
+    }
 
     const dbPerms = await loadRolePermissions(decoded.role_id);
     const authUser: AuthUser = {
@@ -199,7 +221,7 @@ async function optionalAuth(
 
 // Same verification as the Express middleware, but usable outside a request
 // (WebSocket handshakes, background jobs). Returns null when the token is
-// missing, expired or invalid.
+// missing, expired, invalid, or not a full session payload.
 export async function verifyAccessToken(token: string | null | undefined): Promise<AuthUser | null> {
   if (!token) return null;
   try {
@@ -207,6 +229,8 @@ export async function verifyAccessToken(token: string | null | undefined): Promi
       issuer: JWT.ISSUER,
       audience: JWT.AUDIENCE,
     }) as JwtPayload;
+
+    if (!isSessionPayload(decoded)) return null;
 
     const dbPerms = await loadRolePermissions(decoded.role_id);
     return {

@@ -8,11 +8,13 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { JWT } from '../config/constants';
 import logger from '../utils/logger';
-import { generateToken } from '../utils/helpers';
+import { generateToken, getRequiredEncryptionKey } from '../utils/helpers';
 
 const router = Router();
 
-const MFA_KEY = process.env.MFA_ENCRYPTION_KEY || 'endpointx-mfa-key-change-in-production-32!';
+// Throws at load time until MFA_ENCRYPTION_KEY is configured (32 chars).
+// Routes in this file are currently unmounted; no published fallback key.
+const MFA_KEY = getRequiredEncryptionKey('MFA_ENCRYPTION_KEY');
 
 function encrypt(text: string): string {
   const iv = crypto.randomBytes(16);

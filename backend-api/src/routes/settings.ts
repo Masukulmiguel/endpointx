@@ -34,7 +34,9 @@ router.put('/:key', authenticate, requirePermission('settings.manage'), async (r
     await query('INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), req.user?.id, req.user?.email, 'settings_update', 'setting', key, `Setting ${key} updated`, req.ip]);
 
-    broadcastEvent('settings:changed', { key, value: result.rows[0].value });
+    // Broadcast the key only: setting values (SMTP credentials, agent
+    // enrollment config) must not reach every connected socket.
+    broadcastEvent('settings:changed', { key });
 
     res.json({ success: true, data: { message: 'Setting updated', setting: result.rows[0] } });
   } catch (error) { next(error); }

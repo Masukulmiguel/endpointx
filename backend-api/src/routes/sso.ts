@@ -5,12 +5,14 @@ import { requirePermission } from '../middleware/rbac';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { JWT } from '../config/constants';
-import { generateToken } from '../utils/helpers';
+import { generateToken, getRequiredEncryptionKey } from '../utils/helpers';
 import logger from '../utils/logger';
 
 const router = Router();
 
-const SSO_ENCRYPTION_KEY = process.env.SSO_ENCRYPTION_KEY || process.env.MFA_ENCRYPTION_KEY || 'endpointx-sso-key-change-in-production-32!';
+// Throws at load time until a 32-char key is configured; no published
+// fallback. SSO may reuse the MFA key (SSO_ENCRYPTION_KEY takes precedence).
+const SSO_ENCRYPTION_KEY = getRequiredEncryptionKey('SSO_ENCRYPTION_KEY', 'MFA_ENCRYPTION_KEY');
 
 function encrypt(text: string): string {
   const iv = crypto.randomBytes(16);

@@ -8,9 +8,11 @@ COPY backend-api/package.json backend-api/package-lock.json ./
 
 RUN npm ci
 
-# Copy backend source and database schema
+# Copy backend source, database schema, and the agent install scripts that
+# /api/devices/public/install-*.sh serve from <root>/endpoint-agent.
 COPY backend-api/ ./
 COPY database/ ./database/
+COPY endpoint-agent/ ./endpoint-agent/
 
 EXPOSE 3001
 

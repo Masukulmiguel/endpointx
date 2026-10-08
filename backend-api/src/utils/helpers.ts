@@ -30,6 +30,25 @@ export const generateRefreshToken = (): string => {
   return crypto.randomBytes(AUTH.REFRESH_TOKEN_LENGTH).toString('hex');
 };
 
+/**
+ * Resolve a 32-character encryption key from the environment. There are no
+ * hardcoded fallbacks: a published default key means every deployment shares
+ * the same cipher key. Throws instead of silently encrypting with a known
+ * constant (routes using this stay unmounted until the key is configured).
+ */
+export function getRequiredEncryptionKey(envName: string, ...fallbackEnvNames: string[]): string {
+  for (const name of [envName, ...fallbackEnvNames]) {
+    const value = process.env[name];
+    if (value) {
+      if (value.length !== 32) {
+        throw new Error(`${name} must be set to a 32-character key`);
+      }
+      return value;
+    }
+  }
+  throw new Error(`${envName} must be set to a 32-character key`);
+}
+
 export const hashToken = (token: string): string => {
   return crypto.createHash(AUTH.TOKEN_HASH_ALGORITHM).update(token).digest('hex');
 };

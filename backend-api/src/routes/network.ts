@@ -26,7 +26,7 @@ router.get('/stats', authenticate, requirePermission('network.view'), async (req
            SELECT EXTRACT(EPOCH FROM (NOW() - last_heartbeat)) AS seconds
              FROM devices
             WHERE is_authorized = true AND last_heartbeat IS NOT NULL
-              AND ${visibleDevicesSql('created_by', 2, req.user)}
+              AND ${visibleDevicesSql('created_by', 1, req.user)}
          ) t`,
       [req.user!.id]
     );

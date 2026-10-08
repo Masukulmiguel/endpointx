@@ -48,6 +48,28 @@ function verifyEnrollToken(raw: unknown): string | null {
   return null;
 }
 
+// Enrolment proof from any channel an install flow can carry it: install
+// links (?t=), the mobile page (?t= / stored token) or a registration body.
+function enrollOwnerFromRequest(req: AuthRequest): string | null {
+  return (
+    verifyEnrollToken(req.query?.t) ||
+    verifyEnrollToken(req.headers['x-enroll-token']) ||
+    verifyEnrollToken(req.body?.enroll_token) ||
+    verifyEnrollToken(req.body?.t)
+  );
+}
+
+// Gate for any route that renders the shared AGENT_SECRET. A valid enrolment
+// JWT is only minted by a devices.manage holder, so anonymous callers and
+// free self-registered accounts never receive the fleet credential.
+function requireEnrollToken(req: AuthRequest, res: Response, next: NextFunction): void {
+  if (!enrollOwnerFromRequest(req)) {
+    res.status(403).json({ success: false, error: { message: 'Valid enrolment token required' } });
+    return;
+  }
+  next();
+}
+
 // ---------------------------------------------------------------------------
 // Registration dedupe by source IP.
 // The same physical device often comes back with a brand new agent_id (APK
@@ -375,6 +397,14 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
       return;
     }
 
+    // Agents carry the fleet secret (same check as /register): without it
+    // anyone could push fake metrics or flip device status to online.
+    const heartbeatSecret = req.headers['x-agent-secret'];
+    if (heartbeatSecret !== process.env.AGENT_SECRET) {
+      res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
+      return;
+    }
+
     const deviceResult = await query(
       "SELECT id, last_agent_hash, status, quarantine_status FROM devices WHERE agent_id = $1 AND is_authorized = true",
       [agent_id]
@@ -538,7 +568,7 @@ router.post('/command-poll', async (req: AuthRequest, res: Response, next: NextF
 });
 
 // Enrollment token for the logged-in account (embedded in install script / mobile QR link)
-router.get('/enroll-token', authenticate, requirePermission('devices.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/enroll-token', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -1103,10 +1133,10 @@ const toDateOnly = (value: unknown): string | null => {
 router.post('/inventory', async (req: AuthRequest, res: Response, next: NextFunction) => {
   const { agent_id, software, services, processes, network_interfaces } = req.body;
 
-  if (!agent_id) {
-    res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
-    return;
-  }
+    if (!agent_id) {
+      res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
+      return;
+    }
 
   const agentSecret = req.headers['x-agent-secret'];
   if (agentSecret !== process.env.AGENT_SECRET) {
@@ -1465,8 +1495,8 @@ router.post('/events', async (req: AuthRequest, res: Response, next: NextFunctio
   }
 });
 
-// Download agent installer script
-router.get('/download/installer', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+// Download agent installer script (embeds the shared secret: devices.manage only)
+router.get('/download/installer', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const serverUrl = `${req.protocol}://${req.get('host')}/api`;
     const agentSecret = requireAgentSecret();
@@ -1605,8 +1635,8 @@ router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, r
   }
 });
 
-// PUBLIC - Download installer (no auth required)
-router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// PUBLIC - Download installer (requires enrolment token minted by a devices.manage user)
+router.get('/public/install.ps1', requireEnrollToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
@@ -1622,7 +1652,7 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
-    script = script.replace(/##ENROLL_TOKEN##/g, verifyEnrollToken(req.query.t) || '');
+    script = script.replace(/##ENROLL_TOKEN##/g, enrollOwnerFromRequest(req) || '');
 
     // text/plain (no attachment) so `irm ... | iex` receives a clean string
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1633,8 +1663,8 @@ router.get('/public/install.ps1', async (req: AuthRequest, res: Response, next: 
   }
 });
 
-// PUBLIC - Download Linux install script (no auth required)
-router.get('/public/install-linux.sh', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// PUBLIC - Download Linux install script (requires enrolment token)
+router.get('/public/install-linux.sh', requireEnrollToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
@@ -1650,7 +1680,7 @@ router.get('/public/install-linux.sh', async (req: AuthRequest, res: Response, n
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
-    script = script.replace(/##ENROLL_TOKEN##/g, verifyEnrollToken(req.query.t) || '');
+    script = script.replace(/##ENROLL_TOKEN##/g, enrollOwnerFromRequest(req) || '');
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-linux.sh"');
@@ -1660,8 +1690,8 @@ router.get('/public/install-linux.sh', async (req: AuthRequest, res: Response, n
   }
 });
 
-// PUBLIC - Download macOS install script (no auth required)
-router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// PUBLIC - Download macOS install script (requires enrolment token)
+router.get('/public/install-macos.sh', requireEnrollToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
@@ -1677,7 +1707,7 @@ router.get('/public/install-macos.sh', async (req: AuthRequest, res: Response, n
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
-    script = script.replace(/##ENROLL_TOKEN##/g, verifyEnrollToken(req.query.t) || '');
+    script = script.replace(/##ENROLL_TOKEN##/g, enrollOwnerFromRequest(req) || '');
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-macos.sh"');
@@ -1907,7 +1937,14 @@ router.post('/mobile/register', async (req: AuthRequest, res: Response, next: Ne
       enroll_token,
     } = req.body as Record<string, string | undefined>;
 
-    const ownerUserId = verifyEnrollToken(enroll_token);
+    // Enrollment proof is mandatory: mobile enrollment mints a remote_token
+    // and creates devices, so it is restricted to install links minted by a
+    // devices.manage holder (?t= / stored enroll_token).
+    const ownerUserId = enrollOwnerFromRequest(req);
+    if (!ownerUserId) {
+      res.status(401).json({ success: false, error: { message: 'Valid enrolment token required' } });
+      return;
+    }
 
     const name = (device_name || '').trim().slice(0, 80);
     if (!name) {

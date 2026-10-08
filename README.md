@@ -1,7 +1,7 @@
 # EndpointX
 
 <p align="center">
-  <img src="logotipo-fundo-branco.png" alt="EndpointX Logo" width="200"/>
+  <img src="logotipos/Logótipo_EndpointX_fundo_branco.png" alt="EndpointX Logo" width="200"/>
 </p>
 
 **Identity, Access, and Endpoint Management Platform**
@@ -137,24 +137,36 @@ Complete REST API documentation is available at [docs/api.md](docs/api.md).
 | POST    | `/api/commands`             | Create command           |
 | GET     | `/api/dashboard/overview`   | Dashboard statistics     |
 
-## Agent Installation
+## Agent Installation (v1.2.0)
+
+Every install command now carries an enrolment token (`?t=...`) that ties the
+device to your account. The scripts refuse to run without it (HTTP 403).
+Get your personal command — token included — from the dashboard
+(**Install** page), or mint a token with an admin session:
+
+```bash
+curl -H "Authorization: Bearer <ADMIN_JWT>" https://endpointx.onrender.com/api/devices/enroll-token
+```
+
+Tokens are account-scoped, valid for 30 days, and can be revoked by
+regenerating them. Never commit a real token: the link is a credential.
 
 ### Option 1: Install via PowerShell (Recommended)
 
 ```powershell
-irm https://your-server.com/api/devices/public/install.ps1 | iex
+irm https://endpointx.onrender.com/api/devices/public/install.ps1?t=<ENROLL_TOKEN> | iex
 ```
 
 ### Option 2: Install on Linux (one line)
 
 ```bash
-curl -fsSL https://your-server.com/api/devices/public/install-linux.sh | sudo bash
+curl -fsSL "https://endpointx.onrender.com/api/devices/public/install-linux.sh?t=<ENROLL_TOKEN>" | sudo bash
 ```
 
 ### Option 3: Install on macOS (one line)
 
 ```bash
-curl -fsSL https://your-server.com/api/devices/public/install-macos.sh | bash
+curl -fsSL "https://endpointx.onrender.com/api/devices/public/install-macos.sh?t=<ENROLL_TOKEN>" | bash
 ```
 
 ### Option 4: Install as Windows Service (Production)
