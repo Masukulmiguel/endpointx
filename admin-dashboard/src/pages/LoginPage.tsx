@@ -74,7 +74,7 @@ export default function LoginPage() {
         <div className="bg-gray-900 rounded-2xl shadow-2xl border border-gray-800 p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4">
-              <img src="/logotipo-fundo-escuro.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
+              <img src="/Logótipo_EndpointX_fundo_azul.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
             </div>
             <p className="text-gray-400 text-sm mt-1">{t('login.subtitle')}</p>
             <div className="mt-3 flex justify-center gap-1 rounded-lg bg-gray-800 p-0.5 text-xs w-fit mx-auto">

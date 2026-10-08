@@ -11,14 +11,14 @@
   "lang": "pt",
   "icons": [
     {
-      "src": "/logotipo-fundo-escuro.png",
-      "sizes": "512x512",
+      "src": "/Ícone_favicon.png",
+      "sizes": "500x500",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/logotipo-fundo-escuro.png",
-      "sizes": "512x512",
+      "src": "/Ícone_mobile.png",
+      "sizes": "500x500",
       "type": "image/png",
       "purpose": "maskable"
     }

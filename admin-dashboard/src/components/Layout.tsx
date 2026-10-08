@@ -215,7 +215,7 @@ export default function Layout() {
         }`}
       >
         <div className="flex items-center gap-3 px-6 h-16 border-b border-white/5">
-          <img src="/logotipo-fundo-branco.png" alt="EndpointX" className="w-9 h-9 rounded-lg object-contain" />
+          <img src="/Logótipo_EndpointX_fundo_branco.png" alt="EndpointX" className="w-9 h-9 rounded-lg object-contain" />
           <button
             onClick={() => setSidebarOpen(false)}
             className="ml-auto p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/5 lg:hidden"
