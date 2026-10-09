@@ -779,7 +779,7 @@ const createInlineSchema = async (): Promise<void> => {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+    ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) NOT NULL DEFAULT 'new';
     ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS enrollment_requested_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_network_nodes_created_by ON network_nodes(created_by);
