@@ -79,18 +79,20 @@ class TestGetLocalSubnets(unittest.TestCase):
         self.assertNotIn("lo", by_iface)
 
         eth0 = by_iface["eth0"]
-        self.assertEqual(eth0["cidr"], "10.0.0.0/8")
-        self.assertEqual(eth0["prefixlen"], 8)
+        # /8 is larger than the cap: truncated to the first /22 block
+        self.assertEqual(eth0["cidr"], "10.0.0.0/22")
+        self.assertEqual(eth0["prefixlen"], 22)
         self.assertEqual(eth0["network"], ipaddress.IPv4Address("10.0.0.0"))
 
-        # prefixlen >= 23 clamped to 22
+        # /24 is within the cap: original prefixlen kept, never expanded
         eth1 = by_iface["eth1"]
-        self.assertEqual(eth1["prefixlen"], 22)
-        self.assertEqual(eth1["cidr"], "192.168.0.0/22")
-        self.assertEqual(eth1["network"], ipaddress.IPv4Address("192.168.0.0"))
+        self.assertEqual(eth1["cidr"], "192.168.1.0/24")
+        self.assertEqual(eth1["prefixlen"], 24)
+        self.assertEqual(eth1["network"], ipaddress.IPv4Address("192.168.1.0"))
 
+        # each subnet at most /22 (1024 hosts)
         for subnet in subnets:
-            self.assertLessEqual(subnet["prefixlen"], 22)
+            self.assertGreaterEqual(subnet["prefixlen"], 22)
 
 
 class TestValidateRequestedCidr(unittest.TestCase):
@@ -108,9 +110,9 @@ class TestValidateRequestedCidr(unittest.TestCase):
         self.assertIsNotNone(
             discovery.validate_requested_cidr("192.168.5.0/24", local)
         )
-        self.assertIsNotNone(
-            discovery.validate_requested_cidr("192.168.1.0/23", local)
-        )
+        error = discovery.validate_requested_cidr("192.168.1.0/23", local)
+        self.assertIsNotNone(error)
+        self.assertIn("/22", error)
         self.assertIsNone(discovery.validate_requested_cidr("192.168.1.0/24", local))
         self.assertIsNone(discovery.validate_requested_cidr("", local))
 
@@ -123,6 +125,29 @@ class TestOsEstimate(unittest.TestCase):
         self.assertEqual(discovery.os_estimate(None), "Unknown")
         self.assertEqual(discovery.os_estimate("WIN-XYZ9"), "Windows")
         self.assertEqual(discovery.os_estimate("office-mbp-7"), "macOS")
+
+
+class TestPingFlags(unittest.TestCase):
+    def test_ping_flags_per_platform(self):
+        # -W is milliseconds on macOS but seconds on Linux; -w is ms on Windows
+        cases = (
+            ("Windows", ["ping", "-n", "1", "-w", "1000", "192.168.1.1"]),
+            ("Darwin", ["ping", "-c", "1", "-W", "1000", "192.168.1.1"]),
+            ("Linux", ["ping", "-c", "1", "-W", "1", "192.168.1.1"]),
+        )
+        for system, expected_cmd in cases:
+            with self.subTest(system=system):
+                proc = mock.Mock(returncode=1, stdout="")
+                with mock.patch(
+                    "platform.system", return_value=system
+                ), mock.patch.object(
+                    discovery.subprocess, "run", return_value=proc
+                ) as run_mock:
+                    alive, rtt = discovery._ping_host("192.168.1.1")
+                self.assertFalse(alive)
+                self.assertIsNone(rtt)
+                run_mock.assert_called_once()
+                self.assertEqual(run_mock.call_args[0][0], expected_cmd)
 
 
 class TestScan(unittest.TestCase):

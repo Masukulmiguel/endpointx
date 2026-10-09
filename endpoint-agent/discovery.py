@@ -17,10 +17,10 @@ import time
 
 import psutil
 
-# Scan safety caps: at most 4 subnets, prefixlen clamped to <= /22,
-# requested ranges larger than a /22 (more than 1024 hosts) rejected.
+# Scan safety caps: at most 4 subnets; local ranges larger than a /22 are
+# truncated to their first /22 block (never expanded); requested ranges
+# with prefixlen < 22 (more than 1024 hosts) are rejected.
 _MAX_SUBNETS = 4
-_PREFIX_CAP = 22
 _MIN_SCAN_PREFIXLEN = 22
 
 _IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
@@ -103,7 +103,8 @@ def get_local_subnets() -> list:
     """Return the agent's own RFC1918 IPv4 subnets.
 
     Each entry is ``{ "interface", "cidr", "network", "prefixlen" }``.
-    At most 4 subnets; prefixlen is clamped to <= /22.
+    At most 4 subnets; ranges larger than a /22 (prefixlen < 22) are
+    truncated to the interface's first /22 block — never expanded.
     """
     subnets: list = []
     try:
@@ -125,8 +126,8 @@ def get_local_subnets() -> list:
                 prefix = _prefix_from_mask(mask)
                 if prefix is None:
                     continue
-                if prefix > _PREFIX_CAP:
-                    prefix = _PREFIX_CAP
+                if prefix < _MIN_SCAN_PREFIXLEN:
+                    prefix = _MIN_SCAN_PREFIXLEN
                 network = ipaddress.ip_network(f"{ip}/{prefix}", strict=False)
                 cidr = str(network)
                 if any(s["cidr"] == cidr for s in subnets):
@@ -196,14 +197,21 @@ def _parse_rtt(text: str):
 
 
 def _ping_host(ip: str) -> tuple:
-    """Ping one host once; return (alive, rtt_ms | None)."""
-    if platform.system() == "Windows":
+    """Ping one host once; return (alive, rtt_ms | None).
+
+    Per-platform flag semantics: ``-W`` is milliseconds on macOS but
+    seconds on Linux, and ``-w`` is milliseconds on Windows.
+    """
+    system = platform.system()
+    if system == "Windows":
         cmd = ["ping", "-n", "1", "-w", "1000", ip]
+    elif system == "Darwin":
+        cmd = ["ping", "-c", "1", "-W", "1000", ip]
     else:
         cmd = ["ping", "-c", "1", "-W", "1", ip]
     try:
         kwargs = {"capture_output": True, "text": True, "timeout": 3}
-        if platform.system() == "Windows":
+        if system == "Windows":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.run(cmd, **kwargs)
     except Exception:
@@ -325,8 +333,9 @@ def validate_requested_cidr(cidr: str, local_subnets: list):
     """Return an error string if ``cidr`` must not be scanned, else None.
 
     Rejects malformed input, non-RFC1918 (public/foreign) ranges, ranges
-    larger than a /22 (more than 1024 hosts), and ranges not contained in
-    one of ``local_subnets``. An empty/blank cidr is accepted.
+    larger than a /22 (more than 1024 hosts — checked before containment),
+    and ranges not contained in one of ``local_subnets``. An empty/blank
+    cidr is accepted.
     """
     raw = (cidr or "").strip()
     if not raw:
@@ -346,7 +355,10 @@ def validate_requested_cidr(cidr: str, local_subnets: list):
             continue
         if network.version == local.version and network.subnet_of(local):
             return None
-    return f"{raw} is not contained in any local subnet"
+    return (
+        f"{raw} is not contained in any local subnet "
+        f"(ranges must sit inside an agent subnet, at most /22)"
+    )
 
 
 def _local_ipv4s() -> set:
