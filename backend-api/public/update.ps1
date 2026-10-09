@@ -1,4 +1,4 @@
-# EndpointX Agent Quick Update v1.2.0
+# EndpointX Agent Quick Update v1.2.3
 # Safe for: irm https://.../update.ps1 | iex
 
 $agentDir = "C:\endpointx\endpoint-agent"
@@ -46,7 +46,7 @@ Write-Banner @(
     $hexLogo | ForEach-Object { @{ Text = $_.PadRight($hexWidth); Color = 'Cyan' } }
     @{ Text = ('-' * 46); Color = 'DarkCyan' }
     @{ Text = 'E N D P O I N T X'; Color = 'Cyan' }
-    @{ Text = 'AGENT QUICK UPDATE  v1.2.0'; Color = 'Gray' }
+    @{ Text = 'AGENT QUICK UPDATE  v1.2.3'; Color = 'Gray' }
 ) 46
 Write-Host ""
 
