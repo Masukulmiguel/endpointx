@@ -244,7 +244,7 @@ export async function getNode(
   user: ServiceUser
 ): Promise<Record<string, unknown> | null> {
   const vis = nodeVisibilitySql(user);
-  const where = vis.sql ? ` WHERE n.id = $${vis.params.length + 1}${vis.sql}` : ' WHERE n.id = $1';
+  const where = vis.sql ? ` WHERE n.id = $${vis.params.length + 1} AND${vis.sql}` : ' WHERE n.id = $1';
   const params = vis.sql ? [...vis.params, id] : [id];
   const r = await query(`SELECT n.* FROM network_nodes n${where}`, params);
   return r.rows[0] ?? null;
@@ -255,16 +255,24 @@ export async function setNodeReview(
   review: 'known' | 'ignored',
   user: ServiceUser
 ): Promise<boolean> {
-  const r = await query(
-    `UPDATE network_nodes SET review_status = $2, updated_at = NOW() WHERE id = $1`,
-    [id, review]
-  );
+  const vis = nodeVisibilitySql(user);
+  const r = vis.sql
+    ? await query(
+        `UPDATE network_nodes SET review_status = $3, updated_at = NOW()
+          WHERE id = $1 AND (created_by = $2 OR EXISTS(SELECT 1 FROM devices d WHERE d.id = network_nodes.device_id AND d.created_by = $2))`,
+        [id, user.id, review]
+      )
+    : await query(
+        `UPDATE network_nodes SET review_status = $2, updated_at = NOW() WHERE id = $1`,
+        [id, review]
+      );
+  if ((r.rowCount ?? 0) === 0) return false;
   await query(
     `INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address, metadata)
      VALUES ($1, $2, NULL, $3, 'network_node', $4, $5, NULL, $6)`,
     [newId(), user.id, 'network_node_review', id, `review_status=${review}`, JSON.stringify({ review_status: review })]
   );
-  return (r.rowCount ?? 0) > 0;
+  return true;
 }
 
 export async function identifyNode(
@@ -273,34 +281,43 @@ export async function identifyNode(
   user: ServiceUser
 ): Promise<boolean> {
   const sets: string[] = [];
-  const params: unknown[] = [id];
-  if (body.name !== undefined) {
-    params.push(body.name);
-    sets.push(` name = $${params.length}`);
-  }
-  if (body.node_type !== undefined) {
-    params.push(body.node_type);
-    sets.push(` node_type = $${params.length}`);
-  }
+  if (body.name !== undefined) sets.push('name');
+  if (body.node_type !== undefined) sets.push('node_type');
   if (sets.length === 0) return false;
+
+  const vis = nodeVisibilitySql(user);
+  const values: unknown[] = [];
+  const setSql = sets.map((col) => {
+    values.push((body as Record<string, unknown>)[col]);
+    return ` ${col} = $${values.length + 1}`;
+  });
+  values.push(id);
+  const idPh = values.length;
+  let where = ` WHERE id = $${idPh}`;
+  if (vis.sql) {
+    values.push(user.id);
+    const userPh = values.length;
+    where = ` WHERE id = $${idPh} AND (created_by = $${userPh} OR EXISTS(SELECT 1 FROM devices d WHERE d.id = network_nodes.device_id AND d.created_by = $${userPh}))`;
+  }
   const r = await query(
-    `UPDATE network_nodes SET${sets.join(',')}, updated_at = NOW() WHERE id = $1`,
-    params
+    `UPDATE network_nodes SET${setSql.join(',')}, updated_at = NOW()${where}`,
+    values
   );
+  if ((r.rowCount ?? 0) === 0) return false;
   await query(
     `INSERT INTO audit_logs (id, user_id, user_email, action, target_type, target_id, description, ip_address, metadata)
      VALUES ($1, $2, NULL, $3, 'network_node', $4, $5, NULL, $6)`,
     [newId(), user.id, 'network_node_identify', id, `identify ${JSON.stringify(body)}`, JSON.stringify(body)]
   );
-  return (r.rowCount ?? 0) > 0;
+  return true;
 }
 
 export async function requestEnrollment(
   id: string,
-  user: { id: string; email: string }
+  user: { id: string; email: string; permissions: string[] }
 ): Promise<{ token: string; commands: { windows: string; linux: string; macos: string } } | null> {
-  const node = await query('SELECT id FROM network_nodes WHERE id = $1', [id]);
-  if (node.rows.length === 0) return null;
+  const node = await getNode(id, { id: user.id, permissions: user.permissions });
+  if (!node) return null;
 
   const token = jwt.sign({ sub: user.id, typ: 'enroll' }, JWT.ACCESS_SECRET, { expiresIn: '30d' });
   await query(

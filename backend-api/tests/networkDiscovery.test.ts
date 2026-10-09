@@ -208,6 +208,7 @@ async function main(): Promise<void> {
     setNodeReview,
     identifyNode,
     requestEnrollment,
+    getNode,
   } = await import('../src/services/discoveryService');
 
   const s = (match: string, rows: Record<string, unknown>[] = []): ScriptedRow => ({ match, rows });
@@ -414,9 +415,9 @@ async function main(): Promise<void> {
   });
 
   await checkAsync('test_request_enrollment_returns_three_commands_and_token', async () => {
-    setScripts([s('FROM network_nodes WHERE id =', [{ id: 'n1', created_by: 'u1', device_id: null }])]);
+    setScripts([s('FROM network_nodes n WHERE', [{ id: 'n1', created_by: 'u1', device_id: null }])]);
     const { result, calls: emitted } = await captureCalls(() =>
-      requestEnrollment('n1', { id: 'u1', email: 'u1@x.pt' })
+      requestEnrollment('n1', { id: 'u1', email: 'u1@x.pt', permissions: ['network.view', 'devices.view_all'] })
     );
     assert.ok(result, 'expected enrollment result');
     const payload = jwt.verify(result.token, JWT.ACCESS_SECRET) as Record<string, unknown>;
@@ -455,6 +456,61 @@ async function main(): Promise<void> {
     assert.ok(upd, 'must update the node');
     assert.ok(upd.sql.includes('name'), upd.sql);
     assert.ok(!upd.sql.includes('node_type'), `must not touch node_type when not provided: ${upd.sql}`);
+  });
+
+  // Final-review regression: mutations must be tenant-scoped like getNode/listNodes.
+  // A user without devices.view_all must only reach nodes it owns; getNode's scoped
+  // SQL must also be syntactically valid (AND before the visibility predicate).
+  await checkAsync('test_mutations_scope_by_created_by', async () => {
+    const scoped = { id: 'u1', permissions: ['network.view'] };
+
+    setScripts([s('UPDATE network_nodes SET review_status', [{ id: 'n1' }])]);
+    const rev = await captureCalls(() => setNodeReview('n1', 'known', scoped));
+    const revUpd = rev.calls.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revUpd, 'setNodeReview must emit an UPDATE');
+    assert.ok(
+      revUpd.sql.includes('created_by'),
+      `setNodeReview UPDATE must filter by tenant: ${revUpd.sql}`
+    );
+    assert.ok(revUpd.params.includes('u1'), 'setNodeReview must carry the caller user id');
+
+    setScripts([s('UPDATE network_nodes SET name', [{ id: 'n1' }])]);
+    const ident = await captureCalls(() => identifyNode('n1', { name: 'X' }, scoped));
+    const identUpd = ident.calls.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(identUpd, 'identifyNode must emit an UPDATE');
+    assert.ok(
+      identUpd.sql.includes('created_by'),
+      `identifyNode UPDATE must filter by tenant: ${identUpd.sql}`
+    );
+
+    setScripts([s('FROM network_nodes', [])]);
+    const enr = await captureCalls(() =>
+      requestEnrollment('n1', { id: 'u1', email: 'u1@x.pt', permissions: ['network.view'] })
+    );
+    assert.strictEqual(enr.result, null, 'requestEnrollment must deny a node owned by another tenant');
+    const upd = enr.calls.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(!upd, 'requestEnrollment must not update a node it cannot see');
+
+    setScripts([s('FROM network_nodes n WHERE', [])]);
+    const get = await captureCalls(() => getNode('n1', scoped));
+    assert.strictEqual(get.result, null, 'getNode must return null for an invisible node');
+    const sel = get.calls.find((c) => c.sql.includes('FROM network_nodes'));
+    assert.ok(sel, 'getNode must SELECT the node');
+    assert.ok(
+      /WHERE n\.id = \$\d+ AND/.test(sel.sql),
+      `getNode scoped SQL must AND-join the id and visibility predicates: ${sel.sql}`
+    );
+
+    setScripts([s('UPDATE network_nodes SET review_status', [{ id: 'n1' }])]);
+    const adminRev = await captureCalls(() =>
+      setNodeReview('n1', 'known', { id: 'u2', permissions: ['network.view', 'devices.view_all'] })
+    );
+    const adminUpd = adminRev.calls.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(adminUpd, 'view_all caller must still emit the UPDATE');
+    assert.ok(
+      !adminUpd.sql.includes('created_by'),
+      `view_all must drop the tenant filter on mutations: ${adminUpd.sql}`
+    );
   });
 
   // ---- Task 5: HTTP routes -------------------------------------------------
@@ -589,7 +645,7 @@ async function main(): Promise<void> {
       const denied = await post('/api/netsentinel/discovery/nodes/n-http/enroll-request', netToken, {});
       assert.strictEqual(denied.status, 403, `expected 403 for network.view-only, got ${denied.status}`);
 
-      setScripts([s('FROM network_nodes WHERE id =', [{ id: 'n-http', created_by: 'user-manage' }])]);
+      setScripts([s('FROM network_nodes n WHERE', [{ id: 'n-http', created_by: 'user-manage' }])]);
       capturing = true;
       let okRes: Response;
       try {

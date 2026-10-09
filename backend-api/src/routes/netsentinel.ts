@@ -702,7 +702,11 @@ router.post('/discovery/nodes/:id/identify', authenticate, requirePermission('ne
 
 router.post('/discovery/nodes/:id/enroll-request', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await requestEnrollment(req.params.id, { id: req.user!.id, email: req.user!.email || '' });
+    const result = await requestEnrollment(req.params.id, {
+      id: req.user!.id,
+      email: req.user!.email || '',
+      permissions: req.user!.permissions || [],
+    });
     if (!result) {
       res.status(404).json({ success: false, error: { message: 'Node not found' } });
       return;
