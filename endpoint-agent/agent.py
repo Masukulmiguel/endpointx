@@ -46,6 +46,8 @@ from system_info import (
     get_system_uptime,
 )
 
+from discovery import scan, validate_requested_cidr, get_local_subnets
+
 logger = logging.getLogger("endpointx-agent")
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -384,6 +386,13 @@ class TamperProtection:
             hash_path.write_text(hash_value, encoding="utf-8")
         except OSError as exc:
             logger.warning("Failed to store hash: %s", exc)
+
+
+def handle_network_discovery(params):
+    cidr = (params or {}).get('cidr') or None
+    err = validate_requested_cidr(cidr, get_local_subnets())
+    if err: raise RuntimeError(err)   # execute_command maps exceptions to failed result
+    return scan(cidr)
 
 
 class EndpointAgent:
@@ -832,6 +841,7 @@ class EndpointAgent:
             "inventory": self.handle_inventory,
             "update_agent": self.handle_update_agent,
             "scan": self.handle_scan,
+            "network_discovery": handle_network_discovery,
             "forensic_collect": self.handle_forensic_collect,
             "get_info": self.handle_get_info,
             "uninstall_agent": self.handle_uninstall_agent,

@@ -11,7 +11,9 @@ import unittest
 from collections import namedtuple
 from unittest import mock
 
+import agent
 import discovery
+import system_info
 
 # Stand-in for psutil's snicaddr namedtuple (family, address, netmask, ...).
 _FakeAddr = namedtuple(
@@ -197,6 +199,103 @@ class TestScan(unittest.TestCase):
         self.assertEqual(by_ip["10.9.9.1"]["os_estimate"], "Unknown")
 
         json.dumps(report)
+
+
+class TestHandleNetworkDiscovery(unittest.TestCase):
+    """Task 2: the ``network_discovery`` dispatch entry and iface netmasks.
+
+    ``agent.py`` is import-safe (module level is only defs/classes/constants
+    plus a ``__main__`` guard), so the real ``execute_command`` path runs
+    here without touching the network: ``report_command_result`` is stubbed
+    on an uninitialised instance and ``agent.scan`` is patched per test.
+    """
+
+    _LOCAL = [
+        {
+            "interface": "eth1",
+            "cidr": "192.168.1.0/24",
+            "network": ipaddress.IPv4Address("192.168.1.0"),
+            "prefixlen": 24,
+        }
+    ]
+
+    @staticmethod
+    def _agent_stub():
+        instance = agent.EndpointAgent.__new__(agent.EndpointAgent)
+        instance.report_command_result = mock.Mock()
+        return instance
+
+    def test_handler_public_cidr_fails_without_scanning(self):
+        instance = self._agent_stub()
+        with mock.patch.object(
+            agent, "get_local_subnets", return_value=list(self._LOCAL)
+        ), mock.patch.object(agent, "scan") as scan_mock:
+            instance.execute_command(
+                {
+                    "id": "cmd-1",
+                    "type": "network_discovery",
+                    "parameters": {"cidr": "8.8.8.0/24"},
+                }
+            )
+
+        scan_mock.assert_not_called()
+        instance.report_command_result.assert_called_once()
+        args, kwargs = instance.report_command_result.call_args
+        self.assertEqual(args[0], "cmd-1")
+        self.assertEqual(args[1], "failed")
+        error = str(kwargs.get("error_message") or "")
+        self.assertTrue(
+            "private" in error.lower() or "local" in error.lower(), error
+        )
+
+    def test_handler_valid_cidr_returns_report(self):
+        report = {
+            "subnets": ["192.168.1.0/24"],
+            "truncated": False,
+            "hosts": [],
+        }
+        instance = self._agent_stub()
+        with mock.patch.object(
+            agent, "get_local_subnets", return_value=list(self._LOCAL)
+        ), mock.patch.object(
+            agent, "scan", return_value=report
+        ) as scan_mock:
+            instance.execute_command(
+                {
+                    "id": "cmd-2",
+                    "type": "network_discovery",
+                    "parameters": {"cidr": ""},
+                }
+            )
+            instance.execute_command({"id": "cmd-3", "type": "network_discovery"})
+
+        self.assertEqual(scan_mock.call_count, 2)
+        for call in scan_mock.call_args_list:
+            self.assertIsNone(call.args[0])
+
+        self.assertEqual(instance.report_command_result.call_count, 2)
+        for call in instance.report_command_result.call_args_list:
+            self.assertEqual(call.args[1], "completed")
+            self.assertIs(call.kwargs["result"], report)
+
+    def test_system_info_interfaces_include_netmask(self):
+        fake_addrs = {
+            "eth0": [_addr("192.168.1.10", "255.255.255.0")],
+            "wlan0": [_addr("10.0.0.5", "255.0.0.0")],
+            "lo": [_addr("127.0.0.1", "255.0.0.0")],
+        }
+        with mock.patch(
+            "psutil.net_if_addrs", return_value=fake_addrs
+        ), mock.patch("psutil.net_if_stats", return_value={}):
+            interfaces = system_info.get_network_interfaces()
+
+        self.assertTrue(interfaces)
+        for info in interfaces:
+            self.assertIn("netmask", info)
+
+        by_name = {info["name"]: info for info in interfaces}
+        self.assertEqual(by_name["eth0"]["netmask"], "255.255.255.0")
+        self.assertEqual(by_name["wlan0"]["netmask"], "255.0.0.0")
 
 
 if __name__ == "__main__":

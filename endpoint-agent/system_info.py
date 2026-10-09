@@ -190,7 +190,9 @@ def get_network_interfaces() -> list[dict[str, Any]]:
     """Return list of network interfaces with their details.
 
     Returns:
-        List of dictionaries with keys: name, mac, ipv4, ipv6, is_connected, speed.
+        List of dictionaries with keys: name, mac, ipv4, ipv6, netmask,
+        is_connected, speed. ``netmask`` is the IPv4 netmask string, or
+        None when the interface has no IPv4 address.
     """
     interfaces: list[dict[str, Any]] = []
     addrs = psutil.net_if_addrs()
@@ -205,6 +207,7 @@ def get_network_interfaces() -> list[dict[str, Any]]:
             "mac": "",
             "ipv4": "",
             "ipv6": "",
+            "netmask": None,
             "is_connected": False,
             "speed": 0,
         }
@@ -216,6 +219,7 @@ def get_network_interfaces() -> list[dict[str, Any]]:
         for addr in iface_addrs:
             if addr.family == socket.AF_INET:
                 info["ipv4"] = addr.address
+                info["netmask"] = addr.netmask
             elif addr.family == socket.AF_INET6:
                 if not addr.address.startswith("fe80::"):
                     info["ipv6"] = addr.address
