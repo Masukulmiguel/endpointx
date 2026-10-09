@@ -49,6 +49,7 @@ const navItems = [
   { key: 'nav.reports', path: '/reports', icon: ChartBar, permission: 'logs.view' },
   { key: 'nav.notifications', path: '/notifications', icon: Bell, permission: 'logs.view' },
   { key: 'nav.network', path: '/network', icon: Wifi, permission: 'network.view' },
+  { key: 'nav.discovery', path: '/network/discovery', icon: Radar, permission: 'network.view' },
   { key: 'nav.audit', path: '/audit-logs', icon: FileText, permission: 'logs.view' },
   { key: 'nav.agents', path: '/agents', icon: Cpu, permission: 'devices.view' },
   { key: 'nav.settings', path: '/settings', icon: Settings, permission: 'settings.view' },
@@ -71,6 +72,7 @@ const routeTitleKeys: Record<string, string> = {
   '/reports': 'nav.reports',
   '/notifications': 'nav.notifications',
   '/network': 'nav.network',
+  '/network/discovery': 'nav.discovery',
   '/audit-logs': 'nav.audit',
   '/profile': 'nav.profile',
   '/agents': 'nav.agents',
@@ -99,7 +101,7 @@ const navGroups: { key: string; label: Record<Locale, string>; paths: string[] }
   {
     key: 'monitoring',
     label: { pt: 'Monitorização', en: 'Monitoring' },
-    paths: ['/alerts', '/notifications', '/network', '/audit-logs', '/agents'],
+    paths: ['/alerts', '/notifications', '/network', '/network/discovery', '/audit-logs', '/agents'],
   },
   {
     key: 'system',

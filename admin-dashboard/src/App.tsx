@@ -14,6 +14,7 @@ import SecurityPage from './pages/SecurityPage';
 import AlertsPage from './pages/AlertsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import NetworkPage from './pages/NetworkPage';
+import DiscoveredDevicesPage from './pages/DiscoveredDevicesPage';
 import AgentsPage from './pages/AgentsPage';
 import SettingsPage from './pages/SettingsPage';
 import InstallPage from './pages/InstallPage';
@@ -170,6 +171,14 @@ export default function App() {
           element={
             <PermissionGate permission="network.view">
               <NetworkPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="network/discovery"
+          element={
+            <PermissionGate permission="network.view">
+              <DiscoveredDevicesPage />
             </PermissionGate>
           }
         />
