@@ -13,6 +13,8 @@
       'nav.register': 'Começar grátis',
       'nav.creator': 'Criador',
       'hero.title': 'Veja, proteja e governe cada endpoint da sua rede',
+      'hero.eyebrow': 'MONITORING · MANAGEMENT · SECURITY',
+      'hero.download': 'Descarregar para PC',
       'hero.lead':
         'EndpointX é uma plataforma defensiva de gestão de identidade, acesso e endpoints - com inventário em tempo real, políticas de conformidade e o motor de inteligência de segurança HERMES.',
       'hero.cta1': 'Criar conta grátis',
@@ -159,6 +161,8 @@
       'nav.register': 'Start free',
       'nav.creator': 'Creator',
       'hero.title': 'See, protect, and govern every endpoint on your network',
+      'hero.eyebrow': 'MONITORING · MANAGEMENT · SECURITY',
+      'hero.download': 'Download for PC',
       'hero.lead':
         'EndpointX is a defensive identity, access, and endpoint management platform - real-time inventory, compliance policies, and the HERMES security intelligence engine.',
       'hero.cta1': 'Create free account',

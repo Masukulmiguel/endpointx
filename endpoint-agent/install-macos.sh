@@ -26,18 +26,20 @@ bx_line() {
 bx_banner() {
     local logo bar line logo_w=0
     logo=$(cat <<'EOF'
-                          \     /
-                           \   /
-                            \ /
- .---------.               .----.
-/           \  .-------.   (  o )
-|           |  /       \___|    |
-|           |..|       |   \    /
-|           |  \       /   '----'
-\           /  '-------'
- '---------'    /  |  \
-               /   |   \
-              /    |    \
+     /\     
+    /  \    
+   /    \   
+  /      \  
+  |      |  
+  | \  / |  
+  |  \/  |  
+  |  /\  |  
+  | /  \ |  
+  |      |  
+  \      /  
+   \    /   
+    \  /    
+     \/     
 EOF
 )
     while IFS= read -r line; do
@@ -50,7 +52,7 @@ EOF
     done <<< "$logo"
     bx_line "$bar" "$BX_DARK"
     bx_line 'E N D P O I N T X' "$BX_CYAN"
-    bx_line 'AGENT INSTALLER (MACOS)  v1.1.0' "$BX_GRAY"
+    bx_line 'AGENT INSTALLER (MACOS)  v1.2.0' "$BX_GRAY"
     bx_line "$SERVER_URL" "$BX_DARK"
     printf '%s  +%s+%s\n' "$BX_DARK" "$bar" "$BX_RESET"
     echo ""

@@ -1,4 +1,4 @@
-# EndpointX Agent Quick Update v1.1.0
+# EndpointX Agent Quick Update v1.2.0
 # Safe for: irm https://.../update.ps1 | iex
 
 $agentDir = "C:\endpointx\endpoint-agent"
@@ -22,29 +22,31 @@ function Write-Banner($lines, $width) {
     Write-Host $bar -ForegroundColor DarkCyan
 }
 
-# Logotipo EndpointX (formiga) em ASCII
-$antLogo = @(
-    '                          \     /',
-    '                           \   /',
-    '                            \ /',
-    ' .---------.               .----.',
-    '/           \  .-------.   (  o )',
-    '|           |  /       \___|    |',
-    '|           |..|       |   \    /',
-    '|           |  \       /   ''----''',
-    '\           /  ''-------''',
-    ' ''---------''    /  |  \',
-    '               /   |   \',
-    '              /    |    \'
+# Logotipo EndpointX (hexagono-X) em ASCII
+$hexLogo = @(
+    '     /\     ',
+    '    /  \    ',
+    '   /    \   ',
+    '  /      \  ',
+    '  |      |  ',
+    '  | \  / |  ',
+    '  |  \/  |  ',
+    '  |  /\  |  ',
+    '  | /  \ |  ',
+    '  |      |  ',
+    '  \      /  ',
+    '   \    /   ',
+    '    \  /    ',
+    '     \/     '
 )
-$antWidth = ($antLogo | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+$hexWidth = ($hexLogo | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
 
 Write-Host ""
 Write-Banner @(
-    $antLogo | ForEach-Object { @{ Text = $_.PadRight($antWidth); Color = 'Cyan' } }
+    $hexLogo | ForEach-Object { @{ Text = $_.PadRight($hexWidth); Color = 'Cyan' } }
     @{ Text = ('-' * 46); Color = 'DarkCyan' }
     @{ Text = 'E N D P O I N T X'; Color = 'Cyan' }
-    @{ Text = 'AGENT QUICK UPDATE  v1.1.0'; Color = 'Gray' }
+    @{ Text = 'AGENT QUICK UPDATE  v1.2.0'; Color = 'Gray' }
 ) 46
 Write-Host ""
 

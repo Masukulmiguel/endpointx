@@ -120,6 +120,20 @@ async function main(): Promise<void> {
         assert.strictEqual(res.status, 403, `got ${res.status}`);
       });
     }
+
+    // 7. Public Windows PC installer (site download button) streams as attachment
+    {
+      const res = await fetch(`${base}/public/endpointx.exe`);
+      check('GET /public/endpointx.exe -> 200 + attachment headers', () => {
+        assert.strictEqual(res.status, 200, `got ${res.status}`);
+        assert.strictEqual(res.headers.get('content-type'), 'application/octet-stream');
+        assert.ok(
+          (res.headers.get('content-disposition') || '').includes('filename="endpointx.exe"'),
+          `got disposition ${res.headers.get('content-disposition')}`
+        );
+      });
+      await res.body?.cancel();
+    }
   } finally {
     // Close the listener AND the keep-alive sockets, then let the process
     // drain naturally: process.exit() while handles are closing trips a

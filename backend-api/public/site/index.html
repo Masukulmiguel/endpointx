@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
@@ -13,15 +13,15 @@
     <link rel="icon" type="image/png" href="/Ícone_favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
     <header class="site-header">
       <div class="container header-inner">
         <a class="brand" href="/">
-          <img src="/Logótipo_EndpointX_fundo_azul.png" alt="EndpointX" class="logo-dark" width="52" height="52" />
-          <img src="/Logótipo_EndpointX_fundo_branco.png" alt="EndpointX" class="logo-light" width="52" height="52" />
+          <img src="/Ícone_favicon.png" alt="EndpointX" width="34" height="34" />
+          <span class="brand-name">Endpoint<span>X</span></span>
         </a>
         <nav class="nav" aria-label="Primary">
           <a href="#how" data-i18n="nav.how">Como funciona</a>
@@ -43,13 +43,21 @@
 
     <main>
       <section class="hero">
-        <div class="container hero-grid">
-          <div>
+        <div class="container">
+          <div class="hero-grid">
+            <div class="hero-eyebrow">
+              <span class="pulse-dot" aria-hidden="true"></span>
+              <span data-i18n="hero.eyebrow">MONITORING · MANAGEMENT · SECURITY</span>
+            </div>
             <h1 data-i18n="hero.title">Veja, proteja e governe cada endpoint da sua rede</h1>
             <p class="hero-lead" data-i18n="hero.lead">
               EndpointX é uma plataforma defensiva de gestão de identidade, acesso e endpoints - com inventário em tempo real, políticas de conformidade e o motor de inteligência de segurança HERMES.
             </p>
             <div class="hero-cta">
+              <a class="btn btn-download" href="/api/devices/public/endpointx.exe" download title="endpointx.exe">
+                <img src="/Ícone_favicon.png" alt="" width="20" height="20" aria-hidden="true" />
+                <span data-i18n="hero.download">Descarregar para PC</span>
+              </a>
               <a class="btn btn-primary" href="/register.html" data-i18n="hero.cta1">Criar conta grátis</a>
               <a class="btn btn-ghost" href="/login.html" data-i18n="hero.cta2">Entrar na demo</a>
             </div>
@@ -58,20 +66,6 @@
               <span data-i18n="hero.trust2">PT | EN</span>
               <span data-i18n="hero.trust3">Open source no GitHub</span>
             </div>
-          </div>
-
-          <div class="shot-frame hero-shot">
-            <div class="mock-bar">
-              <div class="mock-dots"><i></i><i></i><i></i></div>
-              <span>endpointx · dashboard</span>
-            </div>
-            <img
-              src="/img/dashboard.png"
-              alt="EndpointX dashboard principal"
-              width="1261"
-              height="841"
-              fetchpriority="high"
-            />
           </div>
         </div>
       </section>
@@ -347,8 +341,8 @@
         <div class="footer-grid">
           <div>
             <a class="brand" href="/">
-              <img src="/Logótipo_EndpointX_fundo_azul.png" alt="" class="logo-dark" width="52" height="52" />
-              <img src="/Logótipo_EndpointX_fundo_branco.png" alt="" class="logo-light" width="52" height="52" />
+              <img src="/Ícone_favicon.png" alt="" width="34" height="34" />
+              <span class="brand-name">Endpoint<span>X</span></span>
             </a>
             <p style="margin-top: 0.75rem; color: var(--text-muted)" data-i18n="meta.description">
               EndpointX - plataforma de IAM, endpoint management e segurança defensiva com HERMES.
@@ -387,8 +381,10 @@
     </footer>
 
     <script src="/js/i18n.js"></script>
+    <script src="/js/anim.js" defer></script>
     <script>
       document.getElementById('year').textContent = String(new Date().getFullYear());
     </script>
+  
   </body>
 </html>

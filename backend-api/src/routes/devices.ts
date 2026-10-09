@@ -1840,6 +1840,23 @@ router.get('/public/endpointx-agent.apk', (_req: AuthRequest, res: Response, nex
   }
 });
 
+// PUBLIC - Windows PC installer (download button on the public site)
+router.get('/public/endpointx.exe', (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const filePath = join(__dirname, '..', '..', 'public', 'exe', 'endpointx.exe');
+    if (!existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { message: 'Installer not found' } });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="endpointx.exe"');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.sendFile(filePath);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // PUBLIC - assisted Android setup (installs + enables remote control over adb)
 router.get('/public/enable-control.bat', (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {

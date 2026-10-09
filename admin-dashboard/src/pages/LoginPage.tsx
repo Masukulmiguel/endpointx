@@ -65,13 +65,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-gray-950">
       <div
-        className={`w-full max-w-md transition-all duration-700 ease-out ${
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/fundo-login.png')" }}
+        aria-hidden="true"
+      />
+      <div className="absolute inset-0 bg-gray-950/70" aria-hidden="true" />
+      <div
+        className="absolute inset-0 bg-gradient-to-b from-gray-950/60 via-transparent to-gray-950/85"
+        aria-hidden="true"
+      />
+      <div
+        className={`relative z-10 w-full max-w-md transition-all duration-700 ease-out ${
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
         }`}
       >
-        <div className="bg-gray-900 rounded-2xl shadow-2xl border border-gray-800 p-8">
+        <div className="bg-gray-900/85 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-800 p-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4">
               <img src="/Logótipo_EndpointX_fundo_azul.png" alt="EndpointX" className="w-16 h-16 rounded-2xl object-contain" />
