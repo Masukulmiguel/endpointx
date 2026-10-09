@@ -1,4 +1,4 @@
-# EndpointX Agent Installer v1.2.3
+# EndpointX Agent Installer v1.3.0
 # Safe for: irm https://.../install.ps1?t=<ENROLL_TOKEN> | iex
 # Does NOT use exit/Read-Host/Set-Location (those break iex pipelines).
 
@@ -52,7 +52,7 @@ Write-Banner @(
     $hexLogo | ForEach-Object { @{ Text = $_.PadRight($hexWidth); Color = 'Cyan' } }
     @{ Text = ('-' * 46); Color = 'DarkCyan' }
     @{ Text = 'E N D P O I N T X'; Color = 'Cyan' }
-    @{ Text = 'AGENT INSTALLER  v1.2.3'; Color = 'Gray' }
+    @{ Text = 'AGENT INSTALLER  v1.3.0'; Color = 'Gray' }
     @{ Text = $serverUrl; Color = 'DarkGray' }
 ) 46
 Write-Host ""
@@ -143,7 +143,7 @@ server_url: $serverUrl/api
             Start-Process -FilePath $pythonCmd -ArgumentList "agent.py" -WorkingDirectory $agentDir -WindowStyle Hidden
         }
 
-        Write-Ok "Atualizacao concluida (v1.2.3)."
+        Write-Ok "Atualizacao concluida (v1.3.0)."
     } else {
         Write-Step "[1/5] Criando pasta $agentDir ..."
         New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
@@ -198,7 +198,7 @@ WshShell.Run "pythonw.exe agent.py", 0, False
         try { Copy-Item (Join-Path $agentDir "start_agent.vbs") $startup -Force } catch { }
 
         Start-Process -FilePath "wscript.exe" -ArgumentList "`"$(Join-Path $agentDir 'start_agent.vbs')`""
-        Write-Ok "Instalacao concluida (v1.2.3). Agent em background + auto-start no login."
+        Write-Ok "Instalacao concluida (v1.3.0). Agent em background + auto-start no login."
     }
 } catch {
     Write-Err "Falha na instalacao: $($_.Exception.Message)"

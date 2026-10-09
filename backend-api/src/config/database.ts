@@ -1254,7 +1254,7 @@ const seedDefaults = async (): Promise<void> => {
     );
   }
 
-  // v1.2.3: NetSentinel/NAC surface is on by default; flip legacy 'false'
+  // v1.3.0: NetSentinel/NAC surface is on by default; flip legacy 'false'
   // rows idempotently (never downgrades an explicit 'true').
   await pool.query(
     `INSERT INTO app_settings (key, value, description)

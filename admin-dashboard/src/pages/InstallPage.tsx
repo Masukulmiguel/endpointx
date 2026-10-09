@@ -34,7 +34,7 @@ export default function InstallPage() {
 
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-6">
         <p className="text-blue-400 text-sm">
-          Use este guia para conectar PCs e telemóveis da rede ao sistema EndpointX (v1.2.3).
+          Use este guia para conectar PCs e telemóveis da rede ao sistema EndpointX (v1.3.0).
         </p>
       </div>
 
@@ -172,7 +172,7 @@ export default function InstallPage() {
             Descarregar APK Android
           </a>
           <p className="text-gray-500 text-xs mt-2">
-            Android 8.0+ · v1.2.3 · assinado · ~1 MB · permissões de acessibilidade (controlo) e partilha de ecrã
+            Android 8.0+ · v1.3.0 · assinado · ~1 MB · permissões de acessibilidade (controlo) e partilha de ecrã
             (visualização). A app continua ativa em segundo plano com serviço persistente.
           </p>
           <p className="text-yellow-500/90 text-xs mt-2">

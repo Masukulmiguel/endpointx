@@ -137,7 +137,7 @@ Complete REST API documentation is available at [docs/api.md](docs/api.md).
 | POST    | `/api/commands`             | Create command           |
 | GET     | `/api/dashboard/overview`   | Dashboard statistics     |
 
-## Agent Installation (v1.2.0)
+## Agent Installation (v1.3.0)
 
 Every install command now carries an enrolment token (`?t=...`) that ties the
 device to your account. The scripts refuse to run without it (HTTP 403).
@@ -277,11 +277,11 @@ endpointx/
 
 ## Roadmap & Contributing
 
-We are building **v1.2.0** — reliable observability for endpoints (threshold alerting, notifications, metric retention, deeper HERMES).
+We are building **v1.3.0** — reliable observability for endpoints (threshold alerting, notifications, metric retention, deeper HERMES).
 
 | Document | Description |
 | -------- | ----------- |
-| [Roadmap](ROADMAP.md) | v1.2.0 milestones, status vs Zabbix-like tools, how to pick up tasks |
+| [Roadmap](ROADMAP.md) | v1.3.0 milestones, status vs Zabbix-like tools, how to pick up tasks |
 | [Contributing](CONTRIBUTING.md) | Dev setup, conventions, PR checklist |
 
 ## Documentation

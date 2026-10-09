@@ -235,7 +235,7 @@ export async function renderPrometheusMetrics(): Promise<string> {
   );
   families.push(
     gauge('endpointx_build_info', 'Build information for this EndpointX process.', [
-      { name: 'endpointx_build_info', labels: { version: process.env.npm_package_version || '1.2.0', node: process.version }, value: 1 },
+      { name: 'endpointx_build_info', labels: { version: process.env.npm_package_version || '1.3.0', node: process.version }, value: 1 },
     ])
   );
 

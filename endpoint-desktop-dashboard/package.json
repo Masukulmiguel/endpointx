@@ -1,7 +1,7 @@
 {
   "name": "endpointx-dashboard",
   "productName": "EndpointX Dashboard",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Consola de administracao do EndpointX para o PC do administrador",
   "main": "main.js",
   "author": "EndpointX",

@@ -225,7 +225,7 @@ python agent.py
 Os scripts públicos fazem download do agent, criam o `config.yaml` com o servidor/token
 automaticamente e registam o serviço (systemd no Linux, launchd no macOS).
 
-**v1.2.0 — token obrigatório:** cada comando inclui `?t=<ENROLL_TOKEN>`, o token de
+**v1.3.0 — token obrigatório:** cada comando inclui `?t=<ENROLL_TOKEN>`, o token de
 enrolamento da tua conta (o script devolve 403 sem ele). Copia o comando já completo —
 com o token — a partir da página **Install** do dashboard, ou gera o token com uma
 sessão admin:

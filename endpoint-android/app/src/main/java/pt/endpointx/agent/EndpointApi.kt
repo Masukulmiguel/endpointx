@@ -36,7 +36,7 @@ object EndpointApi {
             put("os_type", "android")
             put("device_type", "MOBILE")
             put("model", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
-            put("user_agent", "EndpointXAgentAndroid/1.2.0 (${Build.MODEL})")
+            put("user_agent", "EndpointXAgentAndroid/1.3.0 (${Build.MODEL})")
             put("source", "android_app")
             if (enrollToken.isNotEmpty()) put("enroll_token", enrollToken)
             val existing = Prefs.agentId(ctx)

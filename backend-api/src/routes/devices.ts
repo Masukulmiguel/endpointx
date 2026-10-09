@@ -1920,7 +1920,7 @@ async function syncMobileSoftware(deviceId: string, ua: string): Promise<void> {
   const browser = parseBrowserFromUA(ua);
   await query('DELETE FROM device_software WHERE device_id = $1', [deviceId]);
   const rows: Array<[string, string, string]> = [
-    ['EndpointX Mobile (PWA)', process.env.APP_VERSION || '1.2.0', 'EndpointX'],
+    ['EndpointX Mobile (PWA)', process.env.APP_VERSION || '1.3.0', 'EndpointX'],
   ];
   if (browser) rows.push([browser.name, browser.version, 'Web browser']);
   for (const [name, version, publisher] of rows) {
