@@ -779,6 +779,12 @@ const createInlineSchema = async (): Promise<void> => {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+    ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) NOT NULL DEFAULT 'new';
+    ALTER TABLE network_nodes ADD COLUMN IF NOT EXISTS enrollment_requested_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_network_nodes_created_by ON network_nodes(created_by);
+    CREATE INDEX IF NOT EXISTS idx_network_nodes_review_status ON network_nodes(review_status);
+
     CREATE TABLE IF NOT EXISTS nac_policies (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       name VARCHAR(150) NOT NULL,
@@ -1240,7 +1246,6 @@ const seedDefaults = async (): Promise<void> => {
     ['notifications_webhooks_enabled', 'true', 'Deliver outgoing webhooks for alerts'],
     ['hermes_daily_scan_hour', '3', 'Hour of day (UTC) for the scheduled HERMES scan'],
     ['hermes_cve_feed_enabled', 'true', 'Refresh the CVE knowledge base from NVD'],
-    ['netsentinel_enabled', 'false', 'Expose the NetSentinel/NAC surface (discovery + topology)'],
   ];
   for (const [key, value, desc] of v120Settings) {
     await pool.query(
@@ -1248,6 +1253,14 @@ const seedDefaults = async (): Promise<void> => {
       [key, value, desc]
     );
   }
+
+  // v1.2.3: NetSentinel/NAC surface is on by default; flip legacy 'false'
+  // rows idempotently (never downgrades an explicit 'true').
+  await pool.query(
+    `INSERT INTO app_settings (key, value, description)
+     VALUES ('netsentinel_enabled', 'true', 'Expose the NetSentinel/NAC surface (discovery + topology)')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value WHERE app_settings.value = 'false'`
+  );
 
   const result = await pool.query('SELECT COUNT(*) as count FROM roles');
   const count = parseInt(result.rows[0]?.count || '0', 10);

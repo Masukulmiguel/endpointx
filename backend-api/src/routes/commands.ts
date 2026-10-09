@@ -7,7 +7,7 @@ import { canAccessDevice, canSeeDevice, visibleDevicesSql } from '../utils/tenan
 
 const router = Router();
 
-const ALLOWED_COMMAND_TYPES = [
+export const ALLOWED_COMMAND_TYPES = [
   'reboot',
   'shutdown',
   'lock',
@@ -20,6 +20,7 @@ const ALLOWED_COMMAND_TYPES = [
   'isolate',
   'unisolate',
   'quarantine',
+  'network_discovery',
 ];
 
 // List commands
