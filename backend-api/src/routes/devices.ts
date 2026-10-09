@@ -11,6 +11,7 @@ import { JWT, requireAgentSecret } from '../config/constants';
 import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
 import { remoteSecretFor } from '../remote';
 import { onForensicCommandResult } from '../hermes/forensics';
+import { ingestReport } from '../services/discoveryService';
 import { createAlert } from '../services/alertService';
 import { broadcastEvent, emitToDevice } from '../websocket';
 import { fetchHeartbeatSeries, resolveInterval, resolveRange } from '../services/metrics';
@@ -1259,6 +1260,21 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
         errorMessage: errorStr,
       }).catch((err: Error) => {
         logger.error('Forensic result handling failed', { command_id, error: err.message });
+      });
+    }
+
+    // Discovery reports are ingested after the response so the agent is
+    // never blocked by node upserts / HERMES hooks (retrying the POST
+    // re-ingests idempotently - upserts are keyed by ip+mac).
+    if (cmdType.rows[0]?.command_type === 'network_discovery') {
+      ingestReport({
+        commandId: command_id,
+        deviceId: deviceResult.rows[0].id,
+        status: validStatus,
+        report: result ?? resultStr,
+        issuedBy: null,
+      }).catch((err: Error) => {
+        logger.error('Discovery ingest failed', { command_id, error: err.message });
       });
     }
   } catch (error) {

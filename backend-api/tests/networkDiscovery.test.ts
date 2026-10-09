@@ -13,6 +13,8 @@
  */
 import './testEnv';
 import assert from 'assert';
+import express from 'express';
+import http from 'http';
 import jwt from 'jsonwebtoken';
 import { JWT } from '../src/config/constants';
 
@@ -50,13 +52,34 @@ const setScripts = (next: ScriptedRow[]): void => {
   scripts.push(...next);
 };
 
-const respond = (sql: string) => {
+// Per-role permission rows for authenticate()'s loadRolePermissions query.
+// Keyed by role_id (the $1 param of the permissions JOIN query).
+const rolePermissions = new Map<string, Record<string, unknown>[]>();
+const setRolePermissions = (roleId: string, codes: string[]): void => {
+  rolePermissions.set(roleId, codes.map((code) => ({ code })));
+};
+
+// One-shot error injection: next SQL containing `match` throws once.
+let injectedError: { match: string; message: string } | null = null;
+const injectErrorOnce = (match: string, message = 'injected failure'): void => {
+  injectedError = { match, message };
+};
+
+const respond = (sql: string, params: unknown[] = []) => {
+  if (injectedError && sql.includes(injectedError.match)) {
+    const err = new Error(injectedError.message);
+    injectedError = null;
+    throw err;
+  }
+  if (sql.includes('FROM permissions')) {
+    const roleId = String(params[0] ?? '');
+    const rows = rolePermissions.get(roleId) ?? [];
+    return { rows, rowCount: rows.length };
+  }
   for (const s of scripts) {
     if (sql.includes(s.match)) return { rows: s.rows, rowCount: s.rows.length };
   }
-  return sql.includes('FROM permissions')
-    ? { rows: [{ code: 'network.view' }, { code: 'devices.view' }], rowCount: 2 }
-    : { rows: [], rowCount: 0 };
+  return { rows: [], rowCount: 0 };
 };
 
 /** Run a service call with SQL capturing on; returns the result + emitted SQL. */
@@ -75,7 +98,7 @@ async function captureCalls<T>(
 
 const record = (sql: string, params?: unknown[]) => {
   if (capturing) calls.push({ sql, params: params ?? [] });
-  return respond(sql);
+  return respond(sql, params ?? []);
 };
 
 class FakeClient {
@@ -433,6 +456,217 @@ async function main(): Promise<void> {
     assert.ok(upd.sql.includes('name'), upd.sql);
     assert.ok(!upd.sql.includes('node_type'), `must not touch node_type when not provided: ${upd.sql}`);
   });
+
+  // ---- Task 5: HTTP routes -------------------------------------------------
+  const { default: netsentinelRouter } = await import('../src/routes/netsentinel');
+  const { default: devicesRouter } = await import('../src/routes/devices');
+
+  const sessionToken = (id: string, roleId: string, permissions: string[]): string => {
+    setRolePermissions(roleId, permissions);
+    return jwt.sign(
+      { id, email: `${id}@test.local`, role_id: roleId, role_name: 'user', permissions },
+      JWT.ACCESS_SECRET,
+      { issuer: JWT.ISSUER, audience: JWT.AUDIENCE, expiresIn: '1h' }
+    );
+  };
+
+  const netToken = sessionToken('user-net', 'role-net', ['network.view']);
+  const manageToken = sessionToken('user-manage', 'role-manage', ['devices.manage']);
+  const noneToken = sessionToken('user-none', 'role-none', []);
+  const agentSecret = process.env.AGENT_SECRET || '';
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api/netsentinel', netsentinelRouter);
+  app.use('/api/devices', devicesRouter);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as { port: number }).port;
+  const base = `http://127.0.0.1:${port}`;
+
+  const post = (path: string, token: string | null, body: unknown, headers: Record<string, string> = {}) =>
+    fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+  const get = (path: string, token: string) =>
+    fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+
+  try {
+    await checkAsync('test_run_requires_network_view', async () => {
+      const res = await post('/api/netsentinel/discovery/run', noneToken, {});
+      assert.strictEqual(res.status, 403, `expected 403, got ${res.status}`);
+    });
+
+    await checkAsync('test_run_with_public_cidr_rejected', async () => {
+      const res = await post('/api/netsentinel/discovery/run', netToken, { cidr: '8.8.8.0/24' });
+      assert.strictEqual(res.status, 400, `expected 400, got ${res.status}`);
+    });
+
+    await checkAsync('test_run_no_online_agent_conflict_409', async () => {
+      setScripts([
+        s('FROM devices WHERE id =', [{ id: 'dev-offline', created_by: 'user-net', status: 'offline', agent_id: 'agt-1' }]),
+      ]);
+      const res = await post('/api/netsentinel/discovery/run', netToken, { device_id: 'dev-offline' });
+      assert.strictEqual(res.status, 409, `expected 409, got ${res.status}`);
+    });
+
+    await checkAsync('test_run_duplicate_running_409', async () => {
+      setScripts([
+        s('FROM devices WHERE id =', [{ id: 'dev-1', created_by: 'user-net', status: 'online', agent_id: 'agt-1' }]),
+        s("status = 'running'", [{ id: 'run-live' }]),
+      ]);
+      const res = await post('/api/netsentinel/discovery/run', netToken, { device_id: 'dev-1' });
+      assert.strictEqual(res.status, 409, `expected 409, got ${res.status}`);
+    });
+
+    await checkAsync('test_run_enqueues_command_and_returns_ids', async () => {
+      setScripts([
+        s('FROM devices WHERE id =', [{ id: 'dev-1', created_by: 'user-net', status: 'online', agent_id: 'agt-1' }]),
+        s("status = 'running'", []),
+      ]);
+      capturing = true;
+      let res: Response;
+      try {
+        res = await post('/api/netsentinel/discovery/run', netToken, { device_id: 'dev-1', cidr: '192.168.1.0/24' });
+      } finally {
+        capturing = false;
+      }
+      assert.strictEqual(res.status, 201, `expected 201, got ${res.status}`);
+      const body = (await res.json()) as { success: boolean; data: { run_id: string; command_id: string; device_id: string } };
+      assert.strictEqual(body.data.command_id, body.data.run_id, 'run id must equal command id');
+      assert.strictEqual(body.data.device_id, 'dev-1');
+      const sqls = calls.map((c) => c.sql).join('\n');
+      assert.ok(sqls.includes('INSERT INTO agent_commands'), 'missing agent_commands insert');
+      assert.ok(sqls.includes('network_discovery'), 'command must be network_discovery');
+      assert.ok(sqls.includes('INSERT INTO network_discovery_runs'), 'missing run insert');
+      const cmdInsert = calls.find((c) => c.sql.includes('INSERT INTO agent_commands'));
+      assert.ok(cmdInsert && cmdInsert.params.includes(body.data.command_id), 'command id must match run id in insert params');
+    });
+
+    await checkAsync('test_nodes_list_and_detail_and_review_and_identify', async () => {
+      setScripts([
+        s('COUNT(*)', [{ total: 1 }]),
+        s('FROM network_nodes n', [{ id: 'n-http', ip_address: '192.168.1.7', created_by: 'user-manage' }]),
+        s('FROM network_nodes n WHERE', [{ id: 'n-http', ip_address: '192.168.1.7', created_by: 'user-manage' }]),
+        s('UPDATE network_nodes SET review_status', [{ id: 'n-http' }]),
+        s('UPDATE network_nodes SET name', [{ id: 'n-http' }]),
+      ]);
+      const listRes = await get('/api/netsentinel/discovery/nodes', netToken);
+      assert.strictEqual(listRes.status, 200, `list: expected 200, got ${listRes.status}`);
+      const listBody = (await listRes.json()) as { data: { nodes: unknown[]; pagination: { total: number } } };
+      assert.ok(Array.isArray(listBody.data.nodes), 'list must return nodes array');
+      assert.strictEqual(listBody.data.pagination.total, 1);
+
+      const detailRes = await get('/api/netsentinel/discovery/nodes/n-http', netToken);
+      assert.strictEqual(detailRes.status, 200, `detail: expected 200, got ${detailRes.status}`);
+
+      capturing = true;
+      let knownRes: Response;
+      let idRes: Response;
+      try {
+        knownRes = await post('/api/netsentinel/discovery/nodes/n-http/mark-known', netToken, {});
+        idRes = await post('/api/netsentinel/discovery/nodes/n-http/identify', netToken, { name: 'Reception-PC' });
+      } finally {
+        capturing = false;
+      }
+      assert.strictEqual(knownRes.status, 204, `mark-known: expected 204, got ${knownRes.status}`);
+      assert.strictEqual(idRes.status, 204, `identify: expected 204, got ${idRes.status}`);
+      const reviewUpd = calls.find((c) => c.sql.includes("review_status = 'known'") || (c.sql.startsWith('UPDATE network_nodes SET review_status') && c.params.includes('known')));
+      assert.ok(reviewUpd, `mark-known must persist review_status=known: ${JSON.stringify(calls.map((c) => c.sql))}`);
+
+      setScripts([s('FROM network_nodes n WHERE', [])]);
+      const missingRes = await get('/api/netsentinel/discovery/nodes/n-missing', netToken);
+      assert.strictEqual(missingRes.status, 404, `missing node: expected 404, got ${missingRes.status}`);
+    });
+
+    await checkAsync('test_enroll_request_requires_devices_manage', async () => {
+      const denied = await post('/api/netsentinel/discovery/nodes/n-http/enroll-request', netToken, {});
+      assert.strictEqual(denied.status, 403, `expected 403 for network.view-only, got ${denied.status}`);
+
+      setScripts([s('FROM network_nodes WHERE id =', [{ id: 'n-http', created_by: 'user-manage' }])]);
+      capturing = true;
+      let okRes: Response;
+      try {
+        okRes = await post('/api/netsentinel/discovery/nodes/n-http/enroll-request', manageToken, {});
+      } finally {
+        capturing = false;
+      }
+      assert.strictEqual(okRes.status, 200, `expected 200, got ${okRes.status}`);
+      const body = (await okRes.json()) as { data: { token: string; commands: { macos: string } } };
+      assert.ok(body.data.commands.macos.includes('install-macos.sh?t='), body.data.commands.macos);
+    });
+
+    await checkAsync('test_command_result_dispatches_ingest_for_network_discovery', async () => {
+      setScripts([
+        s('FROM devices WHERE agent_id', [{ id: 'dev-agent', created_by: 'user-net' }]),
+        s('SELECT command_type FROM agent_commands', [{ command_type: 'network_discovery' }]),
+        s('FROM devices WHERE id =', [{ id: 'dev-agent', created_by: 'user-net' }]),
+        s('mac_address IS NULL', []),
+        s('FROM hermes_assets', []),
+      ]);
+      const mark = calls.length;
+      capturing = true;
+      let res: Response;
+      try {
+        res = await post(
+          '/api/devices/command-result',
+          null,
+          {
+            agent_id: 'agt-live',
+            command_id: 'cmd-ingest-1',
+            status: 'completed',
+            result: { subnets: ['192.168.1.0/24'], truncated: false, hosts: [{ ip: '192.168.1.60', mac: null, hostname: 'host60', os_estimate: 'Linux', rtt_ms: 3 }] },
+          },
+          { 'X-Agent-Secret': agentSecret }
+        );
+        assert.strictEqual(res.status, 200, `expected immediate 200, got ${res.status}`);
+        await new Promise((r) => setTimeout(r, 80));
+      } finally {
+        capturing = false;
+      }
+      const sqls = calls.slice(mark).map((c) => c.sql).join('\n');
+      assert.ok(sqls.includes('UPDATE agent_commands'), 'must record the command result');
+      assert.ok(sqls.includes('INSERT INTO network_nodes'), 'ingest must write the discovered node');
+      assert.ok(sqls.includes('UPDATE network_discovery_runs'), 'ingest must finalize the run');
+    });
+
+    await checkAsync('test_ingest_error_does_not_fail_command_result', async () => {
+      setScripts([
+        s('FROM devices WHERE agent_id', [{ id: 'dev-agent', created_by: 'user-net' }]),
+        s('SELECT command_type FROM agent_commands', [{ command_type: 'network_discovery' }]),
+        s('FROM devices WHERE id =', [{ id: 'dev-agent', created_by: 'user-net' }]),
+        s('mac_address IS NULL', []),
+        s('FROM hermes_assets', []),
+      ]);
+      injectErrorOnce('INSERT INTO network_nodes', 'disk full');
+      const res = await post(
+        '/api/devices/command-result',
+        null,
+        {
+          agent_id: 'agt-live',
+          command_id: 'cmd-ingest-2',
+          status: 'completed',
+          result: { subnets: [], truncated: false, hosts: [{ ip: '192.168.1.61', mac: null, hostname: null, os_estimate: 'Unknown', rtt_ms: null }] },
+        },
+        { 'X-Agent-Secret': agentSecret }
+      );
+      assert.strictEqual(res.status, 200, `expected 200 despite ingest error, got ${res.status}`);
+      const body = (await res.json()) as { success: boolean };
+      assert.strictEqual(body.success, true);
+      await new Promise((r) => setTimeout(r, 80));
+    });
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+    });
+  }
 
   console.log(failed === 0 ? '\nALL PASS' : `\n${failed} FAILED`);
   process.exitCode = failed === 0 ? 0 : 1;

@@ -6,6 +6,13 @@ import { requirePermission } from '../middleware/rbac';
 import { canAccessDevice, canViewUnownedDevices, moderateDeviceAccess, visibleDeviceRowsSql, visibleDevicesSql } from '../utils/tenant';
 import logger from '../utils/logger';
 import { discoverUnknownAsset } from './hermes';
+import {
+  listNodes,
+  getNode,
+  setNodeReview,
+  identifyNode,
+  requestEnrollment,
+} from '../services/discoveryService';
 
 const router = Router();
 
@@ -533,103 +540,86 @@ async function sweepRange(
   return { probed, found };
 }
 
-// Network discovery (from authorized inventory + optional active sweep)
+// Network discovery: enqueue an agent-side scan (parameters.cidr optional).
+// Run id == command id (one less join); ingest happens fire-and-forget in
+// the command-result hook (devices.ts).
+function isValidCidr(cidr: string): boolean {
+  if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(cidr)) return false;
+  const [ip, prefix] = cidr.split('/');
+  const octets = ip.split('.').map(Number);
+  if (octets.some((o) => o > 255)) return false;
+  const p = Number(prefix);
+  if (p < 8 || p > 30) return false;
+  const [a, b] = octets;
+  const isPrivate =
+    a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168);
+  return isPrivate;
+}
+
 router.post('/discovery/run', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const runId = newId();
-    const source = (req.body?.source as string) || 'agent_inventory';
-    const range = typeof req.body?.range === 'string' ? req.body.range.trim() : '';
+    const deviceId = typeof req.body?.device_id === 'string' ? req.body.device_id : null;
+    const cidr = typeof req.body?.cidr === 'string' ? req.body.cidr.trim() : '';
 
-    const hosts = range ? expandCidr(range) : [];
-    if (range && !hosts) {
+    if (cidr && !isValidCidr(cidr)) {
       res.status(400).json({
         success: false,
-        error: { message: 'Invalid range: use a CIDR from /24 to /30 (e.g. 192.168.1.0/24)' },
+        error: { message: 'Invalid cidr: use a private RFC1918 CIDR like 192.168.1.0/24' },
       });
       return;
     }
 
-    await query(
-      `INSERT INTO network_discovery_runs (id, source, status, started_by, started_at) VALUES ($1, $2, 'running', $3, NOW())`,
-      [runId, range ? 'active_sweep' : source, req.user?.id || null]
-    );
-
-    let nodes = 0;
-    let newUnknowns = 0;
-
-    // Sync authorized devices into network_nodes
-    const devices = await query(`SELECT id, hostname, ip_address, mac_address, device_type, vlan, location, status FROM devices`);
-    const knownIps = new Set<string>();
-    for (const d of devices.rows) {
-      if (d.ip_address) knownIps.add(String(d.ip_address));
-      const nodeType = d.device_type && d.device_type !== 'UNKNOWN' ? d.device_type : 'ENDPOINT';
-      const existing = await query(`SELECT id FROM network_nodes WHERE device_id = $1`, [d.id]);
-      if (existing.rows.length === 0) {
-        await query(
-          `INSERT INTO network_nodes (id, node_type, name, hostname, ip_address, mac_address, parent_id, vlan, site, source, device_id, first_seen, last_seen, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $10, NOW(), NOW(), NOW())`,
-          [newId(), nodeType, d.hostname, d.hostname, d.ip_address, d.mac_address, d.vlan, d.location, source, d.id]
-        );
-        nodes++;
-      } else {
-        await query(
-          `UPDATE network_nodes SET last_seen = NOW(), updated_at = NOW(), ip_address = $1, vlan = $2 WHERE device_id = $3`,
-          [d.ip_address, d.vlan, d.id]
-        );
-        nodes++;
+    let runnerId: string | null = deviceId;
+    if (deviceId) {
+      if (!(await canAccessDevice(req.user, deviceId))) {
+        res.status(404).json({ success: false, error: { message: 'Device not found' } });
+        return;
       }
-      if (d.device_type === 'UNKNOWN' && d.status) newUnknowns++;
-    }
-
-    // Active sweep: probe hosts that are not registered endpoints, and let
-    // HERMES register whatever responds as an unknown asset.
-    let probed = 0;
-    let discovered = 0;
-    if (hosts && hosts.length > 0) {
-      const sweep = await sweepRange(hosts, knownIps, async (ip, port) => {
-        await discoverUnknownAsset(ip);
-        const exists = await query(
-          `SELECT id FROM network_nodes WHERE device_id IS NULL AND ip_address = $1`,
-          [ip]
-        );
-        if (exists.rows.length === 0) {
-          await query(
-            `INSERT INTO network_nodes (id, node_type, name, hostname, ip_address, mac_address, parent_id, vlan, site, source, device_id, metadata, first_seen, last_seen, updated_at)
-             VALUES ($1, 'UNKNOWN', $2, $2, $3, NULL, NULL, NULL, NULL, 'active_sweep', NULL, $4, NOW(), NOW(), NOW())`,
-            [newId(), ip, ip, JSON.stringify({ open_port: port, discovered_by: 'tcp_probe' })]
-          );
-        } else {
-          await query(`UPDATE network_nodes SET last_seen = NOW(), updated_at = NOW() WHERE device_id IS NULL AND ip_address = $1`, [ip]);
-        }
-        newUnknowns++;
-        logger.info('NetSentinel sweep found unknown host', { ip, port });
-      });
-      probed = sweep.probed;
-      discovered = sweep.found;
-    }
-
-    // Create VLAN grouping nodes if missing
-    const vlans = await query(`SELECT DISTINCT vlan FROM devices WHERE vlan IS NOT NULL AND vlan <> ''`);
-    for (const v of vlans.rows) {
-      const exists = await query(`SELECT id FROM network_nodes WHERE node_type = 'VLAN' AND vlan = $1`, [v.vlan]);
-      if (exists.rows.length === 0) {
-        await query(
-          `INSERT INTO network_nodes (id, node_type, name, vlan, source, metadata, first_seen, last_seen, updated_at)
-           VALUES ($1, 'VLAN', $2, $2, $3, '{}', NOW(), NOW(), NOW())`,
-          [newId(), `VLAN ${v.vlan}`, source]
-        );
-        nodes++;
+      const d = await query(`SELECT id, status, agent_id FROM devices WHERE id = $1`, [deviceId]);
+      if (d.rows.length === 0) {
+        res.status(404).json({ success: false, error: { message: 'Device not found' } });
+        return;
       }
+      if (d.rows[0].status !== 'online' || !d.rows[0].agent_id) {
+        res.status(409).json({ success: false, error: { message: 'Device is offline or not an agent' } });
+        return;
+      }
+    } else {
+      const d = await query(
+        `SELECT id FROM devices WHERE status = 'online' AND agent_id IS NOT NULL ORDER BY registered_at ASC LIMIT 1`
+      );
+      if (d.rows.length === 0) {
+        res.status(409).json({ success: false, error: { message: 'No online agent available to run discovery' } });
+        return;
+      }
+      runnerId = d.rows[0].id as string;
     }
 
-    const stats = { nodes_synced: nodes, unknown: newUnknowns, range, probed, discovered };
-    await query(
-      `UPDATE network_discovery_runs SET status = 'completed', completed_at = NOW(), stats = $1 WHERE id = $2`,
-      [JSON.stringify(stats), runId]
+    const running = await query(
+      `SELECT r.id FROM network_discovery_runs r
+        WHERE r.status = 'running'
+          AND r.id IN (SELECT id FROM agent_commands WHERE device_id = $1 AND command_type = 'network_discovery')`,
+      [runnerId]
     );
-    await audit('network_discovery_run', req, 'discovery', runId, stats);
+    if (running.rows.length > 0) {
+      res.status(409).json({ success: false, error: { message: 'A discovery run is already in progress for this device' } });
+      return;
+    }
 
-    res.json({ success: true, data: { id: runId, nodes_synced: nodes, unknown: newUnknowns, probed, discovered, status: 'completed' } });
+    const commandId = newId();
+    await query(
+      `INSERT INTO network_discovery_runs (id, source, status, started_by, started_at) VALUES ($1, 'agent', 'running', $2, NOW())`,
+      [commandId, req.user?.id || null]
+    );
+    await query(
+      `INSERT INTO agent_commands (id, device_id, command_type, parameters, status, issued_by) VALUES ($1, $2, 'network_discovery', $3, 'pending', $4)`,
+      [commandId, runnerId, JSON.stringify({ cidr: cidr || null }), req.user?.id || null]
+    );
+    await audit('network_discovery_run', req, 'discovery', commandId, { device_id: runnerId, cidr });
+
+    res.status(201).json({ success: true, data: { run_id: commandId, command_id: commandId, device_id: runnerId } });
   } catch (error) {
     next(error);
   }
@@ -639,6 +629,85 @@ router.get('/discovery', authenticate, requirePermission('network.view'), async 
   try {
     const runs = await query(`SELECT * FROM network_discovery_runs ORDER BY started_at DESC LIMIT 20`);
     res.json({ success: true, data: { runs: runs.rows } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Discovered nodes (tenant-scoped via network_nodes.created_by)
+router.get('/discovery/nodes', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(String(req.query.page)) || 1;
+    const limit = parseInt(String(req.query.limit)) || 20;
+    const search = req.query.search ? String(req.query.search) : undefined;
+    const review_status = req.query.review_status ? String(req.query.review_status) : undefined;
+    const data = await listNodes({ page, limit, search, review_status, user: { id: req.user!.id, permissions: req.user!.permissions || [] } });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/discovery/nodes/:id', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const node = await getNode(req.params.id, { id: req.user!.id, permissions: req.user!.permissions || [] });
+    if (!node) {
+      res.status(404).json({ success: false, error: { message: 'Node not found' } });
+      return;
+    }
+    res.json({ success: true, data: node });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/nodes/:id/mark-known', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const ok = await setNodeReview(req.params.id, 'known', { id: req.user!.id, permissions: req.user!.permissions || [] });
+    if (!ok) {
+      res.status(404).json({ success: false, error: { message: 'Node not found' } });
+      return;
+    }
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/nodes/:id/ignore', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const ok = await setNodeReview(req.params.id, 'ignored', { id: req.user!.id, permissions: req.user!.permissions || [] });
+    if (!ok) {
+      res.status(404).json({ success: false, error: { message: 'Node not found' } });
+      return;
+    }
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/nodes/:id/identify', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const ok = await identifyNode(req.params.id, { name: req.body?.name, node_type: req.body?.node_type }, { id: req.user!.id, permissions: req.user!.permissions || [] });
+    if (!ok) {
+      res.status(404).json({ success: false, error: { message: 'Node not found' } });
+      return;
+    }
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/nodes/:id/enroll-request', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = await requestEnrollment(req.params.id, { id: req.user!.id, email: req.user!.email || '' });
+    if (!result) {
+      res.status(404).json({ success: false, error: { message: 'Node not found' } });
+      return;
+    }
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
