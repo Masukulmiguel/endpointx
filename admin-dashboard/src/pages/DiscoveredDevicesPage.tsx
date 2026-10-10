@@ -65,6 +65,12 @@ interface OnlineDevice {
 
 type EnrollCommandSet = { windows: string; linux: string; macos: string };
 
+// The POST /discovery/run response carries newId()'s 32-hex string (no
+// dashes), while ids read back from the uuid columns come out in canonical
+// dashed form - strict === would never match and the page polled forever.
+const sameId = (a: string | null | undefined, b: string | null | undefined): boolean =>
+  !!a && !!b && a.replace(/-/g, '') === b.replace(/-/g, '');
+
 interface EnrollResultRow {
   ip: string;
   ok: boolean;
@@ -126,7 +132,7 @@ export default function DiscoveredDevicesPage() {
 
   useEffect(() => {
     if (!running || !activeRunId || !Array.isArray(runsData?.runs)) return;
-    const run = runsData!.runs.find((r) => r.id === activeRunId);
+    const run = runsData!.runs.find((r) => sameId(r.id, activeRunId));
     if (!run) return;
     if (run.status === 'completed') {
       setRunning(false);

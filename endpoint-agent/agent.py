@@ -46,9 +46,35 @@ from system_info import (
     get_system_uptime,
 )
 
-from discovery import scan, validate_requested_cidr, get_local_subnets
-
 logger = logging.getLogger("endpointx-agent")
+
+
+def _fetch_missing_discovery(target: Optional[str] = None) -> None:
+    """Best-effort recovery for updates shipped without discovery.py.
+
+    Agents older than the discovery release update with a file list that does
+    not include discovery.py; without this fallback the restarted agent would
+    die on ``from discovery import ...`` and never come back online.
+    """
+    if target is None:
+        target = os.path.join(os.path.dirname(os.path.abspath(__file__)), "discovery.py")
+    try:
+        import urllib.request
+        url = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent/discovery.py"
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            content = resp.read()
+        with open(target, "wb") as f:
+            f.write(content)
+        logger.warning("Recovered missing discovery.py -> %s", target)
+    except Exception as exc:
+        logger.error("Failed to recover missing discovery.py: %s", exc)
+
+
+try:
+    from discovery import scan, validate_requested_cidr, get_local_subnets
+except ImportError:
+    _fetch_missing_discovery()
+    from discovery import scan, validate_requested_cidr, get_local_subnets
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
@@ -89,6 +115,57 @@ def _safe(fn, default):
         return default
 
 
+# Self-update file list. discovery.py must come before agent.py: agent.py
+# imports it at module level, so landing the new agent.py on an install that
+# does not have discovery.py yet would crash the restart (ModuleNotFoundError).
+CORE_UPDATE_FILES = ["discovery.py", "agent.py", "system_info.py"]
+
+
+def auto_update_files() -> list[str]:
+    """Files pulled by the heartbeat-driven self-update."""
+    return CORE_UPDATE_FILES + ["remote.py", "forensics.py", "requirements.txt"]
+
+
+def command_update_files() -> list[str]:
+    """Files pulled by an explicit update_agent command."""
+    return CORE_UPDATE_FILES + ["forensics.py", "config.yaml"]
+
+
+def download_update_files(
+    base_url: str,
+    files: list[str],
+    agent_dir: str,
+    tamper: Any = None,
+) -> list[str]:
+    """Download update files into agent_dir and re-anchor tamper protection.
+
+    Returns the list of files actually written. The tamper anchor (backup +
+    stored hash) is refreshed only when at least one file changed, so the
+    periodic integrity check accepts the update instead of restoring the
+    pre-update backup and silently reverting it.
+    """
+    import urllib.request
+
+    updated: list[str] = []
+    for fname in files:
+        url = f"{base_url.rstrip('/')}/{fname}"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content = resp.read()
+            target = os.path.join(agent_dir, fname)
+            with open(target, "wb") as f:
+                f.write(content)
+            updated.append(fname)
+            logger.info("Updated %s", fname)
+        except Exception as exc:
+            logger.warning("Failed to update %s: %s", fname, exc)
+
+    if updated and tamper is not None:
+        tamper.refresh_after_update()
+    return updated
+
+
 def _get_platform_paths() -> dict[str, Path]:
     """Return platform-specific paths for lock, backup, and hash files."""
     if SYSTEM == "Windows":
@@ -97,11 +174,18 @@ def _get_platform_paths() -> dict[str, Path]:
         base = Path.home() / "endpointx-agent"
     else:
         base = Path("/opt/endpointx-agent")
+    agent_dir = Path(os.path.dirname(os.path.abspath(__file__)))
     return {
         "base": base,
-        "lock": base / "agent.lock",
-        "backup": base / "agent.py.bak",
-        "hash": base / "agent.sha256",
+        # Lock, backup and hash live next to agent.py: they must be writable
+        # by the account the agent runs as (installs are unelevated).
+        # ProgramData copies created during an elevated install are read-only
+        # for that account, so re-anchoring after a legitimate update failed
+        # with Permission denied, the integrity check reverted the update and
+        # the stale lock broke single-instance enforcement.
+        "lock": agent_dir / "agent.lock",
+        "backup": agent_dir / "agent.py.bak",
+        "hash": agent_dir / "agent.sha256",
     }
 
 
@@ -251,6 +335,19 @@ class TamperProtection:
         except (OSError, shutil.Error) as exc:
             logger.error("Failed to restore agent from backup: %s", exc)
             return False
+
+    def refresh_after_update(self) -> None:
+        """Re-anchor backup + stored hash after a legitimate self-update.
+
+        Without this the periodic integrity check sees the new agent.py as
+        tampering and restores the pre-update backup, silently reverting
+        every auto-update.
+        """
+        if self.backup_agent():
+            current_hash = self.compute_hash()
+            if current_hash:
+                self._initial_hash = current_hash
+                self._store_hash(current_hash)
 
     def report_tamper(self, tamper_type: str, details: Optional[dict] = None) -> None:
         """Send a tamper alert to the server."""
@@ -756,25 +853,9 @@ class EndpointAgent:
     def _auto_update(self) -> None:
         """Download latest agent files from GitHub and restart."""
         try:
-            import urllib.request
             base_url = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
             agent_dir = os.path.dirname(os.path.abspath(__file__))
-            files_to_update = ["agent.py", "system_info.py", "remote.py", "forensics.py", "requirements.txt"]
-            updated = []
-
-            for fname in files_to_update:
-                url = f"{base_url}/{fname}"
-                try:
-                    req = urllib.request.Request(url)
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        content = resp.read()
-                        target = os.path.join(agent_dir, fname)
-                        with open(target, "wb") as f:
-                            f.write(content)
-                        updated.append(fname)
-                        logger.info("Auto-updated %s", fname)
-                except Exception as exc:
-                    logger.warning("Failed to auto-update %s: %s", fname, exc)
+            updated = download_update_files(base_url, auto_update_files(), agent_dir, self._tamper)
 
             if updated:
                 if "requirements.txt" in updated:
@@ -1060,29 +1141,10 @@ class EndpointAgent:
             return {"message": "No update URL provided"}
         logger.info("Agent update requested from %s", update_url)
         try:
-            import urllib.request
-            import tempfile
-            import shutil
-
             base_url = update_url.rstrip("/")
             agent_dir = os.path.dirname(os.path.abspath(__file__))
 
-            files_to_update = ["agent.py", "system_info.py", "forensics.py", "config.yaml"]
-            updated = []
-
-            for fname in files_to_update:
-                url = f"{base_url}/{fname}"
-                try:
-                    req = urllib.request.Request(url)
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        content = resp.read()
-                        target = os.path.join(agent_dir, fname)
-                        with open(target, "wb") as f:
-                            f.write(content)
-                        updated.append(fname)
-                        logger.info("Updated %s", fname)
-                except Exception as exc:
-                    logger.warning("Failed to update %s: %s", fname, exc)
+            updated = download_update_files(base_url, command_update_files(), agent_dir, self._tamper)
 
             if updated:
                 logger.info("Update complete. Restarting agent...")

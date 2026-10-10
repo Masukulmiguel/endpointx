@@ -1273,6 +1273,7 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
         status: validStatus,
         report: result ?? resultStr,
         issuedBy: null,
+        errorMessage: errorStr,
       }).catch((err: Error) => {
         logger.error('Discovery ingest failed', { command_id, error: err.message });
       });
@@ -1575,6 +1576,7 @@ New-Item -ItemType Directory -Force -Path "C:\\endpointx\\endpoint-agent" | Out-
 
 Write-Host "[2/5] Downloading agent files..." -ForegroundColor Green
 $base = "${serverUrl.replace('/api', '')}"
+Invoke-WebRequest -Uri "$base/download/agent/discovery.py" -OutFile "C:\\endpointx\\endpoint-agent\\discovery.py"
 Invoke-WebRequest -Uri "$base/download/agent/agent.py" -OutFile "C:\\endpointx\\endpoint-agent\\agent.py"
 Invoke-WebRequest -Uri "$base/download/agent/system_info.py" -OutFile "C:\\endpointx\\endpoint-agent\\system_info.py"
 Invoke-WebRequest -Uri "$base/download/agent/requirements.txt" -OutFile "C:\\endpointx\\endpoint-agent\\requirements.txt"
@@ -1630,7 +1632,7 @@ Read-Host "Press Enter to close"`;
 router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params;
-    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'forensics.py', 'requirements.txt', 'crypto_utils.py'];
+    const allowedFiles = ['agent.py', 'discovery.py', 'system_info.py', 'remote.py', 'forensics.py', 'requirements.txt', 'crypto_utils.py'];
 
     if (!allowedFiles.includes(filename)) {
       res.status(404).json({ success: false, error: { message: 'File not found' } });
@@ -1737,7 +1739,7 @@ router.get('/public/install-macos.sh', requireEnrollToken, async (req: AuthReque
 router.get('/download/public/:filename', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.params;
-    const allowedFiles = ['agent.py', 'system_info.py', 'remote.py', 'forensics.py', 'requirements.txt', 'crypto_utils.py'];
+    const allowedFiles = ['agent.py', 'discovery.py', 'system_info.py', 'remote.py', 'forensics.py', 'requirements.txt', 'crypto_utils.py'];
 
     if (!allowedFiles.includes(filename)) {
       res.status(404).json({ success: false, error: { message: 'File not found' } });

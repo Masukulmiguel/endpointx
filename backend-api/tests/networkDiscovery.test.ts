@@ -209,6 +209,7 @@ async function main(): Promise<void> {
     identifyNode,
     requestEnrollment,
     getNode,
+    failStaleDiscoveryRuns,
   } = await import('../src/services/discoveryService');
 
   const s = (match: string, rows: Record<string, unknown>[] = []): ScriptedRow => ({ match, rows });
@@ -513,6 +514,46 @@ async function main(): Promise<void> {
     );
   });
 
+  // ---- Task 7 (bugfix): agent error_message passthrough + run watchdog ----
+  await checkAsync('test_ingest_failed_prefers_agent_error_message', async () => {
+    setScripts([s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }])]);
+    const { calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-em',
+        deviceId: 'dev-runner',
+        status: 'failed',
+        report: null,
+        errorMessage: 'Unknown command type: network_discovery',
+        issuedBy: 'user-1',
+      })
+    );
+    const fin = emitted.find((c) => c.sql.includes(RUN_FINALIZE));
+    assert.ok(fin, 'run must be finalized');
+    assert.ok(
+      fin.params.includes('Unknown command type: network_discovery'),
+      `finalize must carry the agent error_message: ${JSON.stringify(fin.params)}`
+    );
+  });
+
+  await checkAsync('test_fail_stale_discovery_runs_emits_watchdog_sql', async () => {
+    const { calls: emitted } = await captureCalls(() => failStaleDiscoveryRuns());
+    const expire = emitted.find((c) => c.sql.includes('UPDATE agent_commands'));
+    assert.ok(expire, 'watchdog must expire stale network_discovery commands');
+    assert.ok(expire.sql.includes("'network_discovery'"), `expiry must target network_discovery only: ${expire.sql}`);
+    assert.ok(expire.sql.includes("'pending'") && expire.sql.includes("'processing'"), `expiry must cover pending+processing: ${expire.sql}`);
+    assert.ok(/INTERVAL '5 minutes'/.test(expire.sql), `expiry must use the 5 minute window: ${expire.sql}`);
+
+    const fin = emitted.find((c) => c.sql.includes('UPDATE network_discovery_runs'));
+    assert.ok(fin, 'watchdog must finalize runs whose command failed');
+    assert.ok(fin.sql.includes('FROM agent_commands'), `finalize must join agent_commands: ${fin.sql}`);
+    assert.ok(fin.sql.includes("'running'"), `finalize must only touch running runs: ${fin.sql}`);
+    assert.ok(fin.sql.includes("c.status = 'failed'"), `finalize must key off failed commands: ${fin.sql}`);
+    assert.ok(
+      fin.params.some((p) => typeof p === 'string' && p.includes('hosts_alive')),
+      `finalize must write zero stats: ${JSON.stringify(fin.params)}`
+    );
+  });
+
   // ---- Task 5: HTTP routes -------------------------------------------------
   const { default: netsentinelRouter } = await import('../src/routes/netsentinel');
   const { default: devicesRouter } = await import('../src/routes/devices');
@@ -716,6 +757,60 @@ async function main(): Promise<void> {
       const body = (await res.json()) as { success: boolean };
       assert.strictEqual(body.success, true);
       await new Promise((r) => setTimeout(r, 80));
+    });
+
+    await checkAsync('test_command_result_failed_forwards_error_message_to_run', async () => {
+      setScripts([
+        s('FROM devices WHERE agent_id', [{ id: 'dev-agent', created_by: 'user-net' }]),
+        s('SELECT command_type FROM agent_commands', [{ command_type: 'network_discovery' }]),
+      ]);
+      const mark = calls.length;
+      capturing = true;
+      let res: Response;
+      try {
+        res = await post(
+          '/api/devices/command-result',
+          null,
+          {
+            agent_id: 'agt-live',
+            command_id: 'cmd-fail-em',
+            status: 'failed',
+            error_message: 'Unknown command type: network_discovery',
+          },
+          { 'X-Agent-Secret': agentSecret }
+        );
+        assert.strictEqual(res.status, 200, `expected immediate 200, got ${res.status}`);
+        await new Promise((r) => setTimeout(r, 80));
+      } finally {
+        capturing = false;
+      }
+      const fin = calls.slice(mark).find((c) => c.sql.includes('UPDATE network_discovery_runs'));
+      assert.ok(fin, 'failed result must finalize the run');
+      assert.ok(
+        fin.params.includes('Unknown command type: network_discovery'),
+        `run error_message must come from the agent: ${JSON.stringify(fin.params)}`
+      );
+    });
+
+    await checkAsync('test_get_discovery_runs_runs_watchdog_first', async () => {
+      const mark = calls.length;
+      capturing = true;
+      let res: Response;
+      try {
+        res = await get('/api/netsentinel/discovery', netToken);
+        assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+      } finally {
+        capturing = false;
+      }
+      const sqls = calls.slice(mark).map((c) => c.sql);
+      assert.ok(
+        sqls.some((s) => s.includes('UPDATE agent_commands') && s.includes("'network_discovery'")),
+        'GET /discovery must expire stale discovery commands before listing'
+      );
+      assert.ok(
+        sqls.some((s) => s.includes('UPDATE network_discovery_runs') && s.includes('FROM agent_commands')),
+        'GET /discovery must finalize runs whose command failed before listing'
+      );
     });
   } finally {
     await new Promise<void>((resolve) => {

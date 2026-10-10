@@ -132,6 +132,7 @@ echo "  Config created"
 # Download agent files
 echo "[6/7] Downloading agent files..."
 BASE_URL="${SERVER_URL}/api"
+curl -fsSL "${BASE_URL}/download/public/discovery.py" -o "$INSTALL_DIR/discovery.py"
 curl -fsSL "${BASE_URL}/download/public/agent.py" -o "$INSTALL_DIR/agent.py"
 curl -fsSL "${BASE_URL}/download/public/system_info.py" -o "$INSTALL_DIR/system_info.py"
 curl -fsSL "${BASE_URL}/download/public/remote.py" -o "$INSTALL_DIR/remote.py" || true

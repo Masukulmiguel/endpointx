@@ -12,6 +12,7 @@ import {
   setNodeReview,
   identifyNode,
   requestEnrollment,
+  failStaleDiscoveryRuns,
 } from '../services/discoveryService';
 
 const router = Router();
@@ -627,6 +628,7 @@ router.post('/discovery/run', authenticate, requirePermission('network.view'), a
 
 router.get('/discovery', authenticate, requirePermission('network.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    await failStaleDiscoveryRuns();
     const runs = await query(`SELECT * FROM network_discovery_runs ORDER BY started_at DESC LIMIT 20`);
     res.json({ success: true, data: { runs: runs.rows } });
   } catch (error) {

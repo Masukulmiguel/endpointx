@@ -75,6 +75,7 @@ Start-Sleep -Seconds 1
 
 Write-Host "[2/3] Baixando atualizacoes..." -ForegroundColor Green
 try {
+    Invoke-WebRequest -Uri "$github/discovery.py" -OutFile "$agentDir\discovery.py" -UseBasicParsing -TimeoutSec 60
     Invoke-WebRequest -Uri "$github/agent.py" -OutFile "$agentDir\agent.py" -UseBasicParsing -TimeoutSec 60
     Invoke-WebRequest -Uri "$github/system_info.py" -OutFile "$agentDir\system_info.py" -UseBasicParsing -TimeoutSec 60
     try { Invoke-WebRequest -Uri "$github/remote.py" -OutFile "$agentDir\remote.py" -UseBasicParsing -TimeoutSec 60 } catch { }

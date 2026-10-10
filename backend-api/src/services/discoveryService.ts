@@ -128,11 +128,14 @@ export async function ingestReport(opts: {
   status: 'completed' | 'failed';
   report: unknown;
   issuedBy: string | null;
+  errorMessage?: string | null;
 }): Promise<IngestStats> {
-  const { commandId, deviceId, status, report } = opts;
+  const { commandId, deviceId, status, report, errorMessage } = opts;
   try {
     if (status === 'failed') {
-      const msg = report instanceof Error ? report.message : typeof report === 'string' ? report : 'agent reported failure';
+      const msg =
+        (errorMessage && String(errorMessage).trim()) ||
+        (report instanceof Error ? report.message : typeof report === 'string' ? report : 'agent reported failure');
       const stats = ZERO_STATS();
       await finalizeRun(commandId, 'failed', stats, msg);
       return stats;
@@ -182,6 +185,33 @@ export async function ingestReport(opts: {
     }
     return stats;
   }
+}
+
+// Watchdog for interactive discovery runs: a run row is only finalized when
+// the agent reports a result, so an agent that claims a command and dies (or
+// never claims it at all) would leave the dashboard polling forever. Expire
+// stale network_discovery commands, then finalize every run whose command has
+// failed (sweep, expiry, ingest error) - idempotent, safe on every list call.
+export async function failStaleDiscoveryRuns(): Promise<void> {
+  await query(
+    `UPDATE agent_commands
+        SET status = 'failed', error_message = 'agent did not respond', completed_at = NOW()
+      WHERE command_type = 'network_discovery'
+        AND status IN ('pending', 'processing')
+        AND created_at < NOW() - INTERVAL '5 minutes'`
+  );
+  await query(
+    `UPDATE network_discovery_runs r
+        SET status = 'failed',
+            stats = $1,
+            error_message = COALESCE(NULLIF(c.error_message, ''), 'agent command failed'),
+            completed_at = NOW()
+       FROM agent_commands c
+      WHERE c.id = r.id
+        AND r.status = 'running'
+        AND c.status = 'failed'`,
+    [JSON.stringify(ZERO_STATS())]
+  );
 }
 
 function nodeVisibilitySql(user: ServiceUser): { sql: string; params: unknown[] } {

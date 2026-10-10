@@ -110,13 +110,12 @@ try {
         Stop-AgentProcesses
 
         Write-Step "[2/4] Baixando atualizacoes..."
+        Get-File "$github/discovery.py" (Join-Path $agentDir "discovery.py")
         Get-File "$github/agent.py" (Join-Path $agentDir "agent.py")
         Get-File "$github/system_info.py" (Join-Path $agentDir "system_info.py")
         try { Get-File "$github/remote.py" (Join-Path $agentDir "remote.py") } catch { }
         try { Get-File "$github/forensics.py" (Join-Path $agentDir "forensics.py") } catch { }
-        if (Test-Path "$github/requirements.txt") {
-            Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt")
-        }
+        try { Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt") } catch { }
 
         $reqPath = Join-Path $agentDir "requirements.txt"
         if ((Test-Path $reqPath) -and $pythonCmd) {
@@ -149,6 +148,7 @@ server_url: $serverUrl/api
         New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
 
         Write-Step "[2/5] Baixando agent..."
+        Get-File "$github/discovery.py" (Join-Path $agentDir "discovery.py")
         Get-File "$github/agent.py" (Join-Path $agentDir "agent.py")
         Get-File "$github/system_info.py" (Join-Path $agentDir "system_info.py")
         Get-File "$github/requirements.txt" (Join-Path $agentDir "requirements.txt")
