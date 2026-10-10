@@ -27,6 +27,7 @@
           <a href="#how" data-i18n="nav.how">Como funciona</a>
           <a href="#features" data-i18n="nav.features">Funcionalidades</a>
           <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="#downloads" data-i18n="nav.downloads">Downloads</a>
           <a href="#docs" data-i18n="nav.docs">Documentação</a>
         </nav>
         <div class="header-actions">
@@ -54,7 +55,7 @@
               EndpointX é uma plataforma defensiva de gestão de identidade, acesso e endpoints - com inventário em tempo real, políticas de conformidade e o motor de inteligência de segurança HERMES.
             </p>
             <div class="hero-cta">
-              <a class="btn btn-download" href="/api/devices/public/endpointx.exe" download title="endpointx.exe">
+              <a class="btn btn-download" href="#downloads">
                 <img src="/Ícone_favicon.png" alt="" width="20" height="20" aria-hidden="true" />
                 <span data-i18n="hero.download">Descarregar para PC</span>
               </a>
@@ -67,6 +68,48 @@
               <span data-i18n="hero.trust3">Open source no GitHub</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section id="downloads">
+        <div class="container">
+          <div class="section-head">
+            <h2 data-i18n="dl.title">Descarregue o agente</h2>
+            <p data-i18n="dl.sub">Escolha o seu sistema. Android e iPhone entram por aqui mesmo; no computador, o token de registo activa o agente.</p>
+          </div>
+          <div class="dl-grid">
+            <article class="card dl-card">
+              <div class="dl-os"><span class="dl-os-mark" aria-hidden="true">⊞</span><h3 data-i18n="dl.win.t">Windows</h3></div>
+              <p data-i18n="dl.win.d">PowerShell no PC. Cria o serviço, arranca com o login e liga o endpoint à sua conta.</p>
+              <pre class="dl-cmd" tabindex="0"><code>irm https://endpointx.onrender.com/api/devices/public/install.ps1?t=SEU_TOKEN | iex</code></pre>
+              <a class="btn btn-primary btn-block" href="/register.html" data-i18n="dl.tokenCta">Criar conta para obter o token</a>
+            </article>
+            <article class="card dl-card">
+              <div class="dl-os"><span class="dl-os-mark" aria-hidden="true">⌘</span><h3 data-i18n="dl.mac.t">macOS</h3></div>
+              <p data-i18n="dl.mac.d">Terminal. Instala o agente e regista-o com launchd — sem .app nem installer.</p>
+              <pre class="dl-cmd" tabindex="0"><code>curl -fsSL https://endpointx.onrender.com/api/devices/public/install-macos.sh?t=SEU_TOKEN | bash</code></pre>
+              <a class="btn btn-primary btn-block" href="/register.html" data-i18n="dl.tokenCta">Criar conta para obter o token</a>
+            </article>
+            <article class="card dl-card">
+              <div class="dl-os"><span class="dl-os-mark" aria-hidden="true">❯</span><h3 data-i18n="dl.linux.t">Linux</h3></div>
+              <p data-i18n="dl.linux.d">Qualquer distro com systemd. O script instala as dependências e regista o serviço.</p>
+              <pre class="dl-cmd" tabindex="0"><code>curl -fsSL https://endpointx.onrender.com/api/devices/public/install-linux.sh?t=SEU_TOKEN | sudo bash</code></pre>
+              <a class="btn btn-primary btn-block" href="/register.html" data-i18n="dl.tokenCta">Criar conta para obter o token</a>
+            </article>
+            <article class="card dl-card dl-card-direct">
+              <div class="dl-os"><span class="dl-os-mark" aria-hidden="true">▲</span><h3 data-i18n="dl.android.t">Android</h3></div>
+              <p data-i18n="dl.android.d">APK de ~1 MB para Android 8.0+. Precisa de acessibilidade e partilha de ecrã para gestão remota — o guia mostra como.</p>
+              <a class="btn btn-download btn-block" href="/api/devices/public/endpointx-agent.apk" download>
+                <span data-i18n="dl.android.btn">Descarregar APK</span>
+              </a>
+            </article>
+            <article class="card dl-card dl-card-direct">
+              <div class="dl-os"><span class="dl-os-mark" aria-hidden="true">●</span><h3 data-i18n="dl.ios.t">iPhone / iPad</h3></div>
+              <p data-i18n="dl.ios.d">Registo pela PWA: abre no Safari, cria a app no ecrã principal. Sem loja, sem perfil de gestão.</p>
+              <a class="btn btn-ghost btn-block" href="/api/devices/public/install-mobile.html" data-i18n="dl.ios.btn">Abrir registo móvel</a>
+            </article>
+          </div>
+          <p class="dl-token-note" data-i18n="dl.tokenNote">O token é pessoal. Crie a conta e copie o comando já com o token no painel — os scripts recusam-se a correr sem ele.</p>
         </div>
       </section>
 
@@ -350,6 +393,7 @@
           </div>
           <div>
             <h4 data-i18n="footer.product">Produto</h4>
+            <a href="#downloads" data-i18n="nav.downloads">Downloads</a>
             <a href="#features" data-i18n="nav.features">Funcionalidades</a>
             <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
             <a href="/login.html" data-i18n="nav.login">Entrar</a>
