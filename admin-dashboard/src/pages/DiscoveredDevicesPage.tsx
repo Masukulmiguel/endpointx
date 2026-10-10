@@ -13,7 +13,8 @@ import {
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../i18n';
-import api from '../services/api';
+import api, { API_ORIGIN } from '../services/api';
+import { QRCodeSVG } from 'qrcode.react';
 import SearchInput from '../components/SearchInput';
 import Pagination from '../components/Pagination';
 import DataTable from '../components/DataTable';
@@ -76,7 +77,14 @@ interface EnrollResultRow {
   ok: boolean;
   error?: string;
   commands?: EnrollCommandSet;
+  token?: string;
 }
+
+// The enroll API also mints a mobile token: install-mobile.html opened with
+// ?t= registers the phone and hands over the APK. The desktop commands alone
+// are useless on a phone, so every enroll modal surfaces this link too.
+const mobileEnrollUrl = (token: string): string =>
+  `${API_ORIGIN}/api/devices/public/mobile?t=${token}`;
 
 function reviewBadgeClasses(status: string): string {
   if (status === 'known') {
@@ -255,7 +263,7 @@ export default function DiscoveredDevicesPage() {
         const res = (await api.request(`/netsentinel/discovery/nodes/${id}/enroll-request`, {
           method: 'POST',
         })) as { data?: { token?: string; commands?: EnrollCommandSet } };
-        results.push({ ip, ok: true, commands: res?.data?.commands });
+        results.push({ ip, ok: true, commands: res?.data?.commands, token: res?.data?.token });
       } catch (err) {
         results.push({ ip, ok: false, error: err instanceof Error ? err.message : t('common.error') });
       }
@@ -275,6 +283,7 @@ export default function DiscoveredDevicesPage() {
   const [identifying, setIdentifying] = useState(false);
   const [enrollNode, setEnrollNode] = useState<DiscoveryNode | null>(null);
   const [enrollResult, setEnrollResult] = useState<EnrollCommandSet | null>(null);
+  const [enrollToken, setEnrollToken] = useState<string | null>(null);
   const [enrollingSingle, setEnrollingSingle] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -304,12 +313,14 @@ export default function DiscoveredDevicesPage() {
   const openEnroll = async (node: DiscoveryNode) => {
     setEnrollNode(node);
     setEnrollResult(null);
+    setEnrollToken(null);
     setEnrollingSingle(true);
     try {
       const res = (await api.request(`/netsentinel/discovery/nodes/${node.id}/enroll-request`, {
         method: 'POST',
-      })) as { data?: { commands?: EnrollCommandSet } };
+      })) as { data?: { token?: string; commands?: EnrollCommandSet } };
       setEnrollResult(res?.data?.commands ?? null);
+      setEnrollToken(res?.data?.token ?? null);
       refetchNodes();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : t('common.error'));
@@ -857,6 +868,43 @@ export default function DiscoveredDevicesPage() {
                     {enrollResult.macos}
                   </pre>
                 </div>
+                {enrollToken && (
+                  <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t('discovery.modal.enrollMobileTitle')}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('discovery.modal.enrollMobileHint')}
+                    </p>
+                    <div className="flex items-start gap-4">
+                      <div className="shrink-0 rounded-lg bg-white p-1.5 border border-gray-200 dark:border-gray-700">
+                        <QRCodeSVG value={mobileEnrollUrl(enrollToken)} size={112} />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="relative">
+                          <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
+                            {mobileEnrollUrl(enrollToken)}
+                          </pre>
+                          <button
+                            onClick={() => copyWindowsCommand(mobileEnrollUrl(enrollToken))}
+                            className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            title={t('discovery.modal.copy')}
+                          >
+                            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <a
+                          href={mobileEnrollUrl(enrollToken)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {t('discovery.modal.enrollMobileOpen')}
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex justify-end pt-2">
@@ -898,6 +946,35 @@ export default function DiscoveredDevicesPage() {
                     {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
+                {firstSuccess.token && (
+                  <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t('discovery.modal.enrollMobileTitle')}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('discovery.modal.enrollMobileHint')}
+                    </p>
+                    <div className="flex items-start gap-4">
+                      <div className="shrink-0 rounded-lg bg-white p-1.5 border border-gray-200 dark:border-gray-700">
+                        <QRCodeSVG value={mobileEnrollUrl(firstSuccess.token)} size={112} />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="relative">
+                          <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
+                            {mobileEnrollUrl(firstSuccess.token)}
+                          </pre>
+                          <button
+                            onClick={() => copyWindowsCommand(mobileEnrollUrl(firstSuccess.token!))}
+                            className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            title={t('discovery.modal.copy')}
+                          >
+                            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null;
           })()}

@@ -316,6 +316,9 @@ const pt: Dict = {
   'discovery.modal.copy': 'Copiar',
   'discovery.modal.enrollResultsTitle': 'Resultados da Inscrição',
   'discovery.modal.enrollOk': 'Pedido enviado',
+  'discovery.modal.enrollMobileTitle': 'Telemóvel',
+  'discovery.modal.enrollMobileHint': 'Envie este link ou QR code à pessoa — abre a página de inscrição no telemóvel para instalar o agente:',
+  'discovery.modal.enrollMobileOpen': 'Abrir página',
 };
 
 const en: Dict = {
@@ -630,6 +633,9 @@ const en: Dict = {
   'discovery.modal.copy': 'Copy',
   'discovery.modal.enrollResultsTitle': 'Enrollment Results',
   'discovery.modal.enrollOk': 'Request sent',
+  'discovery.modal.enrollMobileTitle': 'Mobile',
+  'discovery.modal.enrollMobileHint': 'Send this link or QR code to the person — it opens the enrollment page on the phone to install the agent:',
+  'discovery.modal.enrollMobileOpen': 'Open page',
 };
 
 const dicts: Record<Locale, Dict> = { pt, en };
