@@ -98,7 +98,7 @@ open http://localhost:5173
 
 ### First-run Admin Account
 
-The admin account (`admin@endpointx.local`) is created on first startup from the
+The admin account  is created on first startup from the
 `SEED_ADMIN_PASSWORD` environment variable (min 12 chars). No default password is
 stored in this repository — see [.env.example](.env.example).
 
