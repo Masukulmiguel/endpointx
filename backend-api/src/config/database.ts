@@ -1160,6 +1160,23 @@ export const SEED_ROLE_PERMISSIONS: Record<string, string[]> = {
 };
 
 // Seed default data
+
+// Bootstrap admin: honoured on every boot while SEED_ADMIN_PASSWORD is set, so
+// operators can create the first admin on a database that was seeded before the
+// env var existed (the role/user block below only runs on empty installs).
+const ensureBootstrapAdmin = async (): Promise<void> => {
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword || adminPassword.length < 12) return;
+  const bcrypt = require('bcryptjs');
+  const hash = bcrypt.hashSync(adminPassword, 12);
+  await pool.query(
+    `INSERT INTO users (email, username, full_name, password_hash, role_id)
+     SELECT 'admin@endpointx.local', 'admin', 'System Administrator', $1, id FROM roles WHERE name = 'admin'
+     ON CONFLICT (email) DO NOTHING`,
+    [hash]
+  );
+};
+
 const seedDefaults = async (): Promise<void> => {
   // Full permission catalog (safe for existing DBs)
   const allPerms: Array<[string, string, string, string]> = [
@@ -1264,7 +1281,10 @@ const seedDefaults = async (): Promise<void> => {
 
   const result = await pool.query('SELECT COUNT(*) as count FROM roles');
   const count = parseInt(result.rows[0]?.count || '0', 10);
-  if (count > 0) return;
+  if (count > 0) {
+    await ensureBootstrapAdmin();
+    return;
+  }
 
   const client = await pool.connect();
   try {
@@ -1324,17 +1344,8 @@ const seedDefaults = async (): Promise<void> => {
     );
 
     // Admin account - password comes exclusively from SEED_ADMIN_PASSWORD (never hardcoded)
-    const adminPassword = process.env.SEED_ADMIN_PASSWORD;
-    if (adminPassword && adminPassword.length >= 12) {
-      const bcrypt = require('bcryptjs');
-      const hash = bcrypt.hashSync(adminPassword, 12);
-      await client.query(
-        `INSERT INTO users (email, username, full_name, password_hash, role_id)
-         SELECT 'admin@endpointx.local', 'admin', 'System Administrator', $1, id FROM roles WHERE name = 'admin'
-         ON CONFLICT (email) DO NOTHING`,
-        [hash]
-      );
-    } else {
+    await ensureBootstrapAdmin();
+    if (!process.env.SEED_ADMIN_PASSWORD || process.env.SEED_ADMIN_PASSWORD.length < 12) {
       logger.warn('SEED_ADMIN_PASSWORD not set (min 12 chars) - skipping admin account creation');
     }
 
