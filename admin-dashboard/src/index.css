@@ -25,7 +25,7 @@
 
 @layer components {
   .card {
-    @apply bg-white border border-slate-200 rounded-xl p-6 shadow-sm shadow-slate-200/60;
+    @apply bg-white border border-slate-200 rounded-xl p-5 shadow-sm shadow-slate-200/60;
   }
   .card-hover {
     @apply card hover:border-primary-300 hover:shadow-md hover:shadow-slate-200 transition-all duration-200;
@@ -87,6 +87,6 @@
     @apply text-white bg-primary-500 border border-primary-500 shadow-lg shadow-primary-500/30;
   }
   .sidebar-group {
-    @apply px-3 pt-5 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500;
+    @apply px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500;
   }
 }

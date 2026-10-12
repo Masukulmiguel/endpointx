@@ -68,12 +68,12 @@ function formatTimeAgo(dateStr: string): string {
 
 function SkeletonStatCard() {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm shadow-slate-200/60 animate-pulse">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm shadow-slate-200/60 animate-pulse">
       <div className="flex items-start justify-between gap-3">
         <div className="w-20 h-3 rounded bg-slate-200" />
-        <div className="w-10 h-10 rounded-lg bg-slate-200" />
+        <div className="w-9 h-9 rounded-lg bg-slate-200" />
       </div>
-      <div className="mt-3 w-16 h-8 rounded bg-slate-200" />
+      <div className="mt-2.5 w-16 h-7 rounded bg-slate-200" />
       <div className="mt-2 w-14 h-3 rounded bg-slate-200" />
     </div>
   );
@@ -137,7 +137,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
         {loading && !overview
           ? Array.from({ length: 6 }).map((_, i) => <SkeletonStatCard key={i} />)
           : statCards.map((stat) => (

@@ -44,14 +44,14 @@ export default function StatCard({ title, value, change, icon: Icon, color = 'pr
   const isPositive = change >= 0;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm shadow-slate-200/60 hover:border-slate-300 transition-colors">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm shadow-slate-200/60 hover:border-slate-300 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-medium leading-5 text-slate-500">{title}</p>
-        <div className={`flex shrink-0 items-center justify-center w-10 h-10 rounded-lg ring-1 ${colors.bg} ${colors.ring}`}>
-          <Icon className={`w-5 h-5 ${colors.icon}`} />
+        <div className={`flex shrink-0 items-center justify-center w-9 h-9 rounded-lg ring-1 ${colors.bg} ${colors.ring}`}>
+          <Icon className={`w-[18px] h-[18px] ${colors.icon}`} />
         </div>
       </div>
-      <p className="mt-3 text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+      <p className="mt-2.5 text-2xl font-bold tracking-tight text-slate-900">{value}</p>
       <div className={`mt-1 flex items-center gap-1 text-xs font-semibold ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
         {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
         {isPositive ? '+' : ''}{change}%

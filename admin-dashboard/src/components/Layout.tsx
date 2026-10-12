@@ -212,12 +212,12 @@ export default function Layout() {
       )}
 
       <aside
-        className={`fixed top-0 left-0 z-50 h-full w-[260px] bg-navy-900 border-r border-navy-800 transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed top-0 left-0 z-50 h-full w-[260px] bg-navy-900 border-r border-navy-800 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex items-center gap-3 px-6 h-16 border-b border-white/5">
-          <img src="/Logótipo_EndpointX_fundo_branco.png" alt="EndpointX" className="w-9 h-9 rounded-lg object-contain" />
+        <div className="flex items-center gap-3 px-5 h-16 shrink-0 border-b border-white/5">
+          <img src="/Logótipo_EndpointX_fundo_branco.png" alt="EndpointX" className="h-10 w-auto object-contain" />
           <button
             onClick={() => setSidebarOpen(false)}
             className="ml-auto p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/5 lg:hidden"
@@ -226,14 +226,14 @@ export default function Layout() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-2 px-3">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-1 px-3">
           {navGroups.map((group) => {
             const items = visibleNavItems.filter((item) => group.paths.includes(item.path));
             if (items.length === 0) return null;
             return (
               <div key={group.key}>
                 <p className="sidebar-group">{group.label[locale]}</p>
-                <ul className="space-y-1">
+                <ul className="space-y-0.5">
                   {items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(item.path);
@@ -241,14 +241,14 @@ export default function Layout() {
                       <li key={item.path}>
                         <Link
                           to={item.path}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium border transition-all duration-200 ${
+                          className={`flex items-center gap-2.5 px-3 py-1 rounded-lg text-sm font-medium border transition-all duration-200 ${
                             active
                               ? 'bg-primary-500 text-white border-primary-500 shadow-lg shadow-primary-500/30'
                               : 'text-slate-400 border-transparent hover:text-white hover:bg-white/5'
                           }`}
                         >
                           <Icon
-                            className={`w-5 h-5 flex-shrink-0 ${
+                            className={`w-[18px] h-[18px] flex-shrink-0 ${
                               active ? 'text-white' : 'text-slate-500'
                             }`}
                           />
@@ -263,7 +263,7 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-white/5 p-4">
+        <div className="border-t border-white/5 p-3 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-primary-500/20 flex items-center justify-center text-primary-300 font-semibold text-sm">
               {(() => {
