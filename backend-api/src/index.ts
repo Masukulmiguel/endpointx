@@ -75,6 +75,10 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.use((req, _res, next) => {
   markRequest('dbg_req_post_mw', `${req.method} ${req.url} ${new Date().toISOString()}`);
   next();
