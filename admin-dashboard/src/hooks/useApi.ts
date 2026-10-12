@@ -76,9 +76,23 @@ export function useApi<T = unknown>(
   useEffect(() => {
     if (!refreshInterval || refreshInterval <= 0) return;
     const id = setInterval(() => {
-      fetchData(true);
+      // Background tabs skip the request entirely: polling a hidden page
+      // spends the server's outbound bandwidth budget on data nobody sees.
+      if (!document.hidden) {
+        fetchData(true);
+      }
     }, refreshInterval);
-    return () => clearInterval(id);
+    // Fetch immediately when the tab comes back so data is not stale.
+    const onVisibility = () => {
+      if (!document.hidden) {
+        fetchData(true);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchData, refreshInterval]);
 
   return { data, loading, error, refetch: fetchData };

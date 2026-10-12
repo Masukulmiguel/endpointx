@@ -2,6 +2,11 @@ FROM node:20 AS build
 
 WORKDIR /app
 
+# Build-time API origin (Render passes ARG-matching env vars during build).
+# Falls back to the hardcoded default in services/api.ts when unset.
+ARG VITE_API_ORIGIN
+ENV VITE_API_ORIGIN=${VITE_API_ORIGIN}
+
 # Build context is repo root
 COPY admin-dashboard/package.json ./
 

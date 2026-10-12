@@ -1,10 +1,15 @@
-const API_BASE = window.location.hostname === 'localhost' 
-  ? '/api' 
-  : 'https://endpointx.onrender.com/api';
+// Set VITE_API_ORIGIN at build time when the API moves to another host
+// (e.g. a fresh hosting workspace) — no code change needed for a migration.
+const RESOLVED_API_ORIGIN =
+  (import.meta.env.VITE_API_ORIGIN as string | undefined) || 'https://endpointx.onrender.com';
+
+const API_BASE = window.location.hostname === 'localhost'
+  ? '/api'
+  : `${RESOLVED_API_ORIGIN}/api`;
 
 // Production origin - install commands run on remote machines, so they must
 // always point at the deployed server (never the local dev proxy).
-export const API_ORIGIN = 'https://endpointx.onrender.com';
+export const API_ORIGIN = RESOLVED_API_ORIGIN;
 
 function friendlyErrorMessage(raw: string, status: number, retryAfter?: number): string {
   if (status === 429) {

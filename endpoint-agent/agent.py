@@ -819,7 +819,12 @@ class EndpointAgent:
         dashboard could sit unnoticed for up to 60s and look like it did
         nothing. This lightweight poll delivers commands in about 3 seconds.
         """
-        interval = float(self.config.get("command_poll_interval", 3) or 3)
+        # 15s default, not 3s: each poll costs an HTTP response on the server's
+        # outbound bandwidth budget (5GB/month on the free hosting tier), and at
+        # 3s a small fleet alone can exhaust it. Commands still arrive within
+        # seconds of the heartbeat's own claims; override per-install via
+        # command_poll_interval in config.yaml if low latency is needed.
+        interval = float(self.config.get("command_poll_interval", 15) or 15)
         logger.info("Command poll loop starting (every %.0fs)", interval)
         while self._running and not _SHUTDOWN_REQUESTED:
             sleep_for = interval
