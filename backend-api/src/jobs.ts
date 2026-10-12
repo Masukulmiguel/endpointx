@@ -262,10 +262,12 @@ function rawProbe(port: number): Promise<string> {
 
 async function selfProbe(): Promise<void> {
   const port = parseInt(process.env.PORT || '3001', 10);
+  const publicBase = (process.env.API_HOST || 'https://endpointx.onrender.com').replace(/\/+$/, '');
+  const publicOrigin = /^https?:\/\//.test(publicBase) ? publicBase : `https://${publicBase}`;
   const [local, alt, publik, raw] = await Promise.all([
     probe(`http://127.0.0.1:${port}/health`),
     probe('http://127.0.0.1:10000/health'),
-    probe('https://endpointx.onrender.com/health'),
+    probe(`${publicOrigin}/health`),
     rawProbe(port),
   ]);
   const payload = JSON.stringify({ at: new Date().toISOString(), local, alt, public: publik, raw });

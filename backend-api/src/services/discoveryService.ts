@@ -357,7 +357,8 @@ export async function requestEnrollment(
     [id]
   );
 
-  const API = `https://${process.env.API_HOST || 'endpointx.onrender.com'}`;
+  const host = (process.env.API_HOST || 'endpointx.onrender.com').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const API = `https://${host}`;
   return {
     token,
     commands: {

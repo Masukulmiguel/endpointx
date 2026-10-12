@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { API_ORIGIN } from '../services/api';
 
 interface DeviceStatusEvent {
   device_id: string;
@@ -71,7 +72,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const token = localStorage.getItem('access_token');
     if (!token) return;
 
-    const newSocket = io(window.location.hostname === 'localhost' ? window.location.origin : 'https://endpointx.onrender.com', {
+    const newSocket = io(window.location.hostname === 'localhost' ? window.location.origin : API_ORIGIN, {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,

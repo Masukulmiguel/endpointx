@@ -1,7 +1,7 @@
 // Set VITE_API_ORIGIN at build time when the API moves to another host
 // (e.g. a fresh hosting workspace) — no code change needed for a migration.
 const RESOLVED_API_ORIGIN =
-  (import.meta.env.VITE_API_ORIGIN as string | undefined) || 'https://endpointx.onrender.com';
+  (import.meta.env.VITE_API_ORIGIN as string | undefined) || 'https://endpointx-api-5ypc.onrender.com';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? '/api'

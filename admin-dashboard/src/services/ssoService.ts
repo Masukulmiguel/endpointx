@@ -1,6 +1,8 @@
+import { API_ORIGIN } from './api';
+
 const API_BASE = window.location.hostname === 'localhost'
   ? '/api'
-  : 'https://endpointx.onrender.com/api';
+  : `${API_ORIGIN}/api`;
 
 export interface SSOProvider {
   id: string;

@@ -10,6 +10,7 @@ import {
   MousePointer2,
   Loader2,
 } from 'lucide-react';
+import { API_ORIGIN } from '../services/api';
 
 type Phase = 'idle' | 'connecting' | 'ready' | 'streaming' | 'offline' | 'error';
 
@@ -22,11 +23,11 @@ interface MonitorInfo {
 const REMOTE_PATH = '/remote';
 
 function remoteUrl(): string {
-  const origin =
+  const base =
     window.location.hostname === 'localhost'
       ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
-      : 'wss://endpointx.onrender.com';
-  return `${origin}${REMOTE_PATH}`;
+      : API_ORIGIN.replace(/^http/, 'ws');
+  return `${base}${REMOTE_PATH}`;
 }
 
 const BUTTONS: Record<number, 'left' | 'middle' | 'right'> = {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Shield, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../i18n';
+import { API_ORIGIN } from '../services/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -175,7 +176,7 @@ export default function LoginPage() {
             </div>
 
             <div className="flex items-center justify-end">
-              <a href="https://endpointx.onrender.com/forgot-password.html" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
+              <a href={`${API_ORIGIN}/forgot-password.html`} className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
                 {t('login.forgotPassword') || 'Forgot password?'}
               </a>
             </div>
@@ -200,7 +201,7 @@ export default function LoginPage() {
             by Masukulu Miguel
           </p>
           <p className="mt-3 text-center text-xs">
-            <a href="https://endpointx.onrender.com/register" className="text-blue-400 hover:text-blue-300 transition-colors">
+            <a href={`${API_ORIGIN}/register`} className="text-blue-400 hover:text-blue-300 transition-colors">
               {t('login.createAccount')}
             </a>
           </p>
