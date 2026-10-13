@@ -5,9 +5,45 @@
 $serverUrl = "##SERVER_URL##"
 $agentSecret = "##AGENT_SECRET##"
 $enrollToken = "##ENROLL_TOKEN##"
+$consentMode = "##CONSENT_MODE##"
 $agentDir = "C:\endpointx\endpoint-agent"
 $github = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
 $ErrorActionPreference = "Continue"
+
+# Consentimento nativo: pedido de instalacao criado na consola e ainda sem
+# decisao web - pergunta ao utilizador antes de instalar qualquer coisa.
+# (Nao usa exit/Read-Host - quebram pipelines irm|iex; usa return.)
+if ($consentMode -eq "1") {
+    Write-Host ""
+    Write-Host "  Este computador foi detetado na rede pelo EndpointX." -ForegroundColor Yellow
+    $choice = $null
+    try {
+        Add-Type -AssemblyName PresentationFramework
+        $r = [System.Windows.MessageBox]::Show(
+            "O administrador da rede pediu autorizacao para instalar o agente EndpointX neste computador ($env:COMPUTERNAME).`n`nO agente recolhe metricas de hardware, rede e software para gestao e seguranca do equipamento.`n`nAutoriza a instalacao?",
+            "EndpointX - Pedido de instalacao",
+            "YesNo", "Question")
+        $choice = if ($r -eq "Yes") { "authorize" } else { "refuse" }
+    } catch {
+        try {
+            $wshell = New-Object -ComObject WScript.Shell
+            $r = $wshell.Popup("O administrador da rede pediu autorizacao para instalar o agente EndpointX neste computador. Autoriza a instalacao?", 0, "EndpointX - Pedido de instalacao", 4 + 32)
+            $choice = if ($r -eq 6) { "authorize" } else { "refuse" }
+        } catch {
+            $choice = "refuse"
+        }
+    }
+    try {
+        Invoke-RestMethod -Uri "$serverUrl/api/enroll/decision" -Method Post -ContentType "application/json" -Body (@{ token = $enrollToken; decision = $choice } | ConvertTo-Json) -TimeoutSec 15 | Out-Null
+    } catch { }
+    if ($choice -ne "authorize") {
+        Write-Host "  Instalacao recusada. Nada foi instalado neste computador." -ForegroundColor Red
+        Write-Host ""
+        return
+    }
+    Write-Host "  Consentimento registado. A instalar o agente..." -ForegroundColor Cyan
+    Write-Host ""
+}
 
 function Write-Step($msg) { Write-Host $msg -ForegroundColor Green }
 function Write-Info($msg) { Write-Host $msg -ForegroundColor Yellow }

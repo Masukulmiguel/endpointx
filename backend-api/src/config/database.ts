@@ -785,6 +785,31 @@ const createInlineSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_network_nodes_created_by ON network_nodes(created_by);
     CREATE INDEX IF NOT EXISTS idx_network_nodes_review_status ON network_nodes(review_status);
 
+    CREATE TABLE IF NOT EXISTS installation_requests (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      node_id UUID NOT NULL REFERENCES network_nodes(id) ON DELETE CASCADE,
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      requested_by UUID REFERENCES users(id),
+      status VARCHAR(30) NOT NULL DEFAULT 'pending',
+      invite_token VARCHAR(64) UNIQUE NOT NULL,
+      install_jti VARCHAR(64) UNIQUE,
+      os_hint VARCHAR(60),
+      decision VARCHAR(20),
+      decision_channel VARCHAR(20),
+      delivered_at TIMESTAMPTZ,
+      decided_at TIMESTAMPTZ,
+      installing_at TIMESTAMPTZ,
+      installed_at TIMESTAMPTZ,
+      integrated_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ NOT NULL,
+      error_message TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_installation_requests_status ON installation_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_installation_requests_node ON installation_requests(node_id);
+    CREATE INDEX IF NOT EXISTS idx_installation_requests_device ON installation_requests(device_id);
+
     CREATE TABLE IF NOT EXISTS nac_policies (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       name VARCHAR(150) NOT NULL,

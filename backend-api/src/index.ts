@@ -220,6 +220,7 @@ import forensicsRoutes from './routes/forensics';
 import netsentinelRoutes from './routes/netsentinel';
 import reportsRoutes from './routes/reports';
 import alertRulesRoutes from './routes/alertRules';
+import enrollRoutes from './routes/enroll';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -242,6 +243,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/enroll', enrollRoutes);
 
 // Public site (landing, login, register) - served before 404 handler
 const publicSitePath = path.join(__dirname, '..', 'public', 'site');

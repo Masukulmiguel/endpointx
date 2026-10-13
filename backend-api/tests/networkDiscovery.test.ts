@@ -686,7 +686,15 @@ async function main(): Promise<void> {
       const denied = await post('/api/netsentinel/discovery/nodes/n-http/enroll-request', netToken, {});
       assert.strictEqual(denied.status, 403, `expected 403 for network.view-only, got ${denied.status}`);
 
-      setScripts([s('FROM network_nodes n WHERE', [{ id: 'n-http', created_by: 'user-manage' }])]);
+      // v1.3.0: enroll-request now creates a persisted installation_request
+      // (see services/installRequests.ts) instead of a bare JWT.
+      setScripts([
+        s('FROM network_nodes WHERE id =', [{ id: 'n-http', created_by: 'user-manage', device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '10.9.9.9', hostname: 'pc-http', metadata: {} }]),
+        s('SELECT id FROM installation_requests', []),
+        s('INSERT INTO installation_requests', [{ id: 'ir-1', node_id: 'n-http', status: 'pending', invite_token: 'd'.repeat(64), install_jti: 'e'.repeat(64), requested_by: 'user-manage', expires_at: new Date(Date.now() + 86400000).toISOString() }]),
+        s("SET review_status = 'enrollment_requested'", []),
+        s('INSERT INTO audit_logs', []),
+      ]);
       capturing = true;
       let okRes: Response;
       try {
@@ -695,8 +703,9 @@ async function main(): Promise<void> {
         capturing = false;
       }
       assert.strictEqual(okRes.status, 200, `expected 200, got ${okRes.status}`);
-      const body = (await okRes.json()) as { data: { token: string; commands: { macos: string } } };
+      const body = (await okRes.json()) as { data: { invitation_url: string; commands: { macos: string } } };
       assert.ok(body.data.commands.macos.includes('install-macos.sh?t='), body.data.commands.macos);
+      assert.ok(body.data.invitation_url.includes('/api/enroll/invite/'), body.data.invitation_url);
     });
 
     await checkAsync('test_command_result_dispatches_ingest_for_network_discovery', async () => {

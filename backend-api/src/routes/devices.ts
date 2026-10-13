@@ -15,6 +15,15 @@ import { ingestReport } from '../services/discoveryService';
 import { createAlert } from '../services/alertService';
 import { broadcastEvent, emitToDevice } from '../websocket';
 import { fetchHeartbeatSeries, resolveInterval, resolveRange } from '../services/metrics';
+import {
+  assertInstallTokenUsable,
+  buildInviteUrl,
+  getRequestByInstallJti,
+  markIntegratedByDevice,
+  markInstalling,
+  markRequestInstalledDevice,
+  type InstallRequestRow,
+} from '../services/installRequests';
 
 const router = Router();
 
@@ -42,11 +51,41 @@ function verifyEnrollToken(raw: unknown): string | null {
   if (!token) return null;
   try {
     const payload = jwt.verify(token, JWT.ACCESS_SECRET) as { sub?: unknown; typ?: unknown };
-    if (payload?.typ === 'enroll' && typeof payload.sub === 'string' && payload.sub) return payload.sub;
+    if ((payload?.typ === 'enroll' || payload?.typ === 'install') && typeof payload.sub === 'string' && payload.sub) return payload.sub;
   } catch {
     /* invalid/expired => unowned device */
   }
   return null;
+}
+
+// Install-flow token (typ 'install', carries the installation_request jti).
+// The register gate re-checks the request row so a refused/expired/cancelled
+// request can never create or adopt a device.
+function verifyInstallToken(raw: unknown): { sub: string; jti: string } | null {
+  const token = typeof raw === 'string' ? raw.trim() : '';
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT.ACCESS_SECRET) as { sub?: unknown; typ?: unknown; jti?: unknown };
+    if (
+      payload?.typ === 'install' &&
+      typeof payload.sub === 'string' && payload.sub &&
+      typeof payload.jti === 'string' && payload.jti
+    ) {
+      return { sub: payload.sub, jti: payload.jti };
+    }
+  } catch {
+    /* invalid/expired */
+  }
+  return null;
+}
+
+function firstInstallToken(req: AuthRequest): { sub: string; jti: string } | null {
+  return (
+    verifyInstallToken(req.query?.t) ||
+    verifyInstallToken(req.headers['x-enroll-token']) ||
+    verifyInstallToken(req.body?.enroll_token) ||
+    verifyInstallToken(req.body?.t)
+  );
 }
 
 // Enrolment proof from any channel an install flow can carry it: install
@@ -58,6 +97,63 @@ function enrollOwnerFromRequest(req: AuthRequest): string | null {
     verifyEnrollToken(req.body?.enroll_token) ||
     verifyEnrollToken(req.body?.t)
   );
+}
+
+// Raw enrolment token as received (query/header/body) - embedded verbatim in
+// install scripts so the agent can replay it at /register. (The previous code
+// substituted the resolved owner id here, which made verifyEnrollToken fail on
+// the register side and silently dropped ownership.)
+function rawEnrollTokenFromRequest(req: AuthRequest): string {
+  for (const candidate of [req.query?.t, req.headers['x-enroll-token'], req.body?.enroll_token, req.body?.t]) {
+    const token = typeof candidate === 'string' ? candidate.trim() : '';
+    if (token) return token;
+  }
+  return '';
+}
+
+// Install-flow gate for the public script endpoints. Classic enrolment tokens
+// pass through untouched. Install tokens (from discovery) only release the
+// script when the request can legitimately install:
+//   pending/delivered -> Windows: script with the native consent dialog;
+//                        Linux/macOS: blocked (web consent required first).
+//   authorized+       -> script without the dialog (already consented).
+//   refused/expired/cancelled -> blocked.
+async function resolveInstallGate(
+  req: AuthRequest,
+  opts: { nativeDialog: boolean }
+): Promise<
+  | { kind: 'classic' }
+  | { kind: 'install'; row: InstallRequestRow; consentPrompt: boolean }
+  | { kind: 'blocked'; message: string }
+> {
+  const tok = firstInstallToken(req);
+  if (!tok) return { kind: 'classic' };
+  const row = await getRequestByInstallJti(tok.jti);
+  if (!row) return { kind: 'blocked', message: 'Installation request not found' };
+  switch (row.status) {
+    case 'pending':
+    case 'delivered':
+      if (!opts.nativeDialog) {
+        return {
+          kind: 'blocked',
+          message: `Authorize the installation first via the invitation link: ${buildInviteUrl(row.invite_token)}`,
+        };
+      }
+      return { kind: 'install', row, consentPrompt: true };
+    case 'authorized':
+    case 'installing':
+    case 'installed':
+    case 'integrated':
+      return { kind: 'install', row, consentPrompt: false };
+    case 'refused':
+      return { kind: 'blocked', message: 'Installation was refused on the device' };
+    case 'expired':
+      return { kind: 'blocked', message: 'Installation request expired' };
+    case 'cancelled':
+      return { kind: 'blocked', message: 'Installation request cancelled by an administrator' };
+    default:
+      return { kind: 'blocked', message: `Request status ${row.status} is not installable` };
+  }
 }
 
 // Gate for any route that renders the shared AGENT_SECRET. A valid enrolment
@@ -217,6 +313,20 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
     const ownerUserId =
       verifyEnrollToken(req.body?.enroll_token) || verifyEnrollToken(req.headers['x-enroll-token']);
 
+    // Install-flow tokens (typ 'install') only mint devices for requests that
+    // are actually authorized; refused/expired/cancelled requests never create
+    // or adopt a row. Classic 'enroll' tokens keep the old behavior.
+    const installTok = firstInstallToken(req);
+    let installRequest: InstallRequestRow | null = null;
+    if (installTok) {
+      const gate = await assertInstallTokenUsable(installTok.jti);
+      if (!gate.ok) {
+        res.status(403).json({ success: false, error: { message: `Installation request not usable: ${gate.reason}` } });
+        return;
+      }
+      installRequest = gate.request ?? null;
+    }
+
     const existing = await query('SELECT id, status FROM devices WHERE agent_id = $1', [agent_id]);
     if (existing.rows.length > 0) {
       if (ownerUserId) {
@@ -226,6 +336,9 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
         );
       } else {
         await query("UPDATE devices SET status = 'online', last_heartbeat = NOW() WHERE id = $1", [existing.rows[0].id]);
+      }
+      if (installRequest) {
+        await markRequestInstalledDevice(installRequest.id, existing.rows[0].id);
       }
       res.json({ success: true, data: { id: existing.rows[0].id, agent_id, status: 'online', is_new: false } });
       return;
@@ -277,6 +390,9 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
         agent_id,
         ip: requestIp(req),
       });
+      if (installRequest) {
+        await markRequestInstalledDevice(installRequest.id, duplicate.id);
+      }
       res.json({ success: true, data: { id: duplicate.id, agent_id, status: 'online', is_new: false, deduplicated: true } });
       return;
     }
@@ -290,6 +406,9 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
     );
 
     logger.info('New device registered', { deviceId: id, agent_id });
+    if (installRequest) {
+      await markRequestInstalledDevice(installRequest.id, id);
+    }
     await emitDeviceStatus(inserted.rows[0].id, 'online', hostname || agent_id);
     res.status(201).json({ success: true, data: { id: inserted.rows[0].id, agent_id, status: 'online', is_new: true } });
   } catch (error) {
@@ -506,6 +625,12 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     await ingestHeartbeatTelemetry(device.id, req.body);
 
     const commands = await query(claimPendingCommandsSql(isContained ? 5 : 10, isContained), [device.id]);
+
+    // First authenticated heartbeat after an install marks the request integrated.
+    // Fire-and-forget: telemetry must never wait on (or fail because of) the sweep.
+    if (!isContained) {
+      markIntegratedByDevice(device.id).catch(() => { /* best-effort */ });
+    }
 
     res.json({
       success: true,
@@ -1656,6 +1781,16 @@ router.get('/download/agent/:filename', authenticate, async (req: AuthRequest, r
 // PUBLIC - Download installer (requires enrolment token minted by a devices.manage user)
 router.get('/public/install.ps1', requireEnrollToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const gate = await resolveInstallGate(req, { nativeDialog: true });
+    if (gate.kind === 'blocked') {
+      res.status(403).type('text/plain').send(`# EndpointX: ${gate.message}`);
+      return;
+    }
+    if (gate.kind === 'install' && !gate.consentPrompt) {
+      // Already authorized (web or previous dialog): flip to installing.
+      await markInstalling(gate.row.id).catch(() => { /* register gate still protects */ });
+    }
+
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
@@ -1670,7 +1805,8 @@ router.get('/public/install.ps1', requireEnrollToken, async (req: AuthRequest, r
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
-    script = script.replace(/##ENROLL_TOKEN##/g, enrollOwnerFromRequest(req) || '');
+    script = script.replace(/##ENROLL_TOKEN##/g, rawEnrollTokenFromRequest(req));
+    script = script.replace(/##CONSENT_MODE##/g, gate.kind === 'install' && gate.consentPrompt ? '1' : '0');
 
     // text/plain (no attachment) so `irm ... | iex` receives a clean string
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1684,6 +1820,17 @@ router.get('/public/install.ps1', requireEnrollToken, async (req: AuthRequest, r
 // PUBLIC - Download Linux install script (requires enrolment token)
 router.get('/public/install-linux.sh', requireEnrollToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    // No native dialog on the Linux pipe: an install request still awaiting a
+    // decision must be authorized via the web invitation link first.
+    const gate = await resolveInstallGate(req, { nativeDialog: false });
+    if (gate.kind === 'blocked') {
+      res.status(403).type('text/plain').send(`# EndpointX: ${gate.message}`);
+      return;
+    }
+    if (gate.kind === 'install' && !gate.consentPrompt) {
+      await markInstalling(gate.row.id).catch(() => { /* register gate still protects */ });
+    }
+
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
@@ -1698,7 +1845,7 @@ router.get('/public/install-linux.sh', requireEnrollToken, async (req: AuthReque
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
-    script = script.replace(/##ENROLL_TOKEN##/g, enrollOwnerFromRequest(req) || '');
+    script = script.replace(/##ENROLL_TOKEN##/g, rawEnrollTokenFromRequest(req));
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-linux.sh"');
@@ -1711,6 +1858,15 @@ router.get('/public/install-linux.sh', requireEnrollToken, async (req: AuthReque
 // PUBLIC - Download macOS install script (requires enrolment token)
 router.get('/public/install-macos.sh', requireEnrollToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const gate = await resolveInstallGate(req, { nativeDialog: false });
+    if (gate.kind === 'blocked') {
+      res.status(403).type('text/plain').send(`# EndpointX: ${gate.message}`);
+      return;
+    }
+    if (gate.kind === 'install' && !gate.consentPrompt) {
+      await markInstalling(gate.row.id).catch(() => { /* register gate still protects */ });
+    }
+
     const host = req.get('host') || 'endpointx.onrender.com';
     const protocol = req.protocol === 'https' ? 'https' : 'https';
     const serverUrl = `${protocol}://${host}`;
@@ -1725,7 +1881,7 @@ router.get('/public/install-macos.sh', requireEnrollToken, async (req: AuthReque
     let script = readFileSync(filePath, 'utf-8');
     script = script.replace(/##SERVER_URL##/g, serverUrl);
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
-    script = script.replace(/##ENROLL_TOKEN##/g, enrollOwnerFromRequest(req) || '');
+    script = script.replace(/##ENROLL_TOKEN##/g, rawEnrollTokenFromRequest(req));
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="install-endpointx-macos.sh"');

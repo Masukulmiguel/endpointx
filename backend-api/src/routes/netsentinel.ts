@@ -11,9 +11,17 @@ import {
   getNode,
   setNodeReview,
   identifyNode,
-  requestEnrollment,
   failStaleDiscoveryRuns,
 } from '../services/discoveryService';
+import {
+  buildInstallCommands,
+  buildInviteUrl,
+  cancelInstallRequest,
+  createInstallRequests,
+  listInstallRequests,
+  retryInstallRequest,
+  type InstallRequestRow,
+} from '../services/installRequests';
 
 const router = Router();
 
@@ -704,16 +712,118 @@ router.post('/discovery/nodes/:id/identify', authenticate, requirePermission('ne
 
 router.post('/discovery/nodes/:id/enroll-request', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const result = await requestEnrollment(req.params.id, {
+    const results = await createInstallRequests([req.params.id], {
       id: req.user!.id,
-      email: req.user!.email || '',
       permissions: req.user!.permissions || [],
     });
-    if (!result) {
-      res.status(404).json({ success: false, error: { message: 'Node not found' } });
+    const first = results[0];
+    if (!first?.ok) {
+      res.status(400).json({ success: false, error: { message: first?.reason || 'node_not_found' } });
       return;
     }
-    res.json({ success: true, data: result });
+    const row = first.request as InstallRequestRow;
+    await audit('network_node_enroll_request', req, 'network_node', row.node_id, { request_id: row.id });
+    res.json({
+      success: true,
+      data: {
+        request: row,
+        invitation_url: buildInviteUrl(row.invite_token),
+        commands: buildInstallCommands({ id: req.user!.id }, row),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/install-requests', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const nodeIds: unknown = req.body?.node_ids;
+    if (!Array.isArray(nodeIds) || nodeIds.length === 0 || nodeIds.length > 100) {
+      res.status(400).json({ success: false, error: { message: 'node_ids must be a non-empty array (max 100)' } });
+      return;
+    }
+    const results = await createInstallRequests(nodeIds.map(String), {
+      id: req.user!.id,
+      permissions: req.user!.permissions || [],
+    });
+    for (const item of results) {
+      if (item.ok && item.request) {
+        await audit('network_node_enroll_request', req, 'network_node', item.node_id, { request_id: item.request.id });
+      }
+    }
+    res.status(201).json({
+      success: true,
+      data: {
+        results: results.map((item) => ({
+          node_id: item.node_id,
+          ok: item.ok,
+          reason: item.reason ?? null,
+          request: item.request ?? null,
+          invitation_url: item.request ? buildInviteUrl(item.request.invite_token) : null,
+          commands: item.request
+            ? buildInstallCommands({ id: req.user!.id }, item.request)
+            : null,
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/discovery/install-requests', authenticate, requirePermission('network.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const rows = await listInstallRequests(
+      { id: req.user!.id, permissions: req.user!.permissions || [] },
+      {
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        node_id: typeof req.query.node_id === 'string' ? req.query.node_id : undefined,
+        limit: req.query.limit ? parseInt(String(req.query.limit), 10) : undefined,
+      }
+    );
+    res.json({ success: true, data: { requests: rows } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/install-requests/:id/cancel', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = await cancelInstallRequest(req.params.id, {
+      id: req.user!.id,
+      permissions: req.user!.permissions || [],
+    });
+    if (!result.ok) {
+      res.status(result.reason === 'not_found' ? 404 : 400).json({ success: false, error: { message: result.reason } });
+      return;
+    }
+    await audit('install_request_cancelled', req, 'installation_request', req.params.id, { reason: 'admin_cancel' });
+    res.json({ success: true, data: { request: result.request } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/discovery/install-requests/:id/retry', authenticate, requirePermission('devices.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = await retryInstallRequest(req.params.id, {
+      id: req.user!.id,
+      permissions: req.user!.permissions || [],
+    });
+    if (!result.ok) {
+      res.status(result.reason === 'not_found' ? 404 : 400).json({ success: false, error: { message: result.reason } });
+      return;
+    }
+    const row = result.request as InstallRequestRow;
+    res.json({
+      success: true,
+      data: {
+        request: row,
+        invitation_url: buildInviteUrl(row.invite_token),
+        commands: buildInstallCommands({ id: req.user!.id }, row),
+      },
+    });
   } catch (error) {
     next(error);
   }

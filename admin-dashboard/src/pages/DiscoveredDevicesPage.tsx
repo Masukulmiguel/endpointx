@@ -9,6 +9,10 @@ import {
   Loader2,
   Copy,
   Check,
+  Send,
+  XCircle,
+  RotateCcw,
+  Link2,
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContext';
@@ -72,19 +76,36 @@ type EnrollCommandSet = { windows: string; linux: string; macos: string };
 const sameId = (a: string | null | undefined, b: string | null | undefined): boolean =>
   !!a && !!b && a.replace(/-/g, '') === b.replace(/-/g, '');
 
-interface EnrollResultRow {
-  ip: string;
-  ok: boolean;
-  error?: string;
-  commands?: EnrollCommandSet;
-  token?: string;
+interface InstallRequestRow {
+  id: string;
+  node_id: string;
+  status: string;
+  invite_token: string;
+  os_hint: string | null;
+  decision: string | null;
+  decision_channel: string | null;
+  delivered_at: string | null;
+  decided_at: string | null;
+  installed_at: string | null;
+  integrated_at: string | null;
+  expires_at: string;
+  error_message: string | null;
+  created_at: string;
+  node_ip?: string | null;
+  node_mac?: string | null;
+  node_hostname?: string | null;
 }
 
-// The enroll API also mints a mobile token: install-mobile.html opened with
-// ?t= registers the phone and hands over the APK. The desktop commands alone
-// are useless on a phone, so every enroll modal surfaces this link too.
-const mobileEnrollUrl = (token: string): string =>
-  `${API_ORIGIN}/api/devices/public/mobile?t=${token}`;
+interface EnrollResultRow {
+  node_id?: string;
+  ip: string;
+  ok: boolean;
+  reason?: string;
+  error?: string;
+  commands?: EnrollCommandSet | null;
+  invitation_url?: string | null;
+  request?: InstallRequestRow | null;
+}
 
 function reviewBadgeClasses(status: string): string {
   if (status === 'known') {
@@ -97,6 +118,22 @@ function reviewBadgeClasses(status: string): string {
     return 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400';
   }
   return 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400';
+}
+
+function requestBadgeClasses(status: string): string {
+  if (status === 'integrated' || status === 'installed') {
+    return 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400';
+  }
+  if (status === 'authorized' || status === 'installing' || status === 'delivered') {
+    return 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400';
+  }
+  if (status === 'refused' || status === 'error') {
+    return 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400';
+  }
+  if (status === 'expired' || status === 'cancelled') {
+    return 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400';
+  }
+  return 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400';
 }
 
 export default function DiscoveredDevicesPage() {
@@ -246,7 +283,7 @@ export default function DiscoveredDevicesPage() {
     refetchNodes();
   };
 
-  // Bulk enrollment
+  // Bulk agent-installation requests (single API call, node_ids array)
   const [enrollBulkOpen, setEnrollBulkOpen] = useState(false);
   const [enrollBulkResults, setEnrollBulkResults] = useState<EnrollResultRow[]>([]);
   const [enrollingBulk, setEnrollingBulk] = useState(false);
@@ -255,25 +292,64 @@ export default function DiscoveredDevicesPage() {
     if (ids.length === 0) return;
     setEnrollingBulk(true);
     setActionError(null);
-    const results: EnrollResultRow[] = [];
-    for (const id of ids) {
-      const node = nodes.find((n) => n.id === id);
-      const ip = node?.ip_address || id;
-      try {
-        const res = (await api.request(`/netsentinel/discovery/nodes/${id}/enroll-request`, {
-          method: 'POST',
-        })) as { data?: { token?: string; commands?: EnrollCommandSet } };
-        results.push({ ip, ok: true, commands: res?.data?.commands, token: res?.data?.token });
-      } catch (err) {
-        results.push({ ip, ok: false, error: err instanceof Error ? err.message : t('common.error') });
-      }
+    try {
+      const res = (await api.request('/netsentinel/discovery/install-requests', {
+        method: 'POST',
+        body: JSON.stringify({ node_ids: ids }),
+      })) as { data?: { results?: EnrollResultRow[] } };
+      const results = (res?.data?.results ?? []).map((r) => ({
+        ...r,
+        ip: nodes.find((n) => sameId(n.id, r.node_id))?.ip_address || r.node_id || '?',
+      }));
+      setEnrollBulkResults(results);
+      setEnrollBulkOpen(true);
+      setSelected(new Set());
+      refetchNodes();
+      refetchRequests();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('common.error'));
+    } finally {
+      setEnrollingBulk(false);
     }
-    setEnrollingBulk(false);
-    setEnrollBulkResults(results);
-    setEnrollBulkOpen(true);
-    setSelected(new Set());
-    refetchNodes();
   };
+
+  // Installation requests panel (live list with status + cancel/retry)
+  const { data: requestsData, refetch: refetchRequests } = useApi<{ requests: InstallRequestRow[] }>(
+    '/netsentinel/discovery/install-requests',
+    { refreshInterval: 20000 }
+  );
+  const installRequests = Array.isArray(requestsData?.requests) ? requestsData!.requests : [];
+  const activeRequestCount = installRequests.filter((r) =>
+    ['pending', 'delivered', 'authorized', 'installing'].includes(r.status)
+  ).length;
+
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const cancelRequest = async (id: string) => {
+    setCancellingId(id);
+    try {
+      await api.request(`/netsentinel/discovery/install-requests/${id}/cancel`, { method: 'POST' });
+      refetchRequests();
+      refetchNodes();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('common.error'));
+    } finally {
+      setCancellingId(null);
+    }
+  };
+  const retryRequest = async (id: string) => {
+    setRetryingId(id);
+    try {
+      await api.request(`/netsentinel/discovery/install-requests/${id}/retry`, { method: 'POST' });
+      refetchRequests();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('common.error'));
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  const [inviteFor, setInviteFor] = useState<{ url: string; hostname: string } | null>(null);
 
   // Row modals
   const [viewNode, setViewNode] = useState<DiscoveryNode | null>(null);
@@ -283,7 +359,7 @@ export default function DiscoveredDevicesPage() {
   const [identifying, setIdentifying] = useState(false);
   const [enrollNode, setEnrollNode] = useState<DiscoveryNode | null>(null);
   const [enrollResult, setEnrollResult] = useState<EnrollCommandSet | null>(null);
-  const [enrollToken, setEnrollToken] = useState<string | null>(null);
+  const [enrollInviteUrl, setEnrollInviteUrl] = useState<string | null>(null);
   const [enrollingSingle, setEnrollingSingle] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -313,15 +389,16 @@ export default function DiscoveredDevicesPage() {
   const openEnroll = async (node: DiscoveryNode) => {
     setEnrollNode(node);
     setEnrollResult(null);
-    setEnrollToken(null);
+    setEnrollInviteUrl(null);
     setEnrollingSingle(true);
     try {
       const res = (await api.request(`/netsentinel/discovery/nodes/${node.id}/enroll-request`, {
         method: 'POST',
-      })) as { data?: { token?: string; commands?: EnrollCommandSet } };
+      })) as { data?: { invitation_url?: string; commands?: EnrollCommandSet } };
       setEnrollResult(res?.data?.commands ?? null);
-      setEnrollToken(res?.data?.token ?? null);
+      setEnrollInviteUrl(res?.data?.invitation_url ?? null);
       refetchNodes();
+      refetchRequests();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : t('common.error'));
       setEnrollNode(null);
@@ -582,8 +659,8 @@ export default function DiscoveredDevicesPage() {
                 disabled={enrollingBulk || bulkAction !== null}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors"
               >
-                {enrollingBulk ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
-                {t('discovery.requestEnrollment')}
+                {enrollingBulk ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                {t('discovery.install.requestAgent')}
               </button>
             )}
             <button
@@ -614,6 +691,146 @@ export default function DiscoveredDevicesPage() {
       />
 
       <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+
+      {/* Agent installation requests panel */}
+      {hasPermission('network.view') && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                {t('discovery.install.panelTitle')}
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {activeRequestCount} {t('discovery.install.count')}
+              </p>
+            </div>
+          </div>
+          {installRequests.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-gray-500 dark:text-gray-400">{t('discovery.install.empty')}</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 dark:divide-gray-700/50">
+              {installRequests.map((req) => {
+                const hostname = req.node_hostname || req.node_ip || req.node_id.slice(0, 8);
+                return (
+                  <li key={req.id} className="px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{hostname}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                        {req.node_ip || t('common.unknown')}
+                        {req.node_mac ? ` · ${req.node_mac}` : ''}
+                      </p>
+                    </div>
+                    <span className={requestBadgeClasses(req.status)}>
+                      {t(`discovery.install.status.${req.status}`)}
+                    </span>
+                    {req.decision_channel && (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {req.decision_channel === 'device' ? 'CLI' : 'Web'}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      {t('discovery.install.expires')} {new Date(req.expires_at).toLocaleDateString()}
+                    </span>
+                    <div className="flex items-center gap-1 ml-auto">
+                      <button
+                        onClick={() =>
+                          setInviteFor({
+                            url: `${API_ORIGIN}/api/enroll/invite/${req.invite_token}`,
+                            hostname,
+                          })
+                        }
+                        className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                        title={t('discovery.install.showLink')}
+                      >
+                        <Link2 className="w-4 h-4" />
+                      </button>
+                      {canEnroll && ['pending', 'delivered', 'authorized'].includes(req.status) && (
+                        <button
+                          onClick={() => cancelRequest(req.id)}
+                          disabled={cancellingId === req.id}
+                          className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                          title={t('discovery.install.cancel')}
+                        >
+                          {cancellingId === req.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <XCircle className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                      {canEnroll && ['expired', 'cancelled', 'refused', 'error'].includes(req.status) && (
+                        <button
+                          onClick={() => retryRequest(req.id)}
+                          disabled={retryingId === req.id}
+                          className="p-1.5 rounded-md text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-50"
+                          title={t('discovery.install.retry')}
+                        >
+                          {retryingId === req.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Invitation link modal (QR for the consent page) */}
+      <Modal
+        isOpen={!!inviteFor}
+        onClose={() => setInviteFor(null)}
+        title={t('discovery.modal.enrollMobileTitle')}
+        size="sm"
+      >
+        {inviteFor && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {inviteFor.hostname} — {t('discovery.modal.enrollMobileHint')}
+            </p>
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 rounded-lg bg-white p-2 border border-gray-200 dark:border-gray-700">
+                <QRCodeSVG value={inviteFor.url} size={140} />
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="relative">
+                  <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
+                    {inviteFor.url}
+                  </pre>
+                  <button
+                    onClick={() => copyWindowsCommand(inviteFor.url)}
+                    className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    title={t('discovery.modal.copy')}
+                  >
+                    {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+                <a
+                  href={inviteFor.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  {t('discovery.modal.enrollMobileOpen')}
+                </a>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setInviteFor(null)}
+                className="px-3 py-2 text-sm rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Discover run modal */}
       <Modal
@@ -845,6 +1062,43 @@ export default function DiscoveredDevicesPage() {
             )}
             {enrollResult && (
               <div className="space-y-3">
+                {enrollInviteUrl && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t('discovery.modal.enrollMobileTitle')}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('discovery.modal.enrollMobileHint')}
+                    </p>
+                    <div className="flex items-start gap-4">
+                      <div className="shrink-0 rounded-lg bg-white p-1.5 border border-gray-200 dark:border-gray-700">
+                        <QRCodeSVG value={enrollInviteUrl} size={112} />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="relative">
+                          <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
+                            {enrollInviteUrl}
+                          </pre>
+                          <button
+                            onClick={() => copyWindowsCommand(enrollInviteUrl)}
+                            className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            title={t('discovery.modal.copy')}
+                          >
+                            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <a
+                          href={enrollInviteUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {t('discovery.modal.enrollMobileOpen')}
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <p className="text-sm text-gray-700 dark:text-gray-300">{t('discovery.modal.enrollCommandHint')}</p>
                 <div className="relative">
                   <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 overflow-x-auto">
@@ -868,43 +1122,6 @@ export default function DiscoveredDevicesPage() {
                     {enrollResult.macos}
                   </pre>
                 </div>
-                {enrollToken && (
-                  <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {t('discovery.modal.enrollMobileTitle')}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {t('discovery.modal.enrollMobileHint')}
-                    </p>
-                    <div className="flex items-start gap-4">
-                      <div className="shrink-0 rounded-lg bg-white p-1.5 border border-gray-200 dark:border-gray-700">
-                        <QRCodeSVG value={mobileEnrollUrl(enrollToken)} size={112} />
-                      </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="relative">
-                          <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
-                            {mobileEnrollUrl(enrollToken)}
-                          </pre>
-                          <button
-                            onClick={() => copyWindowsCommand(mobileEnrollUrl(enrollToken))}
-                            className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                            title={t('discovery.modal.copy')}
-                          >
-                            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <a
-                          href={mobileEnrollUrl(enrollToken)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
-                        >
-                          {t('discovery.modal.enrollMobileOpen')}
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
             <div className="flex justify-end pt-2">
@@ -931,6 +1148,35 @@ export default function DiscoveredDevicesPage() {
             const firstSuccess = enrollBulkResults.find((r) => r.ok && r.commands);
             return firstSuccess?.commands ? (
               <div className="space-y-2">
+                {firstSuccess.invitation_url && (
+                  <div className="space-y-2 pb-3 border-b border-gray-200 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t('discovery.modal.enrollMobileTitle')}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('discovery.modal.enrollMobileHint')}
+                    </p>
+                    <div className="flex items-start gap-4">
+                      <div className="shrink-0 rounded-lg bg-white p-1.5 border border-gray-200 dark:border-gray-700">
+                        <QRCodeSVG value={firstSuccess.invitation_url} size={112} />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="relative">
+                          <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
+                            {firstSuccess.invitation_url}
+                          </pre>
+                          <button
+                            onClick={() => copyWindowsCommand(firstSuccess.invitation_url!)}
+                            className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            title={t('discovery.modal.copy')}
+                          >
+                            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <p className="text-sm text-gray-700 dark:text-gray-300">
                   {t('discovery.modal.enrollCommandHint')}
                 </p>
@@ -946,35 +1192,6 @@ export default function DiscoveredDevicesPage() {
                     {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
-                {firstSuccess.token && (
-                  <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {t('discovery.modal.enrollMobileTitle')}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {t('discovery.modal.enrollMobileHint')}
-                    </p>
-                    <div className="flex items-start gap-4">
-                      <div className="shrink-0 rounded-lg bg-white p-1.5 border border-gray-200 dark:border-gray-700">
-                        <QRCodeSVG value={mobileEnrollUrl(firstSuccess.token)} size={112} />
-                      </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="relative">
-                          <pre className="px-3 py-2 pr-10 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
-                            {mobileEnrollUrl(firstSuccess.token)}
-                          </pre>
-                          <button
-                            onClick={() => copyWindowsCommand(mobileEnrollUrl(firstSuccess.token!))}
-                            className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                            title={t('discovery.modal.copy')}
-                          >
-                            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : null;
           })()}
@@ -987,7 +1204,9 @@ export default function DiscoveredDevicesPage() {
                     {t('discovery.modal.enrollOk')}
                   </span>
                 ) : (
-                  <span className="text-xs text-red-600 dark:text-red-400">{r.error || t('common.error')}</span>
+                  <span className="text-xs text-red-600 dark:text-red-400">
+                    {r.reason ? t(`discovery.install.reason.${r.reason}`) : r.error || t('common.error')}
+                  </span>
                 )}
               </li>
             ))}

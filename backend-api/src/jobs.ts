@@ -11,6 +11,7 @@ import {
 } from './services/thresholdEngine';
 import { refreshCveFeed } from './services/cveFeed';
 import { startScheduledScan } from './routes/hermes';
+import { expireStaleRequests } from './services/installRequests';
 
 const OFFLINE_SWEEP_MS = 60_000;
 const RETENTION_SWEEP_MS = 60 * 60_000;
@@ -18,6 +19,7 @@ const ROLLUP_SWEEP_MS = 5 * 60_000;
 const CVE_FEED_SWEEP_MS = 6 * 60 * 60_000;
 const SCHEDULER_TICK_MS = 60_000;
 const SELF_PROBE_MS = 30_000;
+const INSTALL_REQUEST_SWEEP_MS = 5 * 60_000;
 
 const timers: NodeJS.Timeout[] = [];
 let running = false;
@@ -306,6 +308,14 @@ export function startBackgroundJobs(): void {
   every('hermes-daily-scan', SCHEDULER_TICK_MS, true, maybeRunDailyHermesScan);
 
   every('self-probe', SELF_PROBE_MS, true, selfProbe);
+
+  // Installation requests that were never decided flip to 'expired' so the
+  // dashboard stops showing them as pending and the tokens stop being usable.
+  every('install-request-sweep', INSTALL_REQUEST_SWEEP_MS, true, async () => {
+    const n = await expireStaleRequests();
+    if (n > 0) logger.info(`Expired ${n} stale installation request(s)`);
+  });
+  every('install-request-initial-sweep', 30_000, false, () => expireStaleRequests());
 
   refreshRetentionCache().catch(() => undefined);
 }
