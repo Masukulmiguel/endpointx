@@ -1178,6 +1178,30 @@ const createInlineSchema = async (): Promise<void> => {
       ON device_event_logs(device_id, log_source, dedup_key);
     CREATE UNIQUE INDEX IF NOT EXISTS uq_device_event_logs_dedup
       ON device_event_logs(device_id, log_source, dedup_key);
+
+    -- ── v1.4.0 OSINT subsystem ──
+    CREATE TABLE IF NOT EXISTS osint_lookups (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      type VARCHAR(20) NOT NULL,
+      target TEXT NOT NULL,
+      result JSONB NOT NULL,
+      sources TEXT[] DEFAULT '{}',
+      device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_osint_lookups_type ON osint_lookups(type);
+    CREATE INDEX IF NOT EXISTS idx_osint_lookups_created_by ON osint_lookups(created_by);
+    CREATE INDEX IF NOT EXISTS idx_osint_lookups_device ON osint_lookups(device_id);
+    CREATE INDEX IF NOT EXISTS idx_osint_lookups_target ON osint_lookups(target);
+
+    CREATE TABLE IF NOT EXISTS osint_settings (
+      key VARCHAR(100) PRIMARY KEY,
+      value TEXT,
+      updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `;
 
   await pool.query(schema);
@@ -1257,6 +1281,8 @@ const seedDefaults = async (): Promise<void> => {
     ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
     ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
     ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
+    ['osint.view', 'View OSINT', 'View OSINT lookups and history', 'osint'],
+    ['osint.manage', 'Manage OSINT', 'Perform OSINT queries and manage API keys', 'osint'],
   ];
   for (const [code, name, desc, category] of allPerms) {
     await pool.query(

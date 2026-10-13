@@ -27,6 +27,7 @@ import {
   UsersRound,
   Radar,
   Map,
+  Globe,
 } from 'lucide-react';
 import api from '../services/api';
 import { useI18n, type Locale } from '../i18n';
@@ -35,6 +36,7 @@ import { useAuth } from '../contexts/AuthContext';
 const navItems = [
   { key: 'nav.dashboard', path: '/dashboard', icon: LayoutDashboard },
   { key: 'nav.hermes', path: '/hermes', icon: Radar, permission: 'hermes.view' },
+  { key: 'nav.osint', path: '/osint', icon: Globe, permission: 'osint.view' },
   { key: 'nav.devices', path: '/devices', icon: Monitor, permission: 'devices.view' },
   { key: 'nav.map', path: '/map', icon: Map, permission: 'devices.view' },
   { key: 'nav.install', path: '/install', icon: Download, permission: 'devices.view' },
@@ -58,6 +60,7 @@ const navItems = [
 const routeTitleKeys: Record<string, string> = {
   '/dashboard': 'nav.dashboard',
   '/hermes': 'page.hermes.title',
+  '/osint': 'page.osint.title',
   '/devices': 'nav.devices',
   '/map': 'nav.map',
   '/install': 'page.install.title',
@@ -86,7 +89,7 @@ const navGroups: { key: string; label: Record<Locale, string>; paths: string[] }
   {
     key: 'overview',
     label: { pt: 'Visão geral', en: 'Overview' },
-    paths: ['/dashboard', '/hermes', '/map', '/reports'],
+    paths: ['/dashboard', '/hermes', '/osint', '/map', '/reports'],
   },
   {
     key: 'fleet',

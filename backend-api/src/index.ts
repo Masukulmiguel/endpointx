@@ -218,6 +218,7 @@ import notificationsRoutes from './routes/notifications';
 import hermesRoutes from './routes/hermes';
 import forensicsRoutes from './routes/forensics';
 import netsentinelRoutes from './routes/netsentinel';
+import osintRoutes from './routes/osint';
 import reportsRoutes from './routes/reports';
 import alertRulesRoutes from './routes/alertRules';
 import enrollRoutes from './routes/enroll';
@@ -243,6 +244,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/hermes', forensicsRoutes);
 app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
+app.use('/api/osint', osintRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/enroll', enrollRoutes);
 
