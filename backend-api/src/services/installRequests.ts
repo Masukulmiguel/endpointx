@@ -128,7 +128,7 @@ async function audit(
 const SELECT_REQUEST = `
   SELECT r.*,
          n.ip_address AS node_ip, n.mac_address AS node_mac, n.hostname AS node_hostname,
-         d.name AS device_name
+         d.display_name AS device_name
     FROM installation_requests r
     JOIN network_nodes n ON n.id = r.node_id
     LEFT JOIN devices d ON d.id = r.device_id`;
