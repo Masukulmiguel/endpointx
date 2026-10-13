@@ -806,6 +806,26 @@ const createInlineSchema = async (): Promise<void> => {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS device_id UUID REFERENCES devices(id) ON DELETE SET NULL;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS requested_by UUID REFERENCES users(id);
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'pending';
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS invite_token VARCHAR(64);
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS install_jti VARCHAR(64);
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS os_hint VARCHAR(60);
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS decision VARCHAR(20);
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS decision_channel VARCHAR(20);
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS installing_at TIMESTAMPTZ;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS installed_at TIMESTAMPTZ;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS integrated_at TIMESTAMPTZ;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE installation_requests ADD COLUMN IF NOT EXISTS error_message TEXT;
+    ALTER TABLE installation_requests ALTER COLUMN invite_token SET DEFAULT '';
+    ALTER TABLE installation_requests ALTER COLUMN expires_at SET DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_install_requests_invite_token ON installation_requests(invite_token);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_install_requests_install_jti ON installation_requests(install_jti);
+
     CREATE INDEX IF NOT EXISTS idx_installation_requests_status ON installation_requests(status);
     CREATE INDEX IF NOT EXISTS idx_installation_requests_node ON installation_requests(node_id);
     CREATE INDEX IF NOT EXISTS idx_installation_requests_device ON installation_requests(device_id);
