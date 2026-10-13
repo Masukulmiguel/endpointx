@@ -33,6 +33,16 @@ router.get('/_diag', async (_req, res) => {
   await run('star', `SELECT r.* FROM installation_requests r LIMIT 0`);
   await run('token_where', `SELECT r.invite_token FROM installation_requests r LIMIT 0`);
   await run('join_nodes', `SELECT r.id FROM installation_requests r JOIN network_nodes n ON n.id = r.node_id LIMIT 0`);
+  try {
+    const r2 = await dbQuery(
+      `SELECT r.*, n.ip_address AS node_ip, n.mac_address AS node_mac, n.hostname AS node_hostname, d.name AS device_name FROM installation_requests r JOIN network_nodes n ON n.id = r.node_id LEFT JOIN devices d ON d.id = r.device_id WHERE r.invite_token = $1`,
+      ['a'.repeat(64)]
+    );
+    probes['service_with_params'] = { ok: true, rows: r2.rowCount };
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    probes['service_with_params'] = { ok: false, code: err.code, message: err.message };
+  }
   await run('cols', `SELECT column_name, data_type FROM information_schema.columns WHERE table_name='installation_requests' ORDER BY ordinal_position`);
   res.json(probes);
 });
