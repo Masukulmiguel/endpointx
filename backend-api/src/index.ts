@@ -240,6 +240,7 @@ app.use('/api/policies', policiesRoutes);
 app.use('/api/compliance', policiesRoutes);
 app.use('/api/software', softwareRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/hermes', forensicsRoutes);
 app.use('/api/hermes', hermesRoutes);
 app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/reports', reportsRoutes);
