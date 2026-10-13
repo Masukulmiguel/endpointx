@@ -16,6 +16,27 @@ import {
 
 const router = Router();
 
+// TEMP DIAGNOSTIC - remove after root-causing 42703
+import { query as dbQuery } from '../config/database';
+router.get('/_diag', async (_req, res) => {
+  const probes: Record<string, unknown> = {};
+  const run = async (name: string, sql: string) => {
+    try {
+      const r = await dbQuery(sql);
+      probes[name] = { ok: true, rows: r.rowCount };
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      probes[name] = { ok: false, code: err.code, message: err.message };
+    }
+  };
+  await run('table_exists', `SELECT to_regclass('installation_requests') AS t`);
+  await run('star', `SELECT r.* FROM installation_requests r LIMIT 0`);
+  await run('token_where', `SELECT r.invite_token FROM installation_requests r LIMIT 0`);
+  await run('join_nodes', `SELECT r.id FROM installation_requests r JOIN network_nodes n ON n.id = r.node_id LIMIT 0`);
+  await run('cols', `SELECT column_name, data_type FROM information_schema.columns WHERE table_name='installation_requests' ORDER BY ordinal_position`);
+  res.json(probes);
+});
+
 // Public, unauthenticated consent surface for installation requests.
 // The invite link (opaque 64-hex token) is delivered out-of-band (email, chat,
 // QR). Two channels reach a decision here:
