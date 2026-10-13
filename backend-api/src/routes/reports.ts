@@ -73,37 +73,37 @@ router.get('/devices/pdf', authenticate, requirePermission('logs.view'), async (
 
     const PAGE_W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const MARGIN_L = doc.page.margins.left;
-    const BRAND = '#0e7490';
+    const BRAND = '#004BFC';
+    const BRAND_LIGHT = '#0082FE';
     const DARK = '#0f172a';
     const MUTED = '#64748b';
     const LINE = '#e2e8f0';
 
-    const drawHexLogo = (x: number, y: number, size: number) => {
-      const r = size / 2;
-      const cx = x + r;
-      const cy = y + r;
-      doc.save();
-      const pts: Array<[number, number]> = [
-        [cx, cy - r],
-        [cx + r * 0.87, cy - r * 0.5],
-        [cx + r * 0.87, cy + r * 0.5],
-        [cx, cy + r],
-        [cx - r * 0.87, cy + r * 0.5],
-        [cx - r * 0.87, cy - r * 0.5],
-      ];
-      doc.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) doc.lineTo(pts[i][0], pts[i][1]);
-      doc.closePath();
-      doc.fillAndStroke(BRAND, BRAND);
-      doc.restore();
-    };
+    // Brand gradient banner (electric blue -> lighter blue, per logo palette).
+    const bannerH = 84;
+    const steps = 48;
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+      const r = Math.round(0x00 + (0x00 - 0x00) * t);
+      const g = Math.round(0x4b + (0x82 - 0x4b) * t);
+      const b = Math.round(0xfc + (0xfe - 0xfc) * t);
+      const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+      const segW = doc.page.width / steps;
+      doc.rect(i * segW, 0, segW + 1, bannerH).fill(hex);
+    }
 
-    doc.rect(0, 0, doc.page.width, 84).fill(BRAND);
-    drawHexLogo(MARGIN_L, 22, 40);
-    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22)
-      .text('EndpointX', MARGIN_L + 52, 26);
-    doc.font('Helvetica').fontSize(9).fillColor('#e0f2fe')
-      .text('Endpoint Management & Security Platform', MARGIN_L + 52, 52);
+    // Real logo (white-on-blue variant) embedded from the public assets.
+    const path = require('path');
+    const logoPath = path.join(__dirname, '..', '..', 'public', 'Logotipo_EndpointX_fundo_azul.png');
+    try {
+      doc.image(logoPath, MARGIN_L, 18, { height: 48 });
+    } catch (e) {
+      logger.warn('Logo embed failed, falling back to text lockup', { error: (e as Error).message });
+      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22)
+        .text('EndpointX', MARGIN_L, 26);
+    }
+    doc.font('Helvetica').fontSize(9).fillColor('#dbeafe')
+      .text('Endpoint Management & Security Platform', MARGIN_L, 70);
     doc.font('Helvetica').fontSize(9).fillColor('#ffffff')
       .text(`Generated: ${new Date().toLocaleString('pt-PT')}`, MARGIN_L, 30, {
         width: PAGE_W, align: 'right',
