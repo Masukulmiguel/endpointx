@@ -45,7 +45,7 @@ router.get('/devices/csv', authenticate, requirePermission('logs.view'), async (
   }
 });
 
-// GET /devices/pdf - Export devices as PDF
+// GET /devices/pdf - Export devices as a professional PDF report
 router.get('/devices/pdf', authenticate, requirePermission('logs.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const PDFDocument = require('pdfkit');
@@ -60,58 +60,143 @@ router.get('/devices/pdf', authenticate, requirePermission('logs.view'), async (
       [req.user!.id]
     );
 
+    const rows = result.rows as any[];
+    const online = rows.filter((r) => r.status === 'online').length;
+    const offline = rows.filter((r) => r.status === 'offline').length;
+    const total = rows.length;
+
     const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="devices-report.pdf"');
+    res.setHeader('Content-Disposition', 'attachment; filename="endpointx-device-report.pdf"');
     doc.pipe(res);
 
-    doc.fontSize(20).text('EndpointX Device Report', { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(10).fillColor('#666666')
-      .text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
-    doc.moveDown(1);
+    const PAGE_W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const MARGIN_L = doc.page.margins.left;
+    const BRAND = '#0e7490';
+    const DARK = '#0f172a';
+    const MUTED = '#64748b';
+    const LINE = '#e2e8f0';
 
-    const headers = ['Hostname', 'OS', 'Status', 'User', 'Last Heartbeat', 'CPU%', 'RAM%', 'Disk%'];
-    const colWidths = [120, 100, 70, 150, 140, 60, 60, 60];
-    const startX = 40;
-    let y = doc.y;
+    const drawHexLogo = (x: number, y: number, size: number) => {
+      const r = size / 2;
+      const cx = x + r;
+      const cy = y + r;
+      doc.save();
+      const pts: Array<[number, number]> = [
+        [cx, cy - r],
+        [cx + r * 0.87, cy - r * 0.5],
+        [cx + r * 0.87, cy + r * 0.5],
+        [cx, cy + r],
+        [cx - r * 0.87, cy + r * 0.5],
+        [cx - r * 0.87, cy - r * 0.5],
+      ];
+      doc.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) doc.lineTo(pts[i][0], pts[i][1]);
+      doc.closePath();
+      doc.fillAndStroke(BRAND, BRAND);
+      doc.restore();
+    };
 
-    doc.fontSize(9).fillColor('#333333');
-    let x = startX;
-    headers.forEach((header, i) => {
-      doc.text(header, x, y, { width: colWidths[i], align: 'left' });
-      x += colWidths[i];
+    doc.rect(0, 0, doc.page.width, 84).fill(BRAND);
+    drawHexLogo(MARGIN_L, 22, 40);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22)
+      .text('EndpointX', MARGIN_L + 52, 26);
+    doc.font('Helvetica').fontSize(9).fillColor('#e0f2fe')
+      .text('Endpoint Management & Security Platform', MARGIN_L + 52, 52);
+    doc.font('Helvetica').fontSize(9).fillColor('#ffffff')
+      .text(`Generated: ${new Date().toLocaleString('pt-PT')}`, MARGIN_L, 30, {
+        width: PAGE_W, align: 'right',
+      });
+
+    let y = 108;
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(16).text('Device Report', MARGIN_L, y);
+    y += 22;
+    doc.font('Helvetica').fontSize(9).fillColor(MUTED)
+      .text('Inventory of managed endpoints, connectivity status and resource utilisation.', MARGIN_L, y, { width: PAGE_W });
+    y += 22;
+
+    const cards = [
+      { label: 'Total Devices', value: String(total), color: BRAND },
+      { label: 'Online', value: String(online), color: '#059669' },
+      { label: 'Offline', value: String(offline), color: '#dc2626' },
+    ];
+    const cardW = 150;
+    const cardGap = 14;
+    cards.forEach((card, i) => {
+      const cx = MARGIN_L + i * (cardW + cardGap);
+      doc.roundedRect(cx, y, cardW, 54, 8).fillAndStroke('#f8fafc', LINE);
+      doc.fillColor(MUTED).font('Helvetica').fontSize(8).text(card.label.toUpperCase(), cx + 12, y + 10, { width: cardW - 24 });
+      doc.fillColor(card.color).font('Helvetica-Bold').fontSize(22).text(card.value, cx + 12, y + 24, { width: cardW - 24 });
     });
-    y += 20;
+    y += 74;
 
-    doc.moveTo(startX, y).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), y).stroke();
-    y += 5;
+    const headers = ['Hostname', 'OS', 'Status', 'User', 'Last Heartbeat', 'CPU %', 'RAM %', 'Disk %'];
+    const colWidths = [130, 90, 80, 150, 140, 60, 60, 60];
+    const tableW = colWidths.reduce((a, b) => a + b, 0);
 
-    doc.fontSize(8).fillColor('#000000');
-    for (const row of result.rows) {
-      if (y > 550) {
+    const drawHeader = (topY: number) => {
+      doc.roundedRect(MARGIN_L, topY, tableW, 22, 4).fill(BRAND);
+      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8);
+      let x = MARGIN_L;
+      headers.forEach((h, i) => {
+        doc.text(h, x + 6, topY + 7, { width: colWidths[i] - 12, align: 'left' });
+        x += colWidths[i];
+      });
+    };
+
+    drawHeader(y);
+    y += 26;
+
+    doc.font('Helvetica').fontSize(8);
+    rows.forEach((row, idx) => {
+      if (y > 540) {
         doc.addPage();
         y = 40;
+        drawHeader(y);
+        y += 26;
       }
 
-      x = startX;
+      if (idx % 2 === 0) {
+        doc.rect(MARGIN_L, y - 4, tableW, 18).fill('#f1f5f9');
+      }
+
+      const status = row.status || '-';
+      const statusColor = status === 'online' ? '#059669' : status === 'offline' ? '#dc2626' : '#d97706';
       const values = [
         row.hostname || '-',
         row.os_type || '-',
-        row.status || '-',
+        status,
         row.user_email || '-',
-        row.last_heartbeat ? new Date(row.last_heartbeat).toLocaleDateString() : '-',
+        row.last_heartbeat ? new Date(row.last_heartbeat).toLocaleString('pt-PT') : '-',
         row.cpu_usage != null ? `${Number(row.cpu_usage).toFixed(1)}%` : '-',
         row.ram_usage != null ? `${Number(row.ram_usage).toFixed(1)}%` : '-',
         row.disk_usage != null ? `${Number(row.disk_usage).toFixed(1)}%` : '-',
       ];
+
+      let x = MARGIN_L;
       values.forEach((val, i) => {
-        doc.text(val, x, y, { width: colWidths[i], align: 'left' });
+        if (i === 2) doc.fillColor(statusColor).font('Helvetica-Bold');
+        else { doc.fillColor(DARK).font('Helvetica'); }
+        doc.text(String(val), x + 6, y, { width: colWidths[i] - 12, align: 'left' });
         x += colWidths[i];
       });
+
       y += 18;
+      doc.moveTo(MARGIN_L, y - 4).lineTo(MARGIN_L + tableW, y - 4).strokeColor(LINE).lineWidth(0.5).stroke();
+    });
+
+    if (rows.length === 0) {
+      doc.fillColor(MUTED).font('Helvetica').fontSize(10)
+        .text('No devices found.', MARGIN_L, y, { width: PAGE_W });
     }
+
+    const footerY = doc.page.height - 46;
+    doc.moveTo(MARGIN_L, footerY).lineTo(MARGIN_L + tableW, footerY).strokeColor(LINE).stroke();
+    doc.font('Helvetica').fontSize(7).fillColor(MUTED)
+      .text('EndpointX \u00b7 Confidential \u00b7 Generated automatically for authorised administrators only.', MARGIN_L, footerY + 8, {
+        width: PAGE_W, align: 'center',
+      });
 
     doc.end();
   } catch (error) {
