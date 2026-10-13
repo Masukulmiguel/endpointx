@@ -1217,7 +1217,7 @@ const ensureBootstrapAdmin = async (): Promise<void> => {
   await pool.query(
     `INSERT INTO users (email, username, full_name, password_hash, role_id)
      SELECT 'admin@endpointx.local', 'admin', 'System Administrator', $1, id FROM roles WHERE name = 'admin'
-     ON CONFLICT (email) DO NOTHING`,
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
     [hash]
   );
 };
