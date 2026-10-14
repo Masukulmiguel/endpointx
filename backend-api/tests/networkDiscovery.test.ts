@@ -214,6 +214,7 @@ async function main(): Promise<void> {
 
   const s = (match: string, rows: Record<string, unknown>[] = []): ScriptedRow => ({ match, rows });
   const RUNNER = 'FROM devices WHERE id =';
+  const NODE_BY_MAC = 'FROM network_nodes WHERE LOWER(mac_address)';
   const NODE_BY_IP = 'FROM network_nodes WHERE ip_address';
   const DEV_BY_MAC = 'FROM devices WHERE LOWER(mac_address)';
   const RUN_FINALIZE = 'UPDATE network_discovery_runs';
@@ -236,7 +237,7 @@ async function main(): Promise<void> {
   await checkAsync('test_ingest_links_device_by_mac_case_insensitive', async () => {
     setScripts([
       s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
-      s(NODE_BY_IP, []),
+      s(NODE_BY_MAC, []),
       s(DEV_BY_MAC, [{ id: 'dev-linked' }]),
     ]);
     const { result, calls: emitted } = await captureCalls(() =>
@@ -282,7 +283,7 @@ async function main(): Promise<void> {
   await checkAsync('test_ingest_preserves_first_seen_and_identify_fields', async () => {
     setScripts([
       s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
-      s(NODE_BY_IP, [
+      s(NODE_BY_MAC, [
         {
           id: 'node-9',
           name: 'Printer-HP',
@@ -308,6 +309,141 @@ async function main(): Promise<void> {
     assert.ok(!upd.includes('first_seen'), `UPDATE must not touch first_seen: ${upd}`);
     assert.ok(!/\bname\s*=/.test(upd), `UPDATE must not touch admin name: ${upd}`);
     assert.ok(!upd.includes('node_type'), `UPDATE must not touch node_type: ${upd}`);
+  });
+
+  await checkAsync('test_ingest_resolves_vendor_and_writes_confidence_high_for_linked_host', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, [{ id: 'dev-linked' }]),
+      s(NODE_BY_MAC, []),
+    ]);
+    // B8:27:EB = Raspberry Pi Foundation (pinned in ouiLookup.test.ts)
+    const { result, calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-vendor-1',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ mac: 'B8:27:EB:00:00:01', hostname: 'rpi1' }),
+        issuedBy: 'user-1',
+      })
+    );
+    assert.strictEqual(result.new_nodes, 1, `expected new_nodes=1, got ${JSON.stringify(result)}`);
+    const insert = emitted.find((c) => c.sql.startsWith('INSERT INTO network_nodes'));
+    assert.ok(insert, 'must emit INSERT INTO network_nodes');
+    assert.ok(
+      insert.params.some((p) => typeof p === 'string' && p.includes('Raspberry Pi Foundation')),
+      `INSERT params must carry the OUI vendor: ${JSON.stringify(insert.params)}`
+    );
+    assert.ok(
+      insert.params.some((p) => typeof p === 'string' && p.includes('"confidence":"high"')),
+      `metadata must carry confidence=high for a linked host: ${JSON.stringify(insert.params)}`
+    );
+  });
+
+  await checkAsync('test_ingest_same_mac_new_ip_updates_existing_node', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, []),
+      s(NODE_BY_MAC, [{ id: 'node-existing' }]),
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-dedup-1',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ ip: '192.168.1.99', mac: 'B8:27:EB:AA:BB:CC', hostname: 'moved-pc' }),
+        issuedBy: 'user-1',
+      })
+    );
+    assert.strictEqual(result.updated_nodes, 1, `expected updated_nodes=1, got ${JSON.stringify(result)}`);
+    assert.strictEqual(result.new_nodes, 0, 'same MAC at a new IP must not create a duplicate node');
+    const updates = emitted.filter((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.strictEqual(updates.length, 1, `expected exactly 1 UPDATE, got ${updates.length}`);
+    const upd = updates[0];
+    assert.ok(upd.params.includes('192.168.1.99'), `UPDATE must refresh ip_address: ${JSON.stringify(upd.params)}`);
+    assert.ok(upd.sql.includes('ip_address'), `UPDATE must set ip_address: ${upd.sql}`);
+    assert.ok(!upd.sql.includes('first_seen'), `UPDATE must not touch first_seen: ${upd.sql}`);
+  });
+
+  await checkAsync('test_ingest_dedups_by_mac_not_ip', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, []),
+      s(NODE_BY_MAC, [{ id: 'node-mac-key' }]),
+    ]);
+    const { calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-dedup-2',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ ip: '10.0.0.77', mac: 'B8:27:EB:11:22:33' }),
+        issuedBy: 'user-1',
+      })
+    );
+    const nodeLookups = emitted.filter(
+      (c) => c.sql.includes('FROM network_nodes') && /SELECT|WHERE/.test(c.sql)
+    );
+    assert.ok(
+      nodeLookups.every((c) => !c.sql.includes('WHERE ip_address')),
+      `MAC-bearing host must not be looked up by IP: ${nodeLookups.map((c) => c.sql).join(' | ')}`
+    );
+    assert.ok(
+      nodeLookups.some((c) => c.sql.includes('LOWER(mac_address)')),
+      'MAC-bearing host must be looked up by MAC'
+    );
+  });
+
+  await checkAsync('test_ingest_ip_only_host_still_matches_ip_and_gets_low_confidence', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(NODE_BY_IP, []),
+      s('FROM hermes_assets', []),
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-lowconf',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ mac: null, hostname: null }),
+        issuedBy: 'user-1',
+      })
+    );
+    assert.strictEqual(result.new_nodes, 1, `expected new_nodes=1, got ${JSON.stringify(result)}`);
+    const insert = emitted.find((c) => c.sql.startsWith('INSERT INTO network_nodes'));
+    assert.ok(insert, 'must emit INSERT');
+    assert.ok(
+      insert.params.some((p) => typeof p === 'string' && p.includes('"confidence":"low"')),
+      `metadata must carry confidence=low: ${JSON.stringify(insert.params)}`
+    );
+    assert.ok(
+      !emitted.some((c) => c.sql.includes('WHERE LOWER(mac_address)')),
+      'device-by-MAC lookup must be skipped when mac is null'
+    );
+  });
+
+  await checkAsync('test_ingest_malformed_mac_does_not_break_insert', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, []),
+      s(NODE_BY_MAC, []),
+      s('FROM hermes_assets', []),
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-badmac',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ mac: 'garbage-not-a-mac', ip: '192.168.1.200' }),
+        issuedBy: 'user-1',
+      })
+    );
+    assert.strictEqual(result.new_nodes, 1, `expected new_nodes=1 despite malformed mac, got ${JSON.stringify(result)}`);
+    const insert = emitted.find((c) => c.sql.startsWith('INSERT INTO network_nodes'));
+    assert.ok(insert, 'must emit INSERT');
+    assert.ok(
+      !insert.params.some((p) => typeof p === 'string' && p.includes('Raspberry Pi Foundation')),
+      'malformed MAC must yield null vendor'
+    );
   });
 
   await checkAsync('test_ingest_creates_hermes_recommendation_for_new_unlinked_node', async () => {

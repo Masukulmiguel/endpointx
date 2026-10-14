@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { JWT } from '../config/constants';
 import { canViewUnownedDevices } from '../utils/tenant';
 import { discoverUnknownAsset } from '../routes/hermes';
+import { vendorFromMac } from '../utils/oui';
 
 function newId(): string {
   return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -71,14 +72,22 @@ async function ingestHost(
     if (deviceId) stats.linked_devices++;
   }
 
+  // MAC-first dedup: a MAC is a stable hardware identity; IP churn (DHCP)
+  // must not spawn duplicate nodes. Hosts without a MAC still key on IP.
   const existing = host.mac
     ? await query(
-        'SELECT id FROM network_nodes WHERE ip_address = $1 AND mac_address IS NOT NULL AND LOWER(mac_address) = LOWER($2)',
-        [host.ip, host.mac]
+        'SELECT id FROM network_nodes WHERE LOWER(mac_address) = LOWER($1) ORDER BY last_seen DESC LIMIT 1',
+        [host.mac]
       )
     : await query('SELECT id FROM network_nodes WHERE ip_address = $1 AND mac_address IS NULL', [host.ip]);
 
-  const metadata = JSON.stringify({ os_estimate: host.os_estimate, rtt_ms: host.rtt_ms });
+  const vendor = vendorFromMac(host.mac);
+  const confidence = deviceId ? 'high' : host.mac && host.hostname ? 'medium' : 'low';
+  const metadata = JSON.stringify({
+    os_estimate: host.os_estimate,
+    rtt_ms: host.rtt_ms,
+    confidence,
+  });
 
   if (existing.rows.length > 0) {
     const nodeId = existing.rows[0].id as string;
@@ -86,12 +95,14 @@ async function ingestHost(
     await query(
       `UPDATE network_nodes
           SET last_seen = NOW(),
-              hostname = COALESCE($2, hostname),
-              device_id = COALESCE($3, device_id),
-              metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
+              ip_address = COALESCE($2, ip_address),
+              hostname = COALESCE($3, hostname),
+              vendor = COALESCE($4, vendor),
+              device_id = COALESCE($5, device_id),
+              metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE($6::jsonb, '{}'::jsonb),
               updated_at = NOW()
         WHERE id = $1`,
-      [nodeId, host.hostname, deviceId, metadata]
+      [nodeId, host.ip, host.hostname, vendor, deviceId, metadata]
     );
     stats.updated_nodes++;
     return;
@@ -101,8 +112,8 @@ async function ingestHost(
   await query(
     `INSERT INTO network_nodes
       (id, node_type, hostname, ip_address, mac_address, vendor, metadata, source, device_id, created_by, first_seen, last_seen, updated_at)
-     VALUES ($1, 'UNKNOWN', $2, $3, $4, NULL, $5, 'network_discovery', $6, $7, NOW(), NOW(), NOW())`,
-    [nodeId, host.hostname, host.ip, host.mac, metadata, deviceId, createdBy]
+     VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, 'network_discovery', $7, $8, NOW(), NOW(), NOW())`,
+    [nodeId, host.hostname, host.ip, host.mac, vendor, metadata, deviceId, createdBy]
   );
   stats.new_nodes++;
 
