@@ -1,4 +1,4 @@
-# EndpointX Agent Installer v1.3.0
+# EndpointX Agent Installer
 # Safe for: irm https://.../install.ps1?t=<ENROLL_TOKEN> | iex
 # Does NOT use exit/Read-Host/Set-Location (those break iex pipelines).
 
@@ -6,6 +6,11 @@ $serverUrl = "##SERVER_URL##"
 $agentSecret = "##AGENT_SECRET##"
 $enrollToken = "##ENROLL_TOKEN##"
 $consentMode = "##CONSENT_MODE##"
+# Injected by the server from endpoint-agent/agent.py (CURRENT_AGENT_VERSION).
+$agentVersion = "##AGENT_VERSION##"
+if ([string]::IsNullOrWhiteSpace($agentVersion) -or $agentVersion -like '*##*') {
+    $agentVersion = 'Unknown'
+}
 $agentDir = "C:\endpointx\endpoint-agent"
 $github = "https://raw.githubusercontent.com/Masukulmiguel/endpointx/main/endpoint-agent"
 $ErrorActionPreference = "Continue"
@@ -49,48 +54,29 @@ function Write-Step($msg) { Write-Host $msg -ForegroundColor Green }
 function Write-Info($msg) { Write-Host $msg -ForegroundColor Yellow }
 function Write-Err($msg) { Write-Host $msg -ForegroundColor Red }
 function Write-Ok($msg) { Write-Host $msg -ForegroundColor Cyan }
+function Write-General($msg) { Write-Host $msg -ForegroundColor White }
 
-function Write-Banner($lines, $width) {
-    $bar = "  +" + ("-" * $width) + "+"
-    Write-Host $bar -ForegroundColor DarkCyan
-    foreach ($l in $lines) {
-        $text = [string]$l.Text
-        $pad = $width - $text.Length
-        if ($pad -lt 0) { $pad = 0 }
-        $left = [int][math]::Floor($pad / 2)
-        $right = $pad - $left
-        Write-Host ("  |" + (" " * $left) + $text + (" " * $right) + "|") -ForegroundColor $l.Color
-    }
-    Write-Host $bar -ForegroundColor DarkCyan
-}
-
-# Logotipo EndpointX (hexagono-X) em ASCII
-$hexLogo = @(
-    '     /\     ',
-    '    /  \    ',
-    '   /    \   ',
-    '  /      \  ',
-    '  |      |  ',
-    '  | \  / |  ',
-    '  |  \/  |  ',
-    '  |  /\  |  ',
-    '  | /  \ |  ',
-    '  |      |  ',
-    '  \      /  ',
-    '   \    /   ',
-    '    \  /    ',
-    '     \/     '
+# Banner ASCII EndpointX (figlet standard font, nome oficial: EndpointX)
+$bannerLines = @(
+    ' _____           _             _       _  __  __'
+    '| ____|_ __   __| |_ __   ___ (_)_ __ | |_\ \/ /'
+    '|  _| | ''_ \ / _` | ''_ \ / _ \| | ''_ \| __|\  / '
+    '| |___| | | | (_| | |_) | (_) | | | | | |_ /  \ '
+    '|_____|_| |_|\__,_| .__/ \___/|_|_| |_|\__/_/\_\'
+    '                  |_|                           '
 )
-$hexWidth = ($hexLogo | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
 
 Write-Host ""
-Write-Banner @(
-    $hexLogo | ForEach-Object { @{ Text = $_.PadRight($hexWidth); Color = 'Cyan' } }
-    @{ Text = ('-' * 46); Color = 'DarkCyan' }
-    @{ Text = 'E N D P O I N T X'; Color = 'Cyan' }
-    @{ Text = 'AGENT INSTALLER  v1.3.0'; Color = 'Gray' }
-    @{ Text = $serverUrl; Color = 'DarkGray' }
-) 46
+foreach ($line in $bannerLines) {
+    Write-Host $line -ForegroundColor Blue
+}
+Write-Host "  EndpointX v$agentVersion" -ForegroundColor Cyan
+Write-Host "  Agent Installation System" -ForegroundColor White
+Write-Host "  Discover | Manage | Protect" -ForegroundColor White
+if ($agentVersion -eq 'Unknown') {
+    Write-Info "  AVISO: nao foi possivel determinar a versao do agente."
+}
+Write-Host "  Server: $serverUrl" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  EndpointX agent will be installed in background with auto-start." -ForegroundColor DarkGray
 Write-Host ""
@@ -178,7 +164,7 @@ server_url: $serverUrl/api
             Start-Process -FilePath $pythonCmd -ArgumentList "agent.py" -WorkingDirectory $agentDir -WindowStyle Hidden
         }
 
-        Write-Ok "Atualizacao concluida (v1.3.0)."
+        Write-Ok "Atualizacao concluida (v$agentVersion)."
     } else {
         Write-Step "[1/5] Criando pasta $agentDir ..."
         New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
@@ -234,7 +220,7 @@ WshShell.Run "pythonw.exe agent.py", 0, False
         try { Copy-Item (Join-Path $agentDir "start_agent.vbs") $startup -Force } catch { }
 
         Start-Process -FilePath "wscript.exe" -ArgumentList "`"$(Join-Path $agentDir 'start_agent.vbs')`""
-        Write-Ok "Instalacao concluida (v1.3.0). Agent em background + auto-start no login."
+        Write-Ok "Instalacao concluida (v$agentVersion). Agent em background + auto-start no login."
     }
 } catch {
     Write-Err "Falha na instalacao: $($_.Exception.Message)"

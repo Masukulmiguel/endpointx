@@ -27,6 +27,30 @@ import {
 
 const router = Router();
 
+// Official agent version: endpoint-agent/agent.py CURRENT_AGENT_VERSION.
+// Docker layout: /app/src/routes + /app/endpoint-agent (two levels up).
+// Local repo layout: backend-api/src/routes + <repo>/endpoint-agent (three up).
+function resolveAgentVersion(): string {
+  const candidates = [
+    join(__dirname, '..', '..', 'endpoint-agent', 'agent.py'),
+    join(__dirname, '..', '..', '..', 'endpoint-agent', 'agent.py'),
+  ];
+  try {
+    for (const agentPy of candidates) {
+      if (!existsSync(agentPy)) continue;
+      const match = readFileSync(agentPy, 'utf-8').match(/CURRENT_AGENT_VERSION\s*=\s*"([^"]+)"/);
+      if (match) return match[1];
+      logger.warn('CURRENT_AGENT_VERSION not found in agent.py');
+      return 'Unknown';
+    }
+    logger.warn('agent.py not found for install.ps1 version injection');
+    return 'Unknown';
+  } catch (error) {
+    logger.warn('failed to resolve agent version', { error: (error as Error).message });
+    return 'Unknown';
+  }
+}
+
 // OS filter families sent by the dashboard select, mapped to LIKE patterns.
 // os_type stores 'Windows'/'Linux'/'Darwin' (Python platform.system()) and
 // 'android'/'ios' (mobile enrollment page), so matching is case-insensitive.
@@ -1807,6 +1831,7 @@ router.get('/public/install.ps1', requireEnrollToken, async (req: AuthRequest, r
     script = script.replace(/##AGENT_SECRET##/g, agentSecret);
     script = script.replace(/##ENROLL_TOKEN##/g, rawEnrollTokenFromRequest(req));
     script = script.replace(/##CONSENT_MODE##/g, gate.kind === 'install' && gate.consentPrompt ? '1' : '0');
+    script = script.replace(/##AGENT_VERSION##/g, resolveAgentVersion());
 
     // text/plain (no attachment) so `irm ... | iex` receives a clean string
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
