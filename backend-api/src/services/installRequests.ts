@@ -126,6 +126,29 @@ async function audit(
   }
 }
 
+// Revert the node's review_status when its enrollment request dies
+// (refused/expired/cancelled). The guard ensures admin-set states
+// (known/ignored) are never clobbered.
+async function revertNodeEnrollment(nodeId: string): Promise<void> {
+  await query(
+    `UPDATE network_nodes
+        SET review_status = 'new', updated_at = NOW()
+      WHERE id = $1 AND review_status = 'enrollment_requested'`,
+    [nodeId]
+  );
+}
+
+// Mark the node known once the device confirms its first authenticated
+// heartbeat (integrated). Guarded the same way as revertNodeEnrollment.
+async function markNodeEnrolled(deviceId: string): Promise<void> {
+  await query(
+    `UPDATE network_nodes
+        SET review_status = 'known', updated_at = NOW()
+      WHERE device_id = $1 AND review_status = 'enrollment_requested'`,
+    [deviceId]
+  );
+}
+
 const SELECT_REQUEST = `
   SELECT r.*,
          n.ip_address AS node_ip, n.mac_address AS node_mac, n.hostname AS node_hostname,
@@ -265,6 +288,7 @@ export async function cancelInstallRequest(
     const existing = await query(`SELECT status FROM installation_requests WHERE id = $1`, [id]);
     return { ok: false, reason: existing.rows[0] ? 'not_cancellable' : 'not_found' };
   }
+  await revertNodeEnrollment((r.rows[0] as InstallRequestRow).node_id);
   await audit(
     'install_request_cancelled',
     'installation_request',
@@ -321,9 +345,10 @@ export async function expireStaleRequests(): Promise<number> {
     `UPDATE installation_requests
         SET status = 'expired', updated_at = NOW()
       WHERE status IN ('pending','delivered') AND expires_at < NOW()
-      RETURNING id`
+      RETURNING id, node_id`
   );
   for (const row of stale.rows) {
+    if (row.node_id) await revertNodeEnrollment(row.node_id as string);
     await audit(
       'install_request_expired',
       'installation_request',
@@ -392,6 +417,9 @@ export async function recordDecision(
     [row.id, status, channel]
   );
   if ((updated.rowCount ?? 0) === 0) return { ok: false, reason: 'invalid_state' };
+  if (decision === 'refuse') {
+    await revertNodeEnrollment(row.node_id);
+  }
   await audit(
     decision === 'authorize' ? 'install_request_authorized' : 'install_request_refused',
     'installation_request',
@@ -498,6 +526,7 @@ export async function markIntegratedByDevice(deviceId: string): Promise<string |
   );
   const row = r.rows[0];
   if (row) {
+    await markNodeEnrolled(deviceId);
     await audit(
       'device_integrated',
       'installation_request',

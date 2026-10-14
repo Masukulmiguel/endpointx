@@ -295,11 +295,19 @@ async function main(): Promise<void> {
     setScripts([
       { match: 'WHERE r.invite_token', rows: [baseRow({ status: 'pending' })] },
       { match: 'SET status = $2, decision = $2', rows: [baseRow({ status: 'refused', decision: 'refused', decision_channel: 'web' })] },
+      { match: 'UPDATE network_nodes', rows: [] },
       { match: 'INSERT INTO audit_logs', rows: [] },
     ]);
-    const result = await svc.recordDecision(HEX64, 'refuse', 'web');
+    const { result, calls: emitted } = await captureCalls(() => svc.recordDecision(HEX64, 'refuse', 'web'));
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     assert.strictEqual(result.request?.status, 'refused');
+    const revert = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revert, 'refuse must revert the node review_status');
+    assert.ok(revert.sql.includes("review_status = 'new'"), `revert must set review_status=new: ${revert.sql}`);
+    assert.ok(
+      revert.sql.includes("review_status = 'enrollment_requested'"),
+      `revert must only touch nodes still in enrollment_requested: ${revert.sql}`
+    );
   });
 
   await checkAsync('decision_authorize_is_idempotent', async () => {
@@ -379,10 +387,19 @@ async function main(): Promise<void> {
   await checkAsync('integrated_only_flips_from_installed', async () => {
     setScripts([
       { match: "SET status = 'integrated'", rows: [{ id: 'req1' }] },
+      { match: 'UPDATE network_nodes', rows: [] },
       { match: 'INSERT INTO audit_logs', rows: [] },
     ]);
-    const id = await svc.markIntegratedByDevice('dev123');
-    assert.strictEqual(id, 'req1');
+    const { result, calls: emitted } = await captureCalls(() => svc.markIntegratedByDevice('dev123'));
+    assert.strictEqual(result, 'req1');
+    const enrolled = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(enrolled, 'integrated must mark the node known');
+    assert.ok(enrolled.sql.includes("review_status = 'known'"), `must set review_status=known: ${enrolled.sql}`);
+    assert.ok(
+      enrolled.sql.includes("review_status = 'enrollment_requested'"),
+      `guard must only touch nodes still in enrollment_requested: ${enrolled.sql}`
+    );
+    assert.ok(enrolled.sql.includes('device_id'), `must key off device_id: ${enrolled.sql}`);
 
     setScripts([
       { match: "SET status = 'integrated'", rows: [] },
@@ -391,9 +408,29 @@ async function main(): Promise<void> {
     assert.strictEqual(none, null);
   });
 
+  await checkAsync('cancel_reverts_node_to_new', async () => {
+    setScripts([
+      { match: "SET status = 'cancelled'", rows: [baseRow({ status: 'cancelled' })] },
+      { match: 'UPDATE network_nodes', rows: [] },
+      { match: 'INSERT INTO audit_logs', rows: [] },
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      svc.cancelInstallRequest('33333333333333333333333333333333', { id: USER_ID, permissions: [] })
+    );
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    const revert = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revert, 'cancel must revert the node review_status');
+    assert.ok(revert.sql.includes("review_status = 'new'"), `revert must set review_status=new: ${revert.sql}`);
+    assert.ok(
+      revert.sql.includes("review_status = 'enrollment_requested'"),
+      `revert must only touch nodes still in enrollment_requested: ${revert.sql}`
+    );
+  });
+
   await checkAsync('expire_sweep_targets_pending_and_delivered_only', async () => {
     setScripts([
-      { match: "SET status = 'expired'", rows: [{ id: 'stale1' }] },
+      { match: "SET status = 'expired'", rows: [{ id: 'stale1', node_id: NODE_ID }] },
+      { match: 'UPDATE network_nodes', rows: [] },
       { match: 'INSERT INTO audit_logs', rows: [] },
     ]);
     const { result, calls: emitted } = await captureCalls(() => svc.expireStaleRequests());
@@ -402,6 +439,14 @@ async function main(): Promise<void> {
     assert.ok(upd, 'sweep UPDATE missing');
     assert.ok(upd!.sql.includes("'pending','delivered'"), upd!.sql);
     assert.ok(upd!.sql.includes('expires_at < NOW()'), upd!.sql);
+    assert.ok(upd!.sql.includes('RETURNING id, node_id'), `sweep must return node_id for the revert: ${upd!.sql}`);
+    const revert = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revert, 'expiry must revert the node review_status');
+    assert.ok(revert.sql.includes("review_status = 'new'"), `revert must set review_status=new: ${revert.sql}`);
+    assert.ok(
+      revert.sql.includes("review_status = 'enrollment_requested'"),
+      `revert must only touch nodes still in enrollment_requested: ${revert.sql}`
+    );
   });
 
   await checkAsync('invite_page_marks_delivered_and_renders_consent_form', async () => {
