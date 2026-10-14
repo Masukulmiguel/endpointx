@@ -205,7 +205,7 @@ async function main(): Promise<void> {
 
   await checkAsync('create_blocks_already_enrolled_node', async () => {
     setScripts([
-      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: 'dev1', mac_address: null, ip_address: null, hostname: null, metadata: {}, created_by: null }] },
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: 'dev1', mac_address: null, ip_address: null, hostname: null, metadata: {}, created_by: USER_ID }] },
     ]);
     const results = await svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: [] });
     assert.strictEqual(results[0].ok, false);
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
 
   await checkAsync('create_blocks_when_active_request_exists', async () => {
     setScripts([
-      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb', ip_address: '10.0.0.2', hostname: 'x', metadata: {}, created_by: null }] },
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb', ip_address: '10.0.0.2', hostname: 'x', metadata: {}, created_by: USER_ID }] },
       { match: 'SELECT id FROM installation_requests', rows: [{ id: 'active1' }] },
     ]);
     const results = await svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: [] });
@@ -224,7 +224,7 @@ async function main(): Promise<void> {
 
   await checkAsync('create_success_inserts_and_marks_node_review_status', async () => {
     setScripts([
-      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'PC-SALA3', metadata: { os_estimate: 'Windows' }, created_by: null }] },
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'PC-SALA3', metadata: { os_estimate: 'Windows' }, created_by: USER_ID }] },
       { match: 'SELECT id FROM installation_requests', rows: [] },
       { match: 'INSERT INTO installation_requests', rows: [baseRow()] },
       { match: "SET review_status = 'enrollment_requested'", rows: [] },
@@ -244,15 +244,70 @@ async function main(): Promise<void> {
     );
   });
 
+  await checkAsync('create_blocks_node_from_another_tenant', async () => {
+    setScripts([
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb', ip_address: '10.0.0.3', hostname: 'other', metadata: {}, created_by: 'other-user' }] },
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: ['devices.manage'] })
+    );
+    assert.strictEqual(result[0].ok, false, JSON.stringify(result[0]));
+    assert.strictEqual(result[0].reason, 'node_not_found', 'cross-tenant must be indistinguishable from a missing node');
+    assert.ok(
+      !emitted.some((c) => c.sql.includes('INSERT INTO installation_requests')),
+      'must not create a request for another tenant node'
+    );
+    assert.ok(
+      !emitted.some((c) => c.sql.includes('UPDATE network_nodes')),
+      'must not touch another tenant node'
+    );
+  });
+
+  await checkAsync('create_allows_node_owner_without_view_all', async () => {
+    setScripts([
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'OWN-PC', metadata: { os_estimate: 'Windows' }, created_by: USER_ID }] },
+      { match: 'SELECT id FROM installation_requests', rows: [] },
+      { match: 'INSERT INTO installation_requests', rows: [baseRow()] },
+      { match: "SET review_status = 'enrollment_requested'", rows: [] },
+      { match: 'INSERT INTO audit_logs', rows: [] },
+    ]);
+    const { result } = await captureCalls(() =>
+      svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: ['devices.manage'] })
+    );
+    assert.strictEqual(result[0].ok, true, JSON.stringify(result[0]));
+  });
+
+  await checkAsync('create_allows_view_all_for_unowned_node', async () => {
+    setScripts([
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'UNOWNED', metadata: { os_estimate: 'Windows' }, created_by: null }] },
+      { match: 'SELECT id FROM installation_requests', rows: [] },
+      { match: 'INSERT INTO installation_requests', rows: [baseRow()] },
+      { match: "SET review_status = 'enrollment_requested'", rows: [] },
+      { match: 'INSERT INTO audit_logs', rows: [] },
+    ]);
+    const { result } = await captureCalls(() =>
+      svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: ['devices.manage', 'devices.view_all'] })
+    );
+    assert.strictEqual(result[0].ok, true, JSON.stringify(result[0]));
+  });
+
   await checkAsync('decision_refuse_from_pending', async () => {
     setScripts([
       { match: 'WHERE r.invite_token', rows: [baseRow({ status: 'pending' })] },
       { match: 'SET status = $2, decision = $2', rows: [baseRow({ status: 'refused', decision: 'refused', decision_channel: 'web' })] },
+      { match: 'UPDATE network_nodes', rows: [] },
       { match: 'INSERT INTO audit_logs', rows: [] },
     ]);
-    const result = await svc.recordDecision(HEX64, 'refuse', 'web');
+    const { result, calls: emitted } = await captureCalls(() => svc.recordDecision(HEX64, 'refuse', 'web'));
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     assert.strictEqual(result.request?.status, 'refused');
+    const revert = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revert, 'refuse must revert the node review_status');
+    assert.ok(revert.sql.includes("review_status = 'new'"), `revert must set review_status=new: ${revert.sql}`);
+    assert.ok(
+      revert.sql.includes("review_status = 'enrollment_requested'"),
+      `revert must only touch nodes still in enrollment_requested: ${revert.sql}`
+    );
   });
 
   await checkAsync('decision_authorize_is_idempotent', async () => {
@@ -332,10 +387,19 @@ async function main(): Promise<void> {
   await checkAsync('integrated_only_flips_from_installed', async () => {
     setScripts([
       { match: "SET status = 'integrated'", rows: [{ id: 'req1' }] },
+      { match: 'UPDATE network_nodes', rows: [] },
       { match: 'INSERT INTO audit_logs', rows: [] },
     ]);
-    const id = await svc.markIntegratedByDevice('dev123');
-    assert.strictEqual(id, 'req1');
+    const { result, calls: emitted } = await captureCalls(() => svc.markIntegratedByDevice('dev123'));
+    assert.strictEqual(result, 'req1');
+    const enrolled = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(enrolled, 'integrated must mark the node known');
+    assert.ok(enrolled.sql.includes("review_status = 'known'"), `must set review_status=known: ${enrolled.sql}`);
+    assert.ok(
+      enrolled.sql.includes("review_status = 'enrollment_requested'"),
+      `guard must only touch nodes still in enrollment_requested: ${enrolled.sql}`
+    );
+    assert.ok(enrolled.sql.includes('device_id'), `must key off device_id: ${enrolled.sql}`);
 
     setScripts([
       { match: "SET status = 'integrated'", rows: [] },
@@ -344,9 +408,29 @@ async function main(): Promise<void> {
     assert.strictEqual(none, null);
   });
 
+  await checkAsync('cancel_reverts_node_to_new', async () => {
+    setScripts([
+      { match: "SET status = 'cancelled'", rows: [baseRow({ status: 'cancelled' })] },
+      { match: 'UPDATE network_nodes', rows: [] },
+      { match: 'INSERT INTO audit_logs', rows: [] },
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      svc.cancelInstallRequest('33333333333333333333333333333333', { id: USER_ID, permissions: [] })
+    );
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    const revert = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revert, 'cancel must revert the node review_status');
+    assert.ok(revert.sql.includes("review_status = 'new'"), `revert must set review_status=new: ${revert.sql}`);
+    assert.ok(
+      revert.sql.includes("review_status = 'enrollment_requested'"),
+      `revert must only touch nodes still in enrollment_requested: ${revert.sql}`
+    );
+  });
+
   await checkAsync('expire_sweep_targets_pending_and_delivered_only', async () => {
     setScripts([
-      { match: "SET status = 'expired'", rows: [{ id: 'stale1' }] },
+      { match: "SET status = 'expired'", rows: [{ id: 'stale1', node_id: NODE_ID }] },
+      { match: 'UPDATE network_nodes', rows: [] },
       { match: 'INSERT INTO audit_logs', rows: [] },
     ]);
     const { result, calls: emitted } = await captureCalls(() => svc.expireStaleRequests());
@@ -355,6 +439,14 @@ async function main(): Promise<void> {
     assert.ok(upd, 'sweep UPDATE missing');
     assert.ok(upd!.sql.includes("'pending','delivered'"), upd!.sql);
     assert.ok(upd!.sql.includes('expires_at < NOW()'), upd!.sql);
+    assert.ok(upd!.sql.includes('RETURNING id, node_id'), `sweep must return node_id for the revert: ${upd!.sql}`);
+    const revert = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.ok(revert, 'expiry must revert the node review_status');
+    assert.ok(revert.sql.includes("review_status = 'new'"), `revert must set review_status=new: ${revert.sql}`);
+    assert.ok(
+      revert.sql.includes("review_status = 'enrollment_requested'"),
+      `revert must only touch nodes still in enrollment_requested: ${revert.sql}`
+    );
   });
 
   await checkAsync('invite_page_marks_delivered_and_renders_consent_form', async () => {
@@ -491,6 +583,146 @@ async function main(): Promise<void> {
     assert.ok(tpl.includes('/api/enroll/decision'), 'template missing device decision callback');
     assert.ok(tpl.includes('WScript.Shell'), 'template missing Popup fallback');
   });
+
+  // ---- Task 6: register-gate E2E (HTTP) + markInstalling coverage --------
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const jwtLib = require('jsonwebtoken') as typeof import('jsonwebtoken');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { JWT: JWT_CONST } = require('../src/config/constants') as typeof import('../src/config/constants');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const devicesRouter = require('../src/routes/devices').default as import('express').Router;
+
+  const installJti = 'b'.repeat(64);
+  const installTokenFor = (status: string): string =>
+    jwtLib.sign(
+      { sub: USER_ID, typ: 'install', jti: installJti, mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.1.50' },
+      JWT_CONST.ACCESS_SECRET,
+      { expiresIn: '1h' }
+    );
+  const agentSecret = process.env.AGENT_SECRET || '';
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api/devices', devicesRouter);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as { port: number }).port;
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    await checkAsync('register_with_refused_install_token_is_403_and_creates_nothing', async () => {
+      setScripts([
+        { match: 'WHERE r.install_jti', rows: [baseRow({ status: 'refused' })] },
+      ]);
+      const { calls: emitted } = await captureCalls(async () => {
+        const res = await fetch(`${base}/api/devices/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': agentSecret },
+          body: JSON.stringify({
+            agent_id: 'agt-refused',
+            hostname: 'refused-pc',
+            os_type: 'Windows',
+            enroll_token: installTokenFor('refused'),
+          }),
+        });
+        assert.strictEqual(res.status, 403, `expected 403, got ${res.status}`);
+        const body = (await res.json()) as { error: { message: string } };
+        assert.ok(
+          body.error.message.includes('Installation request not usable: refused'),
+          body.error.message
+        );
+      });
+      assert.ok(
+        !emitted.some((c) => c.sql.includes('INSERT INTO devices')),
+        'refused token must never create a device row'
+      );
+      assert.ok(
+        !emitted.some((c) => c.sql.includes("SET status = 'installed'")),
+        'refused token must never mark a request installed'
+      );
+    });
+
+    await checkAsync('register_with_expired_install_token_is_403', async () => {
+      setScripts([
+        { match: 'WHERE r.install_jti', rows: [baseRow({ status: 'expired' })] },
+      ]);
+      const res = await fetch(`${base}/api/devices/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': agentSecret },
+        body: JSON.stringify({
+          agent_id: 'agt-expired',
+          hostname: 'expired-pc',
+          os_type: 'Windows',
+          enroll_token: installTokenFor('expired'),
+        }),
+      });
+      assert.strictEqual(res.status, 403, `expected 403, got ${res.status}`);
+    });
+
+    await checkAsync('register_with_authorized_install_token_marks_request_installed', async () => {
+      setScripts([
+        { match: 'WHERE r.install_jti', rows: [baseRow({ status: 'authorized' })] },
+        { match: 'FROM devices WHERE agent_id', rows: [] },
+        { match: 'FROM devices WHERE ip_address IS NOT NULL', rows: [] },
+        { match: 'INSERT INTO devices', rows: [{ id: 'dev-new' }] },
+        { match: "SET status = 'installed'", rows: [{ node_id: NODE_ID }] },
+        { match: 'SET device_id = $2', rows: [] },
+        { match: 'INSERT INTO audit_logs', rows: [] },
+      ]);
+      const { calls: emitted } = await captureCalls(async () => {
+        const res = await fetch(`${base}/api/devices/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': agentSecret },
+          body: JSON.stringify({
+            agent_id: 'agt-authz',
+            hostname: 'authz-pc',
+            os_type: 'Windows',
+            enroll_token: installTokenFor('authorized'),
+          }),
+        });
+        assert.strictEqual(res.status, 201, `expected 201, got ${res.status}`);
+        const body = (await res.json()) as { data: { id: string; is_new: boolean } };
+        assert.strictEqual(body.data.id, 'dev-new');
+        assert.strictEqual(body.data.is_new, true);
+      });
+      const installed = emitted.find((c) => c.sql.includes("SET status = 'installed'"));
+      assert.ok(installed, 'authorized register must flip the request to installed');
+      const insertCall = emitted.find((c) => c.sql.includes('INSERT INTO devices'));
+      assert.ok(insertCall, 'authorized register must insert the device row');
+      // The route generates the device id locally and passes it to
+      // markRequestInstalledDevice; capture it from the INSERT params.
+      const generatedId = String(insertCall.params[0]);
+      assert.match(generatedId, /^[0-9a-f]{32}$/, 'route must generate a 32-hex device id');
+      assert.strictEqual(installed.params[0], '33333333333333333333333333333333', 'flip targets the install request');
+      assert.strictEqual(installed.params[1], generatedId, 'installed flip must carry the route-generated device id');
+      const link = emitted.find((c) => c.sql.includes('SET device_id = $2'));
+      assert.ok(link, 'node must be linked to the new device');
+      assert.strictEqual(link.params[0], NODE_ID, 'link targets the request node');
+      assert.strictEqual(link.params[1], generatedId, 'node link must carry the same device id');
+    });
+
+    await checkAsync('install_script_fetch_marks_request_installing', async () => {
+      setScripts([
+        { match: 'WHERE r.install_jti', rows: [baseRow({ status: 'authorized' })] },
+        { match: "SET status = 'installing'", rows: [baseRow({ status: 'installing' })] },
+        { match: 'INSERT INTO audit_logs', rows: [] },
+      ]);
+      const token = installTokenFor('authorized');
+      const { calls: emitted } = await captureCalls(async () => {
+        const res = await fetch(`${base}/api/devices/public/install.ps1?t=${token}`);
+        assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+        const text = await res.text();
+        assert.ok(text.includes('AGENT_SECRET') || text.length > 0, 'script body missing');
+      });
+      const installing = emitted.find((c) => c.sql.includes("SET status = 'installing'"));
+      assert.ok(installing, 'serving the script for an authorized request must flip it to installing');
+    });
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+    });
+  }
 
   console.log(failed === 0 ? '\nALL PASS' : `\n${failed} FAILED`);
   process.exitCode = failed === 0 ? 0 : 1;

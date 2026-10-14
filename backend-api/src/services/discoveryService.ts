@@ -1,8 +1,7 @@
-import jwt from 'jsonwebtoken';
 import { query } from '../config/database';
-import { JWT } from '../config/constants';
 import { canViewUnownedDevices } from '../utils/tenant';
 import { discoverUnknownAsset } from '../routes/hermes';
+import { vendorFromMac } from '../utils/oui';
 
 function newId(): string {
   return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -56,42 +55,82 @@ async function finalizeRun(
   );
 }
 
+function mapDeviceTypeToNodeType(deviceType: string | null | undefined): string {
+  switch ((deviceType ?? '').toUpperCase()) {
+    case 'DESKTOP':
+    case 'LAPTOP':
+      return 'ENDPOINT';
+    case 'SERVER':
+      return 'SERVER';
+    case 'PRINTER':
+      return 'PRINTER';
+    case 'CAMERA':
+      return 'CAMERA';
+    case 'ROUTER':
+      return 'ROUTER';
+    case 'SWITCH':
+      return 'SWITCH';
+    case 'ACCESS_POINT':
+      return 'ACCESS_POINT';
+    case 'IOT':
+      return 'IOT';
+    default:
+      return 'OTHER';
+  }
+}
+
 async function ingestHost(
   host: DiscoveryHost,
   createdBy: string | null,
   stats: IngestStats
 ): Promise<void> {
   let deviceId: string | null = null;
+  let deviceType: string | null = null;
   if (host.mac) {
     const dev = await query(
-      'SELECT id FROM devices WHERE LOWER(mac_address) = LOWER($1)',
+      'SELECT id, device_type FROM devices WHERE LOWER(mac_address) = LOWER($1)',
       [host.mac]
     );
     deviceId = dev.rows[0]?.id ?? null;
+    deviceType = dev.rows[0]?.device_type ?? null;
     if (deviceId) stats.linked_devices++;
   }
 
+  // MAC-first dedup: a MAC is a stable hardware identity; IP churn (DHCP)
+  // must not spawn duplicate nodes. Hosts without a MAC still key on IP.
   const existing = host.mac
     ? await query(
-        'SELECT id FROM network_nodes WHERE ip_address = $1 AND mac_address IS NOT NULL AND LOWER(mac_address) = LOWER($2)',
-        [host.ip, host.mac]
+        'SELECT id FROM network_nodes WHERE LOWER(mac_address) = LOWER($1) ORDER BY last_seen DESC LIMIT 1',
+        [host.mac]
       )
     : await query('SELECT id FROM network_nodes WHERE ip_address = $1 AND mac_address IS NULL', [host.ip]);
 
-  const metadata = JSON.stringify({ os_estimate: host.os_estimate, rtt_ms: host.rtt_ms });
+  const vendor = vendorFromMac(host.mac);
+  const confidence = deviceId ? 'high' : host.mac && host.hostname ? 'medium' : 'low';
+  const metadata = JSON.stringify({
+    os_estimate: host.os_estimate,
+    rtt_ms: host.rtt_ms,
+    confidence,
+  });
+  // Only infer a node_type from a linked agent device; unlinked hosts stay UNKNOWN.
+  const mappedNodeType = deviceId ? mapDeviceTypeToNodeType(deviceType) : 'UNKNOWN';
 
   if (existing.rows.length > 0) {
     const nodeId = existing.rows[0].id as string;
-    // Preserve first_seen, admin name and node_type once set.
+    // Preserve first_seen, admin name and node_type once set; a node_type
+    // upgrade is only allowed when the current value is still UNKNOWN.
     await query(
       `UPDATE network_nodes
           SET last_seen = NOW(),
-              hostname = COALESCE($2, hostname),
-              device_id = COALESCE($3, device_id),
-              metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
+              ip_address = COALESCE($2, ip_address),
+              hostname = COALESCE($3, hostname),
+              vendor = COALESCE($4, vendor),
+              device_id = COALESCE($5, device_id),
+              node_type = CASE WHEN network_nodes.node_type = 'UNKNOWN' THEN $7 ELSE network_nodes.node_type END,
+              metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE($6::jsonb, '{}'::jsonb),
               updated_at = NOW()
         WHERE id = $1`,
-      [nodeId, host.hostname, deviceId, metadata]
+      [nodeId, host.ip, host.hostname, vendor, deviceId, metadata, mappedNodeType]
     );
     stats.updated_nodes++;
     return;
@@ -101,8 +140,8 @@ async function ingestHost(
   await query(
     `INSERT INTO network_nodes
       (id, node_type, hostname, ip_address, mac_address, vendor, metadata, source, device_id, created_by, first_seen, last_seen, updated_at)
-     VALUES ($1, 'UNKNOWN', $2, $3, $4, NULL, $5, 'network_discovery', $6, $7, NOW(), NOW(), NOW())`,
-    [nodeId, host.hostname, host.ip, host.mac, metadata, deviceId, createdBy]
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'network_discovery', $8, $9, NOW(), NOW(), NOW())`,
+    [nodeId, mappedNodeType, host.hostname, host.ip, host.mac, vendor, metadata, deviceId, createdBy]
   );
   stats.new_nodes++;
 
@@ -340,31 +379,4 @@ export async function identifyNode(
     [newId(), user.id, 'network_node_identify', id, `identify ${JSON.stringify(body)}`, JSON.stringify(body)]
   );
   return true;
-}
-
-export async function requestEnrollment(
-  id: string,
-  user: { id: string; email: string; permissions: string[] }
-): Promise<{ token: string; commands: { windows: string; linux: string; macos: string } } | null> {
-  const node = await getNode(id, { id: user.id, permissions: user.permissions });
-  if (!node) return null;
-
-  const token = jwt.sign({ sub: user.id, typ: 'enroll' }, JWT.ACCESS_SECRET, { expiresIn: '30d' });
-  await query(
-    `UPDATE network_nodes
-        SET review_status = 'enrollment_requested', enrollment_requested_at = NOW(), updated_at = NOW()
-      WHERE id = $1`,
-    [id]
-  );
-
-  const host = (process.env.API_HOST || 'endpointx.onrender.com').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const API = `https://${host}`;
-  return {
-    token,
-    commands: {
-      windows: `irm ${API}/api/devices/public/install.ps1?t=${token} | iex`,
-      linux: `curl -fsSL ${API}/api/devices/public/install-linux.sh?t=${token} | sudo bash`,
-      macos: `curl -fsSL ${API}/api/devices/public/install-macos.sh?t=${token} | bash`,
-    },
-  };
 }
