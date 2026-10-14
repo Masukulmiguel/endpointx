@@ -60,6 +60,22 @@ export interface BreachEntry {
   dataClasses: string[];
 }
 
+export interface PhoneHlr {
+  connectivity?: string;
+  originalNetwork?: string;
+  currentNetwork?: string;
+  mccmnc?: string;
+  isPorted?: boolean;
+  roaming?: boolean;
+  countryIso?: string;
+}
+
+export interface PhoneReputation {
+  displayName?: string;
+  category?: string;
+  isSpam?: boolean;
+}
+
 export interface PhoneInfo {
   valid: boolean;
   countryCode: string;
@@ -69,6 +85,11 @@ export interface PhoneInfo {
   numberType?: string;
   e164?: string;
   national?: string;
+  prefixOperator?: string;
+  prefixType?: string;
+  hlr?: PhoneHlr;
+  reputation?: PhoneReputation;
+  identityName?: string;
 }
 
 export interface VinInfo {

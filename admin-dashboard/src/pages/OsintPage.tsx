@@ -54,6 +54,8 @@ interface ApiSettings {
   shodan: { configured: boolean; masked: string };
   hibp: { configured: boolean; masked: string };
   numverify: { configured: boolean; masked: string };
+  hlr?: { configured: boolean; masked: string };
+  hiya?: { configured: boolean; masked: string };
 }
 
 const TYPE_OPTIONS: { value: LookupType; labelKey: string }[] = [
@@ -138,6 +140,9 @@ export default function OsintPage() {
   const [shodanKey, setShodanKey] = useState('');
   const [hibpKey, setHibpKey] = useState('');
   const [numverifyKey, setNumverifyKey] = useState('');
+  const [hlrKey, setHlrKey] = useState('');
+  const [hlrSecret, setHlrSecret] = useState('');
+  const [hiyaKey, setHiyaKey] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
 
   const loadHistory = useCallback(async (page = 1, search = '') => {
@@ -194,6 +199,9 @@ export default function OsintPage() {
       setShodanKey('');
       setHibpKey('');
       setNumverifyKey('');
+      setHlrKey('');
+      setHlrSecret('');
+      setHiyaKey('');
     } catch {
       // silent
     }
@@ -211,6 +219,9 @@ export default function OsintPage() {
       if (shodanKey.trim()) payload.shodan_api_key = shodanKey.trim();
       if (hibpKey.trim()) payload.hibp_api_key = hibpKey.trim();
       if (numverifyKey.trim()) payload.numverify_api_key = numverifyKey.trim();
+      if (hlrKey.trim()) payload.hlr_api_key = hlrKey.trim();
+      if (hlrSecret.trim()) payload.hlr_api_secret = hlrSecret.trim();
+      if (hiyaKey.trim()) payload.hiya_api_key = hiyaKey.trim();
       if (Object.keys(payload).length === 0) {
         setShowSettings(false);
         return;
@@ -350,8 +361,42 @@ export default function OsintPage() {
           } />
           <Field label={t('osint.field.country')} value={data.phone.country ? `${data.phone.country}${data.phone.countryCode ? ` (${data.phone.countryCode})` : ''}` : ''} />
           <Field label={t('osint.field.carrier')} value={data.phone.carrier} />
+          <Field label={t('osint.field.prefixOperator')} value={data.phone.prefixOperator ? `${data.phone.prefixOperator}${data.phone.prefixType ? ` (${data.phone.prefixType})` : ''}` : ''} />
           <Field label={t('osint.field.lineType')} value={data.phone.lineType} />
           <Field label={t('osint.field.e164')} value={data.phone.e164} />
+          <Field label={t('osint.field.identityName')} value={data.phone.identityName} />
+          <Field label={t('osint.field.hlrConnectivity')} value={data.phone.hlr?.connectivity} />
+          <Field label={t('osint.field.originalNetwork')} value={data.phone.hlr?.originalNetwork} />
+          <Field label={t('osint.field.currentNetwork')} value={data.phone.hlr?.currentNetwork} />
+          <Field label={t('osint.field.mccmnc')} value={data.phone.hlr?.mccmnc} />
+          <Field label={t('osint.field.ported')} value={
+            data.phone.hlr?.isPorted === undefined ? undefined : data.phone.hlr.isPorted ? (
+              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-3 h-3" /> Sim
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                <CheckCircle2 className="w-3 h-3" /> Não
+              </span>
+            )
+          } />
+          <Field label={t('osint.field.roaming')} value={
+            data.phone.hlr?.roaming === undefined ? undefined : data.phone.hlr.roaming ? (
+              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-3 h-3" /> Sim
+              </span>
+            ) : (
+              <span className="text-green-600 dark:text-green-400">Não</span>
+            )
+          } />
+          <Field label={t('osint.field.reputation')} value={
+            data.phone.reputation ? (
+              <span className={`inline-flex items-center gap-1 ${data.phone.reputation.isSpam ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                {data.phone.reputation.isSpam ? <XCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                {data.phone.reputation.category || (data.phone.reputation.isSpam ? 'SPAM' : 'OK')}
+              </span>
+            ) : undefined
+          } />
         </Section>
       );
     }
@@ -629,6 +674,46 @@ export default function OsintPage() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                 />
                 {settings?.numverify.configured && (
+                  <p className="mt-1 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> {t('osint.settings.masked')}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('osint.settings.hlrKey')}</label>
+                <input
+                  type="password"
+                  value={hlrKey}
+                  onChange={(e) => setHlrKey(e.target.value)}
+                  placeholder={settings?.hlr?.configured ? settings.hlr.masked : 'API key...'}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('osint.settings.hlrSecret')}</label>
+                <input
+                  type="password"
+                  value={hlrSecret}
+                  onChange={(e) => setHlrSecret(e.target.value)}
+                  placeholder={settings?.hlr?.configured ? settings.hlr.masked : 'API secret...'}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                />
+                {settings?.hlr?.configured && (
+                  <p className="mt-1 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> {t('osint.settings.masked')}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('osint.settings.hiya')}</label>
+                <input
+                  type="password"
+                  value={hiyaKey}
+                  onChange={(e) => setHiyaKey(e.target.value)}
+                  placeholder={settings?.hiya?.configured ? settings.hiya.masked : 'API key...'}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                />
+                {settings?.hiya?.configured && (
                   <p className="mt-1 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" /> {t('osint.settings.masked')}
                   </p>

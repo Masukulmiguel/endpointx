@@ -97,6 +97,9 @@ router.post('/lookup', authenticate, requirePermission('osint.manage'), async (r
     const shodanKey = (await getSetting('shodan_api_key')) || '';
     const hibpKey = (await getSetting('hibp_api_key')) || '';
     const numverifyKey = (await getSetting('numverify_api_key')) || '';
+    const hlrApiKey = (await getSetting('hlr_api_key')) || '';
+    const hlrApiSecret = (await getSetting('hlr_api_secret')) || '';
+    const hiyaApiKey = (await getSetting('hiya_api_key')) || '';
 
     const sources: string[] = [];
     const errors: string[] = [];
@@ -128,7 +131,7 @@ router.post('/lookup', authenticate, requirePermission('osint.manage'), async (r
     } else if (type === 'email') {
       await collect(lookupEmail(target, hibpKey), 'email');
     } else if (type === 'phone') {
-      await collect(lookupPhone(target, numverifyKey), 'phone');
+      await collect(lookupPhone(target, { numverifyKey, hlrApiKey, hlrApiSecret, hiyaApiKey }), 'phone');
     } else if (type === 'vin') {
       await collect(lookupVin(target), 'vin');
     } else if (type === 'port') {
@@ -310,6 +313,9 @@ router.get('/settings', authenticate, requirePermission('osint.view'), async (re
     const shodanKey = await getSetting('shodan_api_key');
     const hibpKey = await getSetting('hibp_api_key');
     const numverifyKey = await getSetting('numverify_api_key');
+    const hlrApiKey = await getSetting('hlr_api_key');
+    const hlrApiSecret = await getSetting('hlr_api_secret');
+    const hiyaApiKey = await getSetting('hiya_api_key');
 
     res.json({
       success: true,
@@ -318,6 +324,8 @@ router.get('/settings', authenticate, requirePermission('osint.view'), async (re
           shodan: { configured: !!shodanKey, masked: shodanKey ? maskKey(shodanKey) : '' },
           hibp: { configured: !!hibpKey, masked: hibpKey ? maskKey(hibpKey) : '' },
           numverify: { configured: !!numverifyKey, masked: numverifyKey ? maskKey(numverifyKey) : '' },
+          hlr: { configured: !!(hlrApiKey && hlrApiSecret), masked: hlrApiKey ? maskKey(hlrApiKey) : '' },
+          hiya: { configured: !!hiyaApiKey, masked: hiyaApiKey ? maskKey(hiyaApiKey) : '' },
         },
       },
     });
@@ -329,15 +337,21 @@ router.get('/settings', authenticate, requirePermission('osint.view'), async (re
 // PUT /api/osint/settings
 router.put('/settings', authenticate, requirePermission('osint.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { shodan_api_key, hibp_api_key, numverify_api_key } = req.body as {
+    const { shodan_api_key, hibp_api_key, numverify_api_key, hlr_api_key, hlr_api_secret, hiya_api_key } = req.body as {
       shodan_api_key?: string;
       hibp_api_key?: string;
       numverify_api_key?: string;
+      hlr_api_key?: string;
+      hlr_api_secret?: string;
+      hiya_api_key?: string;
     };
 
     if (shodan_api_key !== undefined) await saveSetting('shodan_api_key', shodan_api_key, req.user!.id);
     if (hibp_api_key !== undefined) await saveSetting('hibp_api_key', hibp_api_key, req.user!.id);
     if (numverify_api_key !== undefined) await saveSetting('numverify_api_key', numverify_api_key, req.user!.id);
+    if (hlr_api_key !== undefined) await saveSetting('hlr_api_key', hlr_api_key, req.user!.id);
+    if (hlr_api_secret !== undefined) await saveSetting('hlr_api_secret', hlr_api_secret, req.user!.id);
+    if (hiya_api_key !== undefined) await saveSetting('hiya_api_key', hiya_api_key, req.user!.id);
 
     await audit('osint.settings.update', req, 'osint_settings', 'api_keys');
     res.json({ success: true });
