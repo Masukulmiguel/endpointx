@@ -308,7 +308,17 @@ async function main(): Promise<void> {
     const upd = updates[0].sql;
     assert.ok(!upd.includes('first_seen'), `UPDATE must not touch first_seen: ${upd}`);
     assert.ok(!/\bname\s*=/.test(upd), `UPDATE must not touch admin name: ${upd}`);
-    assert.ok(!upd.includes('node_type'), `UPDATE must not touch node_type: ${upd}`);
+    // node_type may only appear inside a CASE guard that upgrades UNKNOWN rows;
+    // a plain assignment would clobber the admin-set PRINTER.
+    assert.ok(upd.includes('CASE'), `node_type refresh must use a CASE guard: ${upd}`);
+    assert.ok(
+      /CASE[\s\S]*'UNKNOWN'/.test(upd),
+      `CASE guard must only upgrade rows whose node_type is UNKNOWN: ${upd}`
+    );
+    assert.ok(
+      !/SET[\s\S]*,\s*node_type\s*=\s*\$\d+/.test(upd),
+      `plain node_type assignment is forbidden on UPDATE: ${upd}`
+    );
   });
 
   await checkAsync('test_ingest_resolves_vendor_and_writes_confidence_high_for_linked_host', async () => {
@@ -443,6 +453,96 @@ async function main(): Promise<void> {
     assert.ok(
       !insert.params.some((p) => typeof p === 'string' && p.includes('Raspberry Pi Foundation')),
       'malformed MAC must yield null vendor'
+    );
+  });
+
+  await checkAsync('test_ingest_sets_node_type_from_linked_device', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, [{ id: 'dev-printer-linked', device_type: 'PRINTER' }]),
+      s(NODE_BY_MAC, []),
+    ]);
+    const { calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-nt-1',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ mac: 'AA:BB:CC:11:22:33', hostname: 'printer-5' }),
+        issuedBy: 'user-1',
+      })
+    );
+    const insert = emitted.find((c) => c.sql.startsWith('INSERT INTO network_nodes'));
+    assert.ok(insert, 'must emit INSERT');
+    assert.ok(insert.params.includes('PRINTER'), `INSERT params must carry node_type=PRINTER: ${JSON.stringify(insert.params)}`);
+  });
+
+  await checkAsync('test_ingest_maps_mobile_device_type_to_other', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, [{ id: 'dev-phone', device_type: 'MOBILE' }]),
+      s(NODE_BY_MAC, []),
+    ]);
+    const { calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-nt-2',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ mac: 'AA:BB:CC:44:55:66', hostname: 'phone-x' }),
+        issuedBy: 'user-1',
+      })
+    );
+    const insert = emitted.find((c) => c.sql.startsWith('INSERT INTO network_nodes'));
+    assert.ok(insert, 'must emit INSERT');
+    assert.ok(insert.params.includes('OTHER'), `MOBILE must map to OTHER: ${JSON.stringify(insert.params)}`);
+  });
+
+  await checkAsync('test_ingest_unlinked_host_stays_unknown', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, []),
+      s(NODE_BY_MAC, []),
+      s('FROM hermes_assets', []),
+    ]);
+    const { calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-nt-3',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ mac: 'AA:BB:CC:77:88:99', hostname: 'unknown-pc' }),
+        issuedBy: 'user-1',
+      })
+    );
+    const insert = emitted.find((c) => c.sql.startsWith('INSERT INTO network_nodes'));
+    assert.ok(insert, 'must emit INSERT');
+    assert.ok(insert.params.includes('UNKNOWN'), `unlinked host must keep node_type=UNKNOWN: ${JSON.stringify(insert.params)}`);
+  });
+
+  await checkAsync('test_ingest_node_type_upgrade_is_guarded_to_unknown', async () => {
+    setScripts([
+      s(RUNNER, [{ id: 'dev-runner', created_by: 'user-1' }]),
+      s(DEV_BY_MAC, [{ id: 'dev-srv', device_type: 'SERVER' }]),
+      s(NODE_BY_MAC, [{ id: 'node-endpoint' }]),
+    ]);
+    const { calls: emitted } = await captureCalls(() =>
+      ingestReport({
+        commandId: 'cmd-nt-4',
+        deviceId: 'dev-runner',
+        status: 'completed',
+        report: oneHost({ ip: '192.168.1.10', mac: 'AA:BB:CC:AB:CD:EF', hostname: 'server1' }),
+        issuedBy: 'user-1',
+      })
+    );
+    const updates = emitted.filter((c) => c.sql.startsWith('UPDATE network_nodes'));
+    assert.strictEqual(updates.length, 1, `expected 1 UPDATE, got ${updates.length}`);
+    const upd = updates[0];
+    assert.ok(upd.sql.includes('CASE'), `node_type refresh must use a CASE guard: ${upd.sql}`);
+    assert.ok(
+      /CASE[\s\S]*'UNKNOWN'/.test(upd.sql),
+      `CASE guard must only upgrade rows whose node_type is UNKNOWN: ${upd.sql}`
+    );
+    assert.ok(
+      !/SET[\s\S]*,\s*node_type\s*=\s*\$\d+/.test(upd.sql),
+      `plain node_type assignment is forbidden on UPDATE: ${upd.sql}`
     );
   });
 

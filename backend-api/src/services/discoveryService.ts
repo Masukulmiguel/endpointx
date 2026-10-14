@@ -57,18 +57,44 @@ async function finalizeRun(
   );
 }
 
+function mapDeviceTypeToNodeType(deviceType: string | null | undefined): string {
+  switch ((deviceType ?? '').toUpperCase()) {
+    case 'DESKTOP':
+    case 'LAPTOP':
+      return 'ENDPOINT';
+    case 'SERVER':
+      return 'SERVER';
+    case 'PRINTER':
+      return 'PRINTER';
+    case 'CAMERA':
+      return 'CAMERA';
+    case 'ROUTER':
+      return 'ROUTER';
+    case 'SWITCH':
+      return 'SWITCH';
+    case 'ACCESS_POINT':
+      return 'ACCESS_POINT';
+    case 'IOT':
+      return 'IOT';
+    default:
+      return 'OTHER';
+  }
+}
+
 async function ingestHost(
   host: DiscoveryHost,
   createdBy: string | null,
   stats: IngestStats
 ): Promise<void> {
   let deviceId: string | null = null;
+  let deviceType: string | null = null;
   if (host.mac) {
     const dev = await query(
-      'SELECT id FROM devices WHERE LOWER(mac_address) = LOWER($1)',
+      'SELECT id, device_type FROM devices WHERE LOWER(mac_address) = LOWER($1)',
       [host.mac]
     );
     deviceId = dev.rows[0]?.id ?? null;
+    deviceType = dev.rows[0]?.device_type ?? null;
     if (deviceId) stats.linked_devices++;
   }
 
@@ -88,10 +114,13 @@ async function ingestHost(
     rtt_ms: host.rtt_ms,
     confidence,
   });
+  // Only infer a node_type from a linked agent device; unlinked hosts stay UNKNOWN.
+  const mappedNodeType = deviceId ? mapDeviceTypeToNodeType(deviceType) : 'UNKNOWN';
 
   if (existing.rows.length > 0) {
     const nodeId = existing.rows[0].id as string;
-    // Preserve first_seen, admin name and node_type once set.
+    // Preserve first_seen, admin name and node_type once set; a node_type
+    // upgrade is only allowed when the current value is still UNKNOWN.
     await query(
       `UPDATE network_nodes
           SET last_seen = NOW(),
@@ -99,10 +128,11 @@ async function ingestHost(
               hostname = COALESCE($3, hostname),
               vendor = COALESCE($4, vendor),
               device_id = COALESCE($5, device_id),
+              node_type = CASE WHEN network_nodes.node_type = 'UNKNOWN' THEN $7 ELSE network_nodes.node_type END,
               metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE($6::jsonb, '{}'::jsonb),
               updated_at = NOW()
         WHERE id = $1`,
-      [nodeId, host.ip, host.hostname, vendor, deviceId, metadata]
+      [nodeId, host.ip, host.hostname, vendor, deviceId, metadata, mappedNodeType]
     );
     stats.updated_nodes++;
     return;
@@ -112,8 +142,8 @@ async function ingestHost(
   await query(
     `INSERT INTO network_nodes
       (id, node_type, hostname, ip_address, mac_address, vendor, metadata, source, device_id, created_by, first_seen, last_seen, updated_at)
-     VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, 'network_discovery', $7, $8, NOW(), NOW(), NOW())`,
-    [nodeId, host.hostname, host.ip, host.mac, vendor, metadata, deviceId, createdBy]
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'network_discovery', $8, $9, NOW(), NOW(), NOW())`,
+    [nodeId, mappedNodeType, host.hostname, host.ip, host.mac, vendor, metadata, deviceId, createdBy]
   );
   stats.new_nodes++;
 
