@@ -205,7 +205,7 @@ async function main(): Promise<void> {
 
   await checkAsync('create_blocks_already_enrolled_node', async () => {
     setScripts([
-      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: 'dev1', mac_address: null, ip_address: null, hostname: null, metadata: {}, created_by: null }] },
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: 'dev1', mac_address: null, ip_address: null, hostname: null, metadata: {}, created_by: USER_ID }] },
     ]);
     const results = await svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: [] });
     assert.strictEqual(results[0].ok, false);
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
 
   await checkAsync('create_blocks_when_active_request_exists', async () => {
     setScripts([
-      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb', ip_address: '10.0.0.2', hostname: 'x', metadata: {}, created_by: null }] },
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb', ip_address: '10.0.0.2', hostname: 'x', metadata: {}, created_by: USER_ID }] },
       { match: 'SELECT id FROM installation_requests', rows: [{ id: 'active1' }] },
     ]);
     const results = await svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: [] });
@@ -224,7 +224,7 @@ async function main(): Promise<void> {
 
   await checkAsync('create_success_inserts_and_marks_node_review_status', async () => {
     setScripts([
-      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'PC-SALA3', metadata: { os_estimate: 'Windows' }, created_by: null }] },
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'PC-SALA3', metadata: { os_estimate: 'Windows' }, created_by: USER_ID }] },
       { match: 'SELECT id FROM installation_requests', rows: [] },
       { match: 'INSERT INTO installation_requests', rows: [baseRow()] },
       { match: "SET review_status = 'enrollment_requested'", rows: [] },
@@ -242,6 +242,53 @@ async function main(): Promise<void> {
       emitted.some((c) => c.sql.includes('enrollment_requested')),
       'node review_status must flip to enrollment_requested'
     );
+  });
+
+  await checkAsync('create_blocks_node_from_another_tenant', async () => {
+    setScripts([
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb', ip_address: '10.0.0.3', hostname: 'other', metadata: {}, created_by: 'other-user' }] },
+    ]);
+    const { result, calls: emitted } = await captureCalls(() =>
+      svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: ['devices.manage'] })
+    );
+    assert.strictEqual(result[0].ok, false, JSON.stringify(result[0]));
+    assert.strictEqual(result[0].reason, 'node_not_found', 'cross-tenant must be indistinguishable from a missing node');
+    assert.ok(
+      !emitted.some((c) => c.sql.includes('INSERT INTO installation_requests')),
+      'must not create a request for another tenant node'
+    );
+    assert.ok(
+      !emitted.some((c) => c.sql.includes('UPDATE network_nodes')),
+      'must not touch another tenant node'
+    );
+  });
+
+  await checkAsync('create_allows_node_owner_without_view_all', async () => {
+    setScripts([
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'OWN-PC', metadata: { os_estimate: 'Windows' }, created_by: USER_ID }] },
+      { match: 'SELECT id FROM installation_requests', rows: [] },
+      { match: 'INSERT INTO installation_requests', rows: [baseRow()] },
+      { match: "SET review_status = 'enrollment_requested'", rows: [] },
+      { match: 'INSERT INTO audit_logs', rows: [] },
+    ]);
+    const { result } = await captureCalls(() =>
+      svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: ['devices.manage'] })
+    );
+    assert.strictEqual(result[0].ok, true, JSON.stringify(result[0]));
+  });
+
+  await checkAsync('create_allows_view_all_for_unowned_node', async () => {
+    setScripts([
+      { match: 'FROM network_nodes WHERE id', rows: [{ id: NODE_ID, device_id: null, mac_address: 'aa:bb:cc:dd:ee:ff', ip_address: '192.168.1.50', hostname: 'UNOWNED', metadata: { os_estimate: 'Windows' }, created_by: null }] },
+      { match: 'SELECT id FROM installation_requests', rows: [] },
+      { match: 'INSERT INTO installation_requests', rows: [baseRow()] },
+      { match: "SET review_status = 'enrollment_requested'", rows: [] },
+      { match: 'INSERT INTO audit_logs', rows: [] },
+    ]);
+    const { result } = await captureCalls(() =>
+      svc.createInstallRequests([NODE_ID], { id: USER_ID, permissions: ['devices.manage', 'devices.view_all'] })
+    );
+    assert.strictEqual(result[0].ok, true, JSON.stringify(result[0]));
   });
 
   await checkAsync('decision_refuse_from_pending', async () => {

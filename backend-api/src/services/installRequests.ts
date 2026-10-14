@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { query } from '../config/database';
 import { JWT } from '../config/constants';
+import { canViewUnownedDevices } from '../utils/tenant';
 
 export const REQUEST_TTL_DAYS = 7;
 
@@ -153,6 +154,12 @@ export async function createInstallRequests(
     );
     const row = node.rows[0];
     if (!row) {
+      results.push({ node_id: nodeId, ok: false, reason: 'node_not_found' });
+      continue;
+    }
+    // Tenant isolation: a caller without devices.view_all may only enroll nodes
+    // it owns. Another tenant's node is indistinguishable from a missing one.
+    if (!canViewUnownedDevices(user) && row.created_by !== user.id) {
       results.push({ node_id: nodeId, ok: false, reason: 'node_not_found' });
       continue;
     }

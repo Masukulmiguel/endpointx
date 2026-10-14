@@ -207,7 +207,6 @@ async function main(): Promise<void> {
     listNodes,
     setNodeReview,
     identifyNode,
-    requestEnrollment,
     getNode,
     failStaleDiscoveryRuns,
   } = await import('../src/services/discoveryService');
@@ -651,24 +650,6 @@ async function main(): Promise<void> {
     assert.ok(Array.isArray(result.nodes));
   });
 
-  await checkAsync('test_request_enrollment_returns_three_commands_and_token', async () => {
-    setScripts([s('FROM network_nodes n WHERE', [{ id: 'n1', created_by: 'u1', device_id: null }])]);
-    const { result, calls: emitted } = await captureCalls(() =>
-      requestEnrollment('n1', { id: 'u1', email: 'u1@x.pt', permissions: ['network.view', 'devices.view_all'] })
-    );
-    assert.ok(result, 'expected enrollment result');
-    const payload = jwt.verify(result.token, JWT.ACCESS_SECRET) as Record<string, unknown>;
-    assert.strictEqual(payload.sub, 'u1');
-    assert.strictEqual(payload.typ, 'enroll');
-    assert.ok(result.commands.windows.includes('install.ps1?t='), result.commands.windows);
-    assert.ok(result.commands.linux.includes('install-linux.sh?t='), result.commands.linux);
-    assert.ok(result.commands.macos.includes('install-macos.sh?t='), result.commands.macos);
-    const upd = emitted.find((c) => c.sql.startsWith('UPDATE network_nodes'));
-    assert.ok(upd, 'must update the node');
-    assert.ok(upd.sql.includes("review_status = 'enrollment_requested'"), upd.sql);
-    assert.ok(upd.sql.includes('enrollment_requested_at'), upd.sql);
-  });
-
   await checkAsync('test_set_node_review_writes_audit', async () => {
     setScripts([s('UPDATE network_nodes SET review_status', [{ id: 'n1' }])]);
     const { result, calls: emitted } = await captureCalls(() =>
@@ -719,14 +700,6 @@ async function main(): Promise<void> {
       identUpd.sql.includes('created_by'),
       `identifyNode UPDATE must filter by tenant: ${identUpd.sql}`
     );
-
-    setScripts([s('FROM network_nodes', [])]);
-    const enr = await captureCalls(() =>
-      requestEnrollment('n1', { id: 'u1', email: 'u1@x.pt', permissions: ['network.view'] })
-    );
-    assert.strictEqual(enr.result, null, 'requestEnrollment must deny a node owned by another tenant');
-    const upd = enr.calls.find((c) => c.sql.startsWith('UPDATE network_nodes'));
-    assert.ok(!upd, 'requestEnrollment must not update a node it cannot see');
 
     setScripts([s('FROM network_nodes n WHERE', [])]);
     const get = await captureCalls(() => getNode('n1', scoped));

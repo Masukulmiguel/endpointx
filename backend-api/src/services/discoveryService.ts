@@ -1,6 +1,4 @@
-import jwt from 'jsonwebtoken';
 import { query } from '../config/database';
-import { JWT } from '../config/constants';
 import { canViewUnownedDevices } from '../utils/tenant';
 import { discoverUnknownAsset } from '../routes/hermes';
 import { vendorFromMac } from '../utils/oui';
@@ -381,31 +379,4 @@ export async function identifyNode(
     [newId(), user.id, 'network_node_identify', id, `identify ${JSON.stringify(body)}`, JSON.stringify(body)]
   );
   return true;
-}
-
-export async function requestEnrollment(
-  id: string,
-  user: { id: string; email: string; permissions: string[] }
-): Promise<{ token: string; commands: { windows: string; linux: string; macos: string } } | null> {
-  const node = await getNode(id, { id: user.id, permissions: user.permissions });
-  if (!node) return null;
-
-  const token = jwt.sign({ sub: user.id, typ: 'enroll' }, JWT.ACCESS_SECRET, { expiresIn: '30d' });
-  await query(
-    `UPDATE network_nodes
-        SET review_status = 'enrollment_requested', enrollment_requested_at = NOW(), updated_at = NOW()
-      WHERE id = $1`,
-    [id]
-  );
-
-  const host = (process.env.API_HOST || 'endpointx.onrender.com').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const API = `https://${host}`;
-  return {
-    token,
-    commands: {
-      windows: `irm ${API}/api/devices/public/install.ps1?t=${token} | iex`,
-      linux: `curl -fsSL ${API}/api/devices/public/install-linux.sh?t=${token} | sudo bash`,
-      macos: `curl -fsSL ${API}/api/devices/public/install-macos.sh?t=${token} | bash`,
-    },
-  };
 }
