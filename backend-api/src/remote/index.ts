@@ -6,6 +6,7 @@ import { query } from '../config/database';
 import { verifyAccessToken, AuthUser } from '../middleware/auth';
 import { canAccessDevice } from '../utils/tenant';
 import logger from '../utils/logger';
+import { safeCompare } from '../utils/helpers';
 
 const REMOTE_PATH = '/remote';
 const HANDSHAKE_TIMEOUT_MS = 10_000;
@@ -98,8 +99,8 @@ export function remoteSecretFor(agentId: string): string {
 }
 
 async function handleAgentHandshake(ws: WebSocket, agentId: string, secret: string): Promise<void> {
-  const expected = process.env.AGENT_SECRET;
-  const allowed = !!expected && (secret === expected || secret === remoteSecretFor(agentId));
+  const allowed = safeCompare(secret, process.env.AGENT_SECRET) ||
+                  safeCompare(secret, remoteSecretFor(agentId));
   if (!allowed) {
     closeWith(ws, 'invalid agent secret');
     return;

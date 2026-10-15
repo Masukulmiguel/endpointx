@@ -53,6 +53,13 @@ export const hashToken = (token: string): string => {
   return crypto.createHash(AUTH.TOKEN_HASH_ALGORITHM).update(token).digest('hex');
 };
 
+export const safeCompare = (a: unknown, b: unknown): boolean => {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ha = crypto.createHash('sha256').update(a, 'utf8').digest();
+  const hb = crypto.createHash('sha256').update(b, 'utf8').digest();
+  return crypto.timingSafeEqual(ha, hb);
+};
+
 export const paginate = (
   page: number = PAGINATION.DEFAULT_PAGE,
   limit: number = PAGINATION.DEFAULT_LIMIT
