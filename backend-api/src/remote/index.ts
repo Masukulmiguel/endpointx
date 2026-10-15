@@ -99,8 +99,9 @@ export function remoteSecretFor(agentId: string): string {
 }
 
 async function handleAgentHandshake(ws: WebSocket, agentId: string, secret: string): Promise<void> {
-  const allowed = safeCompare(secret, process.env.AGENT_SECRET) ||
-                  safeCompare(secret, remoteSecretFor(agentId));
+  const agentSecret = process.env.AGENT_SECRET;
+  const allowed = safeCompare(secret, agentSecret) ||
+    (!!agentSecret && safeCompare(secret, remoteSecretFor(agentId)));
   if (!allowed) {
     closeWith(ws, 'invalid agent secret');
     return;
