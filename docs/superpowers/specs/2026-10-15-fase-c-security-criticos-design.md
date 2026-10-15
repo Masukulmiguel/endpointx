@@ -122,30 +122,31 @@ Hash a ambos ⇒ comprimentos iguais (requisito de `timingSafeEqual`) e sem vaza
 
 ### 3.1 Emissão
 
-No registo mobile (`POST /devices/mobile/register`, que já valida `enroll_token`), após gerar `agent_id`:
+**Emenda de implementação (2026-10-15):** o registo mobile (`POST /devices/mobile/register`) **já devolve** `remote_token = remoteSecretFor(agentId)` (`devices.ts:2226/2283/2328`), que é exactamente um HMAC por-dispositivo: `HMAC-SHA256(AGENT_SECRET, 'endpointx:remote:' + agent_id)` (`src/remote/index.ts:94-98`), e o app Android já o guarda (`Prefs.remoteToken`, `Prefs.kt:27-30`). Em vez de cunhar um segundo token `heartbeat_token` com outro prefixo HMAC, o heartbeat **reutiliza este `remote_token`**:
 
 ```ts
-const heartbeatToken = crypto.createHmac('sha256', requireAgentSecret())
-  .update(`mobile-hb:${agent_id}`).digest('hex');
+// verificação em devices.ts, após validação do prefixo mobile-
+const expected = remoteSecretFor(agentId);          // já importado no ficheiro
+if (!safeCompare(req.headers['x-heartbeat-token'], expected)) { 401 }
 ```
 
-Devolvido em `data.heartbeat_token`. **Stateless:** o servidor não guarda o token — recomputa-o quando precisa de verificar.
+Nenhuma alteração de emissão é necessária — os 3 ramos de resposta do registo já incluem `remote_token`. Stateless: o servidor não guarda o token — recomputa-o para verificar.
 
 ### 3.2 Verificação
 
 `POST /devices/mobile/heartbeat` (`devices.ts:2339-2445`):
 
 - Sem header `x-heartbeat-token` ⇒ **401**.
-- `safeCompare(header, esperado)` onde `esperado = HMAC(AGENT_SECRET, 'mobile-hb:' + agent_id do body)` ⇒ falha ⇒ **401**.
+- `safeCompare(header, remoteSecretFor(agentId))` com o `agent_id` do body ⇒ falha ⇒ **401**.
 - Antes do `SELECT` de existência do device (o HMAC é barato; a query fica para trás da autenticação).
 
 ### 3.3 Clientes
 
 | Cliente | Mudança |
 |---|---|
-| `public/install-mobile.html` | Guardar `heartbeat_token` no localStorage junto do `agent_id`; enviar `x-heartbeat-token` nas duas chamadas (`:219`, `:258`). |
-| `public/sw.js` | Guardar o token na cache (junto de `agent-id`); incluir header no heartbeat do Background Sync (`:61-67`). |
-| `endpoint-android` `EndpointApi.kt` | Guardar token no `Prefs` aquando do registo; header em `:86-89`. **Não compilável/testável neste ambiente** — mudança sintáctica, nota no relatório. |
+| `public/install-mobile.html` | Guardar `data.data.remote_token` no localStorage no registo; enviar `x-heartbeat-token` nas duas chamadas (`:219`, `:258`); guardar na cache do SW. |
+| `public/sw.js` | Ler o token da cache (entrada nova, par do `agent-id`); incluir header no heartbeat do Background Sync (`:61-67`). |
+| `endpoint-android` `EndpointApi.kt` | `Prefs.remoteToken` **já existe e já é preenchido no registo** — só falta adicionar o header em `heartbeat()` (`:86-89`). **Não compilável/testável neste ambiente** — mudança sintáctica, nota no relatório. |
 
 ### 3.4 Compatibilidade
 
@@ -164,7 +165,7 @@ Novos/alvos em `tests/` (ficheiro existente ou novo conforme o plano):
 4. **refresh mantém `sid` estável** — refresh succeeds; access token antigo continua válido; novo access token tem mesmo `sid`.
 5. **sessão expirada/inexistente ⇒ 401** — apagar linha da sessão manualmente ⇒ 401.
 6. **`safeCompare`** — iguais ⇒ true; diferentes ⇒ false; comprimentos diferentes ⇒ false; não-string (undefined/array) ⇒ false.
-7. **registo mobile devolve `heartbeat_token`** — formato hex 64.
+7. **registo mobile devolve `remote_token`** — igual a `HMAC-SHA256(AGENT_SECRET, 'endpointx:remote:' + agent_id)`, hex 64.
 8. **heartbeat sem token ⇒ 401**; **token errado ⇒ 401**; **token correcto ⇒ 200** e telemetria persistida.
 9. **handshake WS** — token com sessão revogada ⇒ rejeitado (cobertura de `verifyAccessToken`).
 
