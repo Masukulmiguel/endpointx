@@ -32,10 +32,14 @@ const check = (label: string, fn: () => void) => {
 let capturing = false;
 const calls: Array<{ sql: string; params: unknown[] }> = [];
 
-const respond = (sql: string) =>
-  sql.includes('FROM permissions')
+const respond = (sql: string) => {
+  if (sql.includes('JOIN users u ON u.id = s.user_id')) {
+    return { rows: [{ expires_at: new Date(Date.now() + 3600e3).toISOString(), is_active: true }], rowCount: 1 };
+  }
+  return sql.includes('FROM permissions')
     ? { rows: [{ code: 'network.view' }, { code: 'devices.view' }], rowCount: 2 }
     : { rows: [], rowCount: 0 };
+};
 
 const record = (sql: string, params?: unknown[]) => {
   if (capturing) calls.push({ sql, params: params ?? [] });
@@ -87,6 +91,7 @@ async function main(): Promise<void> {
       role_id: '22222222-2222-4222-8222-222222222222',
       role_name: 'user',
       permissions: ['network.view'],
+      sid: '11111111-1111-4111-8111-111111111111',
     },
     JWT.ACCESS_SECRET,
     { issuer: JWT.ISSUER, audience: JWT.AUDIENCE, expiresIn: '1h' }

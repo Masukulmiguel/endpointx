@@ -10,6 +10,8 @@ interface AuthUser {
   role_id: string;
   role_name: string;
   permissions: string[];
+  /** Session row id this access token is bound to (user_sessions.id). */
+  sid?: string;
 }
 
 type AuthRequest = Request & {
@@ -35,15 +37,35 @@ interface JwtPayload {
 const permCache = new Map<string, { perms: string[]; exp: number }>();
 const PERM_CACHE_TTL_MS = 60_000;
 
-// A token may only act as a session if it carries a role binding and is not
-// an MFA step-up temp token (those must never pass the login gate).
+// A token may only act as a session if it carries a role binding, a live
+// session binding (sid), and is not an MFA step-up temp token (those must
+// never pass the login gate). Tokens without sid are pre-deploy leftovers
+// and are rejected — clients must refresh to obtain a sid-bound token.
 function isSessionPayload(decoded: JwtPayload): boolean {
-  const payload = decoded as JwtPayload & { role_id?: unknown; type?: unknown };
+  const payload = decoded as JwtPayload & { role_id?: unknown; type?: unknown; sid?: unknown };
   return (
     typeof payload.role_id === 'string' &&
     payload.role_id !== '' &&
+    typeof payload.sid === 'string' &&
+    payload.sid !== '' &&
     payload.type !== 'mfa_temp'
   );
+}
+
+// Gate: the sid must map to a non-expired user_sessions row whose owning
+// users.is_active is still true. Fail closed on absence/expiry/deactivation.
+async function assertSessionAlive(sid: string): Promise<boolean> {
+  const r = await query(
+    `SELECT s.expires_at, u.is_active
+       FROM user_sessions s
+       JOIN users u ON u.id = s.user_id
+      WHERE s.id = $1`,
+    [sid]
+  );
+  const row = r.rows[0];
+  if (!row) return false;
+  if (new Date(row.expires_at).getTime() <= Date.now()) return false;
+  return row.is_active === true;
 }
 
 async function loadRolePermissions(roleId: string): Promise<string[] | null> {
@@ -120,6 +142,18 @@ async function authenticate(
       return;
     }
 
+    const alive = await assertSessionAlive(decoded.sid);
+    if (!alive) {
+      res.status(401).json({
+        success: false,
+        error: {
+          message: 'Session revoked or inactive.',
+          code: 'AUTH_SESSION_INVALID',
+        },
+      });
+      return;
+    }
+
     const dbPerms = await loadRolePermissions(decoded.role_id);
     const authUser: AuthUser = {
       id: decoded.id,
@@ -127,6 +161,7 @@ async function authenticate(
       role_id: decoded.role_id,
       role_name: decoded.role_name,
       permissions: dbPerms ?? decoded.permissions ?? [],
+      sid: decoded.sid,
     };
 
     (req as AuthRequest).user = authUser;
@@ -233,6 +268,7 @@ export async function verifyAccessToken(token: string | null | undefined): Promi
     }) as JwtPayload;
 
     if (!isSessionPayload(decoded)) return null;
+    if (!(await assertSessionAlive(decoded.sid))) return null;
 
     const dbPerms = await loadRolePermissions(decoded.role_id);
     return {
@@ -241,6 +277,7 @@ export async function verifyAccessToken(token: string | null | undefined): Promi
       role_id: decoded.role_id,
       role_name: decoded.role_name,
       permissions: dbPerms ?? decoded.permissions ?? [],
+      sid: decoded.sid,
     };
   } catch {
     return null;

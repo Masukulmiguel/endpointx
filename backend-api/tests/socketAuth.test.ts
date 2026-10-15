@@ -9,7 +9,6 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer } from 'socket.io';
 import { JWT } from '../src/config/constants';
-import * as websocket from '../src/websocket';
 
 let failed = 0;
 const check = (label: string, fn: () => void) => {
@@ -23,6 +22,59 @@ const check = (label: string, fn: () => void) => {
   }
 };
 
+// ---- Fake pg (installed before config/database / websocket load) ---------
+// verifyAccessToken() in the handshake gate queries user_sessions JOIN users;
+// a live row keeps the session valid, and loadRolePermissions must return
+// devices.view so the room-scoping checks below exercise canJoinRoom rather
+// than an empty-permission fallback.
+const respond = (sql: string) => {
+  if (sql.includes('JOIN users u ON u.id = s.user_id')) {
+    return { rows: [{ expires_at: new Date(Date.now() + 3600e3).toISOString(), is_active: true }], rowCount: 1 };
+  }
+  if (sql.includes('FROM permissions')) {
+    return { rows: [{ code: 'devices.view' }], rowCount: 1 };
+  }
+  return { rows: [], rowCount: 0 };
+};
+
+class FakeClient {
+  query(sql: string, params?: unknown[]) {
+    void params;
+    return Promise.resolve(respond(sql));
+  }
+  release(): void {
+    /* noop */
+  }
+}
+
+class FakePool {
+  constructor(_cfg: unknown) {}
+  query(sql: string, params?: unknown[]) {
+    void params;
+    return Promise.resolve(respond(sql));
+  }
+  connect(): Promise<FakeClient> {
+    return Promise.resolve(new FakeClient());
+  }
+  on(): this {
+    return this;
+  }
+  end(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+const pgPath = require.resolve('pg');
+const realPg = require(pgPath) as Record<string, unknown>;
+require.cache[pgPath]!.exports = { ...realPg, Pool: FakePool };
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { initDatabase } = require('../src/config/database') as {
+  initDatabase: () => Promise<void>;
+};
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const websocket = require('../src/websocket') as typeof import('../src/websocket');
+
 const OWN_ID = '3ccbf05c-3ead-4f92-8da3-b22476aeb16';
 const OTHER_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
@@ -34,6 +86,7 @@ const sessionToken = (permissions: string[]) =>
       role_id: '22222222-2222-4222-8222-222222222222',
       role_name: 'user',
       permissions,
+      sid: '11111111-1111-4111-8111-111111111111',
     },
     JWT.ACCESS_SECRET,
     { issuer: JWT.ISSUER, audience: JWT.AUDIENCE, expiresIn: '1h' }
@@ -98,6 +151,7 @@ const until = async (pred: () => boolean, ms = 2000): Promise<boolean> => {
 };
 
 async function main(): Promise<void> {
+  await initDatabase();
   const canJoinRoom = (websocket as { canJoinRoom?: unknown }).canJoinRoom;
   const socketAuthMiddleware = (websocket as { socketAuthMiddleware?: unknown }).socketAuthMiddleware;
 
