@@ -85,6 +85,7 @@ object EndpointApi {
 
         val request = Request.Builder()
             .url("${Prefs.server(ctx)}/api/devices/mobile/heartbeat")
+            .header("x-heartbeat-token", Prefs.remoteToken(ctx))
             .post(body.toString().toRequestBody(JSON))
             .build()
 

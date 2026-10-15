@@ -38,3 +38,4 @@ EndpointX is a **defensive** platform. Out of scope by design:
 - Keep PostgreSQL and Render services on private networking where possible
 - Restrict agent enrollment (`X-Agent-Secret`) and rotate it periodically
 - Review `audit_logs` regularly; RBAC permissions follow least privilege
+- Rotating `AGENT_SECRET` invalidates the mobile heartbeat tokens (`remote_token`) — mobile devices must re-enroll (page/APK); user access/refresh tokens are not affected

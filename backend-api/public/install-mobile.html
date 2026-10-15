@@ -149,6 +149,7 @@
       }
 
       var AGENT_KEY = 'endpointx_mobile_agent';
+      var REMOTE_KEY = 'endpointx_remote_token';
       var LOC_KEY = 'endpointx_mobile_location';
       var SW_CACHE = 'endpointx-mobile-v1'; // must match CACHE in sw.js
       var hbTimer = null;
@@ -204,7 +205,8 @@
 
       function sendHeartbeat() {
         var id = localStorage.getItem(AGENT_KEY);
-        if (!id || hbInFlight) return;
+        var tok = localStorage.getItem(REMOTE_KEY);
+        if (!id || !tok || hbInFlight) return;
         hbInFlight = true;
         var loc = shareCb.checked ? getPosition() : Promise.resolve(null);
         Promise.all([getBatteryLevel(), loc]).then(function (parts) {
@@ -218,7 +220,7 @@
           }
           return fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-heartbeat-token': tok },
             body: JSON.stringify(payload)
           }).then(function (res) {
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -253,21 +255,23 @@
 
       function sendHeartbeatKeepalive() {
         var id = localStorage.getItem(AGENT_KEY);
-        if (!id) return;
+        var tok = localStorage.getItem(REMOTE_KEY);
+        if (!id || !tok) return;
         try {
           fetch(apiBase.replace(/\/$/, '') + '/devices/mobile/heartbeat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-heartbeat-token': tok },
             body: JSON.stringify(Object.assign({ agent_id: id, network: getNetworkInfo() }, getHardwareInfo())),
             keepalive: true
           }).catch(function () {});
         } catch (e) { /* ignore */ }
       }
 
-      function storeAgentForSW(id) {
+      function storeAgentForSW(id, token) {
         if (!('caches' in window) || !id) return;
         caches.open(SW_CACHE).then(function (c) {
           c.put('/api/devices/public/__agent-id', new Response(id));
+          if (token) c.put('/api/devices/public/__hb-token', new Response(token));
         }).catch(function () {});
       }
 
@@ -293,7 +297,7 @@
       if (conn && conn.addEventListener) conn.addEventListener('change', sendHeartbeat);
 
       if (localStorage.getItem(AGENT_KEY)) {
-        storeAgentForSW(localStorage.getItem(AGENT_KEY));
+        storeAgentForSW(localStorage.getItem(AGENT_KEY), localStorage.getItem(REMOTE_KEY));
         startHeartbeat();
       }
 
@@ -360,7 +364,8 @@
           ok.style.display = 'block';
           ok.textContent = base;
           localStorage.setItem(AGENT_KEY, data.data.agent_id);
-          storeAgentForSW(data.data.agent_id);
+          localStorage.setItem(REMOTE_KEY, data.data.remote_token || '');
+          storeAgentForSW(data.data.agent_id, data.data.remote_token);
           localStorage.setItem(LOC_KEY, document.getElementById('shareLocation').checked ? '1' : '0');
           document.getElementById('regForm').reset();
           document.getElementById('shareLocation').checked = localStorage.getItem(LOC_KEY) === '1';
