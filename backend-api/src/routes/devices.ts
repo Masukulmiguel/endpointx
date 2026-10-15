@@ -2346,6 +2346,10 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
       res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
       return;
     }
+    if (!safeCompare(req.headers['x-heartbeat-token'], remoteSecretFor(agentId))) {
+      res.status(401).json({ success: false, error: { message: 'Invalid heartbeat token' } });
+      return;
+    }
     const existing = await query('SELECT id, status FROM devices WHERE agent_id = $1', [agentId]);
     if (existing.rows.length === 0) {
       res.status(404).json({ success: false, error: { message: 'Device not enrolled' } });
