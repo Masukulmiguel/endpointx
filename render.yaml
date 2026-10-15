@@ -65,15 +65,6 @@ services:
 
   - type: web
     name: endpointx-dashboard
-    runtime: docker
-    plan: free
-    dockerfilePath: ./admin-dashboard/Dockerfile
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-  - type: web
-    name: endpointx-dashboard-1ahh
     runtime: static
     buildCommand: cd admin-dashboard && npm install && npm run build
     staticPublishPath: admin-dashboard/dist
