@@ -78,7 +78,6 @@ async function main(): Promise<void> {
   let accessToken1 = '';
   let refreshToken1 = '';
   let preRotationRefresh = '';
-  let userId1 = '';
 
   try {
     // 1. register issues sid claim
@@ -96,7 +95,6 @@ async function main(): Promise<void> {
       assert.strictEqual(q.rows[0]?.id, sid, 'sid claim does not match the sessions row');
       accessToken1 = body.data.accessToken;
       refreshToken1 = body.data.refreshToken;
-      userId1 = body.data.user.id;
     });
 
     // 2. login issues sid claim
@@ -175,7 +173,85 @@ async function main(): Promise<void> {
         body: JSON.stringify({ refreshToken: preRotationRefresh }),
       });
       assert.strictEqual(res.status, 401, `replay of pre-rotation token got ${res.status}`);
-      void userId1;
+    });
+
+    // 6. logout revokes the session bound to the token (Task 4)
+    await checkAsync('logout revokes session end-to-end', async () => {
+      const email = nextEmail();
+      const reg = await fetch(`${base}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: PASSWORD, full_name: 'Fase C Logout' }),
+      });
+      assert.strictEqual(reg.status, 201, `register got ${reg.status}`);
+      const regBody = (await reg.json()) as { data: { accessToken: string; refreshToken: string } };
+      const access = regBody.data.accessToken;
+      const refresh = regBody.data.refreshToken;
+
+      // profile passes with a live session (Task 3 gate verified)
+      const profile = await fetch(`${base}/profile`, { headers: { Authorization: `Bearer ${access}` } });
+      assert.strictEqual(profile.status, 200, `profile before logout got ${profile.status}`);
+
+      // logout
+      const out = await fetch(`${base}/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${access}` },
+      });
+      assert.strictEqual(out.status, 200, `logout got ${out.status}`);
+
+      // same access token now rejected by the session gate
+      const after = await fetch(`${base}/profile`, { headers: { Authorization: `Bearer ${access}` } });
+      assert.strictEqual(after.status, 401, `profile after logout got ${after.status}`);
+
+      // refresh token dead too (row deleted)
+      const ref = await fetch(`${base}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+      assert.strictEqual(ref.status, 401, `refresh after logout got ${ref.status}`);
+    });
+
+    // 7. deactivated account takes effect immediately (spec test 3)
+    await checkAsync('deactivated account rejected immediately, no re-login', async () => {
+      const email = nextEmail();
+      const reg = await fetch(`${base}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: PASSWORD, full_name: 'Fase C Deactivate' }),
+      });
+      assert.strictEqual(reg.status, 201, `register got ${reg.status}`);
+      const regBody = (await reg.json()) as { data: { accessToken: string; user: { id: string } } };
+      const access = regBody.data.accessToken;
+
+      const before = await fetch(`${base}/profile`, { headers: { Authorization: `Bearer ${access}` } });
+      assert.strictEqual(before.status, 200, `profile before deactivation got ${before.status}`);
+
+      await query('UPDATE users SET is_active = false WHERE id = $1', [regBody.data.user.id]);
+
+      const after = await fetch(`${base}/profile`, { headers: { Authorization: `Bearer ${access}` } });
+      assert.strictEqual(after.status, 401, `profile after deactivation got ${after.status}`);
+    });
+
+    // 8. logout writes an audit row (kept from the original logout handler)
+    await checkAsync('logout writes audit row', async () => {
+      const email = nextEmail();
+      const reg = await fetch(`${base}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: PASSWORD, full_name: 'Fase C Audit' }),
+      });
+      const regBody = (await reg.json()) as { data: { accessToken: string; user: { id: string } } };
+      const out = await fetch(`${base}/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${regBody.data.accessToken}` },
+      });
+      assert.strictEqual(out.status, 200, `logout got ${out.status}`);
+      const audit = await query(
+        "SELECT id FROM audit_logs WHERE user_id = $1 AND action = 'logout'",
+        [regBody.data.user.id]
+      );
+      assert.ok(audit.rows.length >= 1, `expected logout audit row, got ${audit.rows.length}`);
     });
   } finally {
     await new Promise<void>((resolve) => {

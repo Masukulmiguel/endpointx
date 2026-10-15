@@ -428,14 +428,13 @@ export const inviteUser = async (req: AuthRequest, res: Response, next: NextFunc
 export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = req.user?.id;
-    if (!userId) { res.status(401).json({ success: false, error: { message: 'Not authenticated' } }); return; }
-
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (token) {
-      const tokenHash = hashToken(token);
-      await query('DELETE FROM user_sessions WHERE user_id = $1 AND refresh_token_hash = $2', [userId, tokenHash]);
+    const sid = req.user?.sid;
+    if (!userId || !sid) {
+      res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
+      return;
     }
+
+    await query('DELETE FROM user_sessions WHERE id = $1', [sid]);
 
     await query('INSERT INTO audit_logs (user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, req.user?.email, 'logout', 'user', userId, 'User logged out', req.ip]);
