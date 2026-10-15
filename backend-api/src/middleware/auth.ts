@@ -23,6 +23,8 @@ interface JwtPayload {
   role_id: string;
   role_name: string;
   permissions: string[];
+  /** Session row id (user_sessions.id) that this access token is bound to. */
+  sid?: string;
   iat: number;
   exp: number;
   iss: string;
