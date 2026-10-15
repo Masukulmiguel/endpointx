@@ -79,6 +79,15 @@ const respond = (sql: string, params: unknown[] = []) => {
   for (const s of scripts) {
     if (sql.includes(s.match)) return { rows: s.rows, rowCount: s.rows.length };
   }
+  // Default live session for the authenticate() gate so HTTP tests exercise
+  // their own permission/route logic rather than the session check. Explicit
+  // scripts above still win when they match the gate query.
+  if (sql.includes('JOIN users u ON u.id = s.user_id')) {
+    return {
+      rows: [{ expires_at: new Date(Date.now() + 3600e3).toISOString(), is_active: true }],
+      rowCount: 1,
+    };
+  }
   return { rows: [], rowCount: 0 };
 };
 
@@ -770,7 +779,14 @@ async function main(): Promise<void> {
   const sessionToken = (id: string, roleId: string, permissions: string[]): string => {
     setRolePermissions(roleId, permissions);
     return jwt.sign(
-      { id, email: `${id}@test.local`, role_id: roleId, role_name: 'user', permissions },
+      {
+        id,
+        email: `${id}@test.local`,
+        role_id: roleId,
+        role_name: 'user',
+        permissions,
+        sid: `${id}-sid-0000-0000-000000000000`.slice(0, 36),
+      },
       JWT.ACCESS_SECRET,
       { issuer: JWT.ISSUER, audience: JWT.AUDIENCE, expiresIn: '1h' }
     );

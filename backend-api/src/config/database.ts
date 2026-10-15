@@ -15,6 +15,9 @@ const dbConfig = {
   max: parseInt(process.env.DB_POOL_MAX || '20', 10),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
   connectionTimeoutMillis: parseInt(process.env.DB_CONNECT_TIMEOUT || '5000', 10),
+  // Windows locales default the PG client to WIN1252; the inline schema and
+  // user data are UTF-8. Without this, createInlineSchema fails with 22P05.
+  client_encoding: 'UTF8' as const,
 };
 
 // Wrapper that maintains compatibility with existing route code
@@ -1049,14 +1052,14 @@ const createInlineSchema = async (): Promise<void> => {
 
     CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type);
 
-    -- ── v1.2.0 M4: NVD-backed CVE knowledge base ─────────────────────────
+    -- -- v1.2.0 M4: NVD-backed CVE knowledge base -------------------------
     ALTER TABLE hermes_cves ADD COLUMN IF NOT EXISTS criteria JSONB DEFAULT '[]';
     ALTER TABLE hermes_cves ADD COLUMN IF NOT EXISTS product_keys TEXT[] DEFAULT '{}';
     ALTER TABLE hermes_cves ADD COLUMN IF NOT EXISTS last_modified_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_hermes_cves_product_keys ON hermes_cves USING GIN (product_keys);
     CREATE INDEX IF NOT EXISTS idx_hermes_cves_source ON hermes_cves(source);
 
-    -- ── v1.2.0 M1: alerting ──────────────────────────────────────────────
+    -- -- v1.2.0 M1: alerting ----------------------------------------------
     CREATE TABLE IF NOT EXISTS alert_rules (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       name VARCHAR(150) NOT NULL,
@@ -1109,7 +1112,7 @@ const createInlineSchema = async (): Promise<void> => {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- ── v1.2.0 M2: metric retention & rollups ────────────────────────────
+    -- -- v1.2.0 M2: metric retention & rollups ----------------------------
     CREATE TABLE IF NOT EXISTS metric_rollups (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
@@ -1129,7 +1132,7 @@ const createInlineSchema = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_metric_rollups_lookup
       ON metric_rollups(device_id, bucket_size, bucket_start);
 
-    -- ── v1.2.0 M3: deeper telemetry ──────────────────────────────────────
+    -- -- v1.2.0 M3: deeper telemetry --------------------------------------
     CREATE TABLE IF NOT EXISTS device_partitions (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
@@ -1179,7 +1182,7 @@ const createInlineSchema = async (): Promise<void> => {
     CREATE UNIQUE INDEX IF NOT EXISTS uq_device_event_logs_dedup
       ON device_event_logs(device_id, log_source, dedup_key);
 
-    -- ── v1.4.0 OSINT subsystem ──
+    -- -- v1.4.0 OSINT subsystem --
     CREATE TABLE IF NOT EXISTS osint_lookups (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       type VARCHAR(20) NOT NULL,

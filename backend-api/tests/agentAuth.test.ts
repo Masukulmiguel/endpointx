@@ -6,6 +6,7 @@
  */
 import './testEnv';
 import assert from 'assert';
+import crypto from 'crypto';
 import http from 'http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
@@ -83,6 +84,35 @@ async function main(): Promise<void> {
     {
       const res = await post('/mobile/register', { device_name: 'd', enroll_token: enrollToken });
       check('mobile/register with valid enroll_token -> not 401', () => {
+        assert.notStrictEqual(res.status, 401, `got ${res.status}`);
+      });
+    }
+
+    const hbExpected = crypto
+      .createHmac('sha256', process.env.AGENT_SECRET!)
+      .update('endpointx:remote:mobile-aa')
+      .digest('hex');
+
+    // 6. Mobile heartbeat without x-heartbeat-token rejected (Task 5).
+    {
+      const res = await post('/mobile/heartbeat', { agent_id: 'mobile-aa' });
+      check('mobile heartbeat without x-heartbeat-token -> 401', () => {
+        assert.strictEqual(res.status, 401, `got ${res.status}`);
+      });
+    }
+
+    // 7. Wrong heartbeat token rejected.
+    {
+      const res = await post('/mobile/heartbeat', { agent_id: 'mobile-aa' }, { 'x-heartbeat-token': 'nope' });
+      check('mobile heartbeat with wrong x-heartbeat-token -> 401', () => {
+        assert.strictEqual(res.status, 401, `got ${res.status}`);
+      });
+    }
+
+    // 8. Correct per-device token passes the gate (no DB -> 500/404 fine).
+    {
+      const res = await post('/mobile/heartbeat', { agent_id: 'mobile-aa' }, { 'x-heartbeat-token': hbExpected });
+      check('mobile heartbeat with correct x-heartbeat-token -> not 401', () => {
         assert.notStrictEqual(res.status, 401, `got ${res.status}`);
       });
     }

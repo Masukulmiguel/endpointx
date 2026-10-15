@@ -138,19 +138,21 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     );
     const permissions = permissionsResult.rows.map((r: any) => r.code);
 
-    const accessToken = generateToken(
-      { id: user.id, email: user.email, role_id: user.role_id, role_name: user.role_name, permissions },
-      JWT.ACCESS_SECRET,
-      JWT.ACCESS_EXPIRES_IN
-    );
-
     const refreshTokenStr = generateRefreshToken();
     const refreshTokenHash = hashToken(refreshTokenStr);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await query('INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)',
-      [user.id, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]);
+    const sessionInsert = await query(
+      'INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [user.id, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]
+    );
+
+    const accessToken = generateToken(
+      { id: user.id, email: user.email, role_id: user.role_id, role_name: user.role_name, permissions, sid: sessionInsert.rows[0].id },
+      JWT.ACCESS_SECRET,
+      JWT.ACCESS_EXPIRES_IN
+    );
 
     await query("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1", [user.id]);
 
@@ -235,19 +237,20 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     );
     const permissions = permissionsResult.rows.map((r: any) => r.code);
 
-    const accessToken = generateToken(
-      { id: userId, email: normalizedEmail, role_id: roleId, role_name: 'user', permissions },
-      JWT.ACCESS_SECRET,
-      JWT.ACCESS_EXPIRES_IN
-    );
     const refreshTokenStr = generateRefreshToken();
     const refreshTokenHash = hashToken(refreshTokenStr);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await query(
-      'INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)',
+    const sessionInsert = await query(
+      'INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [userId, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]
+    );
+
+    const accessToken = generateToken(
+      { id: userId, email: normalizedEmail, role_id: roleId, role_name: 'user', permissions, sid: sessionInsert.rows[0].id },
+      JWT.ACCESS_SECRET,
+      JWT.ACCESS_EXPIRES_IN
     );
     await query('UPDATE users SET last_login = NOW() WHERE id = $1', [userId]);
 
@@ -425,14 +428,13 @@ export const inviteUser = async (req: AuthRequest, res: Response, next: NextFunc
 export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = req.user?.id;
-    if (!userId) { res.status(401).json({ success: false, error: { message: 'Not authenticated' } }); return; }
-
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (token) {
-      const tokenHash = hashToken(token);
-      await query('DELETE FROM user_sessions WHERE user_id = $1 AND refresh_token_hash = $2', [userId, tokenHash]);
+    const sid = req.user?.sid;
+    if (!userId || !sid) {
+      res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
+      return;
     }
+
+    await query('DELETE FROM user_sessions WHERE id = $1', [sid]);
 
     await query('INSERT INTO audit_logs (user_id, user_email, action, target_type, target_id, description, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, req.user?.email, 'logout', 'user', userId, 'User logged out', req.ip]);
@@ -462,18 +464,17 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
     }
 
     const session = sessionResult.rows[0];
-    await query('DELETE FROM user_sessions WHERE id = $1', [session.id]);
 
     const permissionsResult = await query('SELECT p.code FROM permissions p JOIN role_permissions rp ON p.id = rp.permission_id WHERE rp.role_id = $1', [session.role_id]);
     const permissions = permissionsResult.rows.map((r: any) => r.code);
 
-    const newAccessToken = generateToken({ id: session.user_id, email: session.email, role_id: session.role_id, role_name: session.role_name, permissions }, JWT.ACCESS_SECRET, JWT.ACCESS_EXPIRES_IN);
     const newRefreshToken = generateRefreshToken();
-    const newRefreshTokenHash = hashToken(newRefreshToken);
     const expiresAt = new Date(); expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await query('INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)',
-      [session.user_id, newRefreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]);
+    await query('UPDATE user_sessions SET refresh_token_hash = $1, expires_at = $2 WHERE id = $3',
+      [hashToken(newRefreshToken), expiresAt.toISOString(), session.id]);
+
+    const newAccessToken = generateToken({ id: session.user_id, email: session.email, role_id: session.role_id, role_name: session.role_name, permissions, sid: session.id }, JWT.ACCESS_SECRET, JWT.ACCESS_EXPIRES_IN);
 
     res.json({ success: true, data: { accessToken: newAccessToken, refreshToken: newRefreshToken } });
   } catch (error) { next(error); }
@@ -624,19 +625,21 @@ export const mfaVerify = async (req: Request, res: Response, next: NextFunction)
     );
     const permissions = permissionsResult.rows.map((r: any) => r.code);
 
-    const accessToken = generateToken(
-      { id: user.id, email: user.email, role_id: user.role_id, role_name: user.role_name, permissions },
-      JWT.ACCESS_SECRET,
-      JWT.ACCESS_EXPIRES_IN
-    );
-
     const refreshTokenStr = generateRefreshToken();
     const refreshTokenHash = hashToken(refreshTokenStr);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await query('INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5)',
-      [user.id, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]);
+    const sessionInsert = await query(
+      'INSERT INTO user_sessions (user_id, refresh_token_hash, ip_address, user_agent, expires_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [user.id, refreshTokenHash, req.ip, req.headers['user-agent'], expiresAt.toISOString()]
+    );
+
+    const accessToken = generateToken(
+      { id: user.id, email: user.email, role_id: user.role_id, role_name: user.role_name, permissions, sid: sessionInsert.rows[0].id },
+      JWT.ACCESS_SECRET,
+      JWT.ACCESS_EXPIRES_IN
+    );
 
     await query("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1", [user.id]);
 

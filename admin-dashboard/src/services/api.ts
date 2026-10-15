@@ -178,6 +178,13 @@ class ApiClient {
   }
 
   logout() {
+    const token = this.accessToken;
+    if (token) {
+      fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => { /* best-effort; o clear local acontece sempre */ });
+    }
     this.accessToken = null;
     this.refreshToken = null;
     localStorage.removeItem('access_token');

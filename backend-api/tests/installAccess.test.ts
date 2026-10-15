@@ -11,7 +11,6 @@ import http from 'http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT } from '../src/config/constants';
-import devicesRouter from '../src/routes/devices';
 
 const AGENT_SECRET = process.env.AGENT_SECRET as string;
 
@@ -27,6 +26,53 @@ const check = (label: string, fn: () => void) => {
   }
 };
 
+// ---- Fake pg (installed before config/database is first required) --------
+// The authenticate() gate queries user_sessions JOIN users; a live row keeps
+// the session valid so the 403 assertions below exercise the permission
+// check, not the session gate.
+const respond = (sql: string) =>
+  sql.includes('JOIN users u ON u.id = s.user_id')
+    ? { rows: [{ expires_at: new Date(Date.now() + 3600e3).toISOString(), is_active: true }], rowCount: 1 }
+    : { rows: [], rowCount: 0 };
+
+class FakeClient {
+  query(sql: string, params?: unknown[]) {
+    void params;
+    return Promise.resolve(respond(sql));
+  }
+  release(): void {
+    /* noop */
+  }
+}
+
+class FakePool {
+  constructor(_cfg: unknown) {}
+  query(sql: string, params?: unknown[]) {
+    void params;
+    return Promise.resolve(respond(sql));
+  }
+  connect(): Promise<FakeClient> {
+    return Promise.resolve(new FakeClient());
+  }
+  on(): this {
+    return this;
+  }
+  end(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+const pgPath = require.resolve('pg');
+const realPg = require(pgPath) as Record<string, unknown>;
+require.cache[pgPath]!.exports = { ...realPg, Pool: FakePool };
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { initDatabase } = require('../src/config/database') as {
+  initDatabase: () => Promise<void>;
+};
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const devicesRouter = require('../src/routes/devices').default as express.Router;
+
 const enrollToken = jwt.sign(
   { sub: '3ccbf05c-3ead-4f92-8da3-b22476aeb16', typ: 'enroll' },
   JWT.ACCESS_SECRET,
@@ -41,12 +87,14 @@ const sessionToken = (permissions: string[]) =>
       role_id: '22222222-2222-4222-8222-222222222222',
       role_name: 'user',
       permissions,
+      sid: '11111111-1111-4111-8111-111111111111',
     },
     JWT.ACCESS_SECRET,
     { issuer: JWT.ISSUER, audience: JWT.AUDIENCE, expiresIn: '1h' }
   );
 
 async function main(): Promise<void> {
+  await initDatabase();
   const app = express();
   app.use(express.json());
   app.use('/api/devices', devicesRouter);

@@ -1,6 +1,7 @@
 /* EndpointX mobile enrollment service worker */
 var CACHE = 'endpointx-mobile-v1';
 var AGENT_KEY_URL = '/api/devices/public/__agent-id';
+var TOKEN_KEY_URL = '/api/devices/public/__hb-token';
 var HB_URL = '/api/devices/mobile/heartbeat';
 var PAGE_URLS = ['/api/devices/public/mobile', '/api/devices/public/install-mobile.html'];
 
@@ -25,7 +26,11 @@ self.addEventListener('activate', function (event) {
                 .open(key)
                 .then(function (oldCache) {
                   return oldCache.match(AGENT_KEY_URL).then(function (res) {
-                    if (res) return target.put(AGENT_KEY_URL, res);
+                    if (res) target.put(AGENT_KEY_URL, res);
+                    return oldCache.match(TOKEN_KEY_URL);
+                  })
+                  .then(function (tokRes) {
+                    if (tokRes) return target.put(TOKEN_KEY_URL, tokRes);
                     return null;
                   });
                 })
@@ -54,13 +59,29 @@ function readAgentId() {
     });
 }
 
+function readToken() {
+  return caches
+    .open(CACHE)
+    .then(function (cache) {
+      return cache.match(TOKEN_KEY_URL);
+    })
+    .then(function (res) {
+      return res ? res.text() : null;
+    })
+    .catch(function () {
+      return null;
+    });
+}
+
 function sendHeartbeat() {
-  return readAgentId().then(function (id) {
-    if (!id || id.indexOf('mobile-') !== 0) return;
+  return Promise.all([readAgentId(), readToken()]).then(function (parts) {
+    var id = parts[0];
+    var tok = parts[1];
+    if (!id || id.indexOf('mobile-') !== 0 || !tok) return;
     // network errors must reject so Background Sync retries once connectivity returns
     return fetch(HB_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-heartbeat-token': tok },
       body: JSON.stringify({ agent_id: id }),
       keepalive: true,
       credentials: 'omit',

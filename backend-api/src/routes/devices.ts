@@ -9,6 +9,7 @@ import logger from '../utils/logger';
 import jwt from 'jsonwebtoken';
 import { JWT, requireAgentSecret } from '../config/constants';
 import { canAccessDevice, canViewUnownedDevices } from '../utils/tenant';
+import { safeCompare } from '../utils/helpers';
 import { remoteSecretFor } from '../remote';
 import { onForensicCommandResult } from '../hermes/forensics';
 import { ingestReport } from '../services/discoveryService';
@@ -329,7 +330,7 @@ router.post('/register', async (req: AuthRequest, res: Response, next: NextFunct
     }
 
     const agentSecret = req.headers['x-agent-secret'];
-    if (agentSecret !== process.env.AGENT_SECRET) {
+    if (!safeCompare(agentSecret, requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -544,7 +545,7 @@ router.post('/heartbeat', async (req: AuthRequest, res: Response, next: NextFunc
     // Agents carry the fleet secret (same check as /register): without it
     // anyone could push fake metrics or flip device status to online.
     const heartbeatSecret = req.headers['x-agent-secret'];
-    if (heartbeatSecret !== process.env.AGENT_SECRET) {
+    if (!safeCompare(heartbeatSecret, requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -683,7 +684,7 @@ router.post('/command-poll', async (req: AuthRequest, res: Response, next: NextF
       res.status(400).json({ success: false, error: { message: 'agent_id is required' } });
       return;
     }
-    if (req.headers['x-agent-secret'] !== process.env.AGENT_SECRET) {
+    if (!safeCompare(req.headers['x-agent-secret'], requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -1289,7 +1290,7 @@ router.post('/inventory', async (req: AuthRequest, res: Response, next: NextFunc
     }
 
   const agentSecret = req.headers['x-agent-secret'];
-  if (agentSecret !== process.env.AGENT_SECRET) {
+  if (!safeCompare(agentSecret, requireAgentSecret())) {
     res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
     return;
   }
@@ -1375,7 +1376,7 @@ router.post('/command-result', async (req: AuthRequest, res: Response, next: Nex
     }
 
     const agentSecret = req.headers['x-agent-secret'];
-    if (agentSecret !== process.env.AGENT_SECRET) {
+    if (!safeCompare(agentSecret, requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -1443,7 +1444,7 @@ router.post('/security-scan', async (req: AuthRequest, res: Response, next: Next
     }
 
     const agentSecret = req.headers['x-agent-secret'];
-    if (agentSecret !== process.env.AGENT_SECRET) {
+    if (!safeCompare(agentSecret, requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -1550,7 +1551,7 @@ router.post('/alerts', async (req: AuthRequest, res: Response, next: NextFunctio
     }
 
     const agentSecret = req.headers['x-agent-secret'];
-    if (agentSecret !== process.env.AGENT_SECRET) {
+    if (!safeCompare(agentSecret, requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -1604,7 +1605,7 @@ router.post('/events', async (req: AuthRequest, res: Response, next: NextFunctio
     }
 
     const agentSecret = req.headers['x-agent-secret'];
-    if (agentSecret !== process.env.AGENT_SECRET) {
+    if (!safeCompare(agentSecret, requireAgentSecret())) {
       res.status(401).json({ success: false, error: { message: 'Invalid agent secret' } });
       return;
     }
@@ -2343,6 +2344,10 @@ router.post('/mobile/heartbeat', async (req: AuthRequest, res: Response, next: N
     const agentId = String(clientAgentId || '').trim().slice(0, 64);
     if (!agentId.startsWith('mobile-')) {
       res.status(400).json({ success: false, error: { message: 'Invalid agent_id' } });
+      return;
+    }
+    if (!safeCompare(req.headers['x-heartbeat-token'], remoteSecretFor(agentId))) {
+      res.status(401).json({ success: false, error: { message: 'Invalid heartbeat token' } });
       return;
     }
     const existing = await query('SELECT id, status FROM devices WHERE agent_id = $1', [agentId]);

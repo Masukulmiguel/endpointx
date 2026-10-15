@@ -65,12 +65,16 @@ services:
 
   - type: web
     name: endpointx-dashboard
-    runtime: docker
-    plan: free
-    dockerfilePath: ./admin-dashboard/Dockerfile
+    runtime: static
+    buildCommand: cd admin-dashboard && npm install && npm run build
+    staticPublishPath: admin-dashboard/dist
     envVars:
       - key: NODE_ENV
         value: production
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
 
   - type: postgres
     name: endpointx-db
