@@ -78,7 +78,7 @@
           <p class="docs-lead">Enrolamento, heartbeat, tokens e actualizações.</p>
           <nav class="docs-toc"><span class="k">Nesta página</span><ol><li><a href="#o-que-e-o-agent">O que é o agent</a></li><li><a href="#enrolamento-e-estado-pending">Enrolamento e estado PENDING</a></li><li><a href="#heartbeat-e-limiares">Heartbeat e limiares</a></li><li><a href="#tokens-enrolamento-vs-sessao">Tokens (enrolamento vs sessão)</a></li><li><a href="#comandos-remotos">Comandos remotos</a></li><li><a href="#actualizar-ou-desinstalar">Actualizar ou desinstalar</a></li></ol></nav>
           <div class="docs-body"><h2 id="o-que-e-o-agent">O que é o agent</h2>
-<p>O agente é o programa corre nos endpoints autorizados e alimenta o painel de dados reais. Em Windows, Linux e macOS é um agente Python (baseado em <code>psutil</code>) que:</p>
+<p>O agente é o programa que corre nos endpoints autorizados e alimenta o painel de dados reais. Em Windows, Linux e macOS é um agente Python (baseado em <code>psutil</code>) que:</p>
 <ul>
 <li><strong>recolhe inventário</strong> — software, serviços, processos, partições e interfaces;</li>
 <li><strong>reporta métricas</strong> — CPU, RAM, disco e tráfego de rede, com a capacidade total de cada componente;</li>
@@ -101,12 +101,12 @@ server_url: https://endpointx-api-5ypc.onrender.com/api
 <h2 id="heartbeat-e-limiares">Heartbeat e limiares</h2>
 <ul>
 <li><strong>Intervalo</strong> — configurável (<code>heartbeat_interval</code>, 60 segundos por omissão). Cada heartbeat actualiza estado, métricas e capacidade de hardware, e devolve os comandos pendentes do dispositivo.</li>
-<li><strong>Poll de comandos</strong> — <code>POST /api/devices/command-poll</code> é feito pelo agente de ~3 em ~3 segundos, para um comando do painel não ficar à espera do próximo heartbeat.</li>
+<li><strong>Poll de comandos</strong> — <code>POST /api/devices/command-poll</code> é feito pelo agente de 15 em 15 segundos (por omissão; configurável com <code>command_poll_interval</code> no <code>config.yaml</code>), para um comando do painel não ficar à espera do próximo heartbeat.</li>
 <li><strong>Offline</strong> — um dispositivo sem heartbeat durante <code>OFFLINE_THRESHOLD</code> (300 segundos, 5 minutos, por omissão) passa a <code>offline</code>. Os telemóveis usam <code>MOBILE_OFFLINE_THRESHOLD</code> (1800 segundos, 30 minutos) porque os navegadores congelam os timers em segundo plano — ambos os valores estão definidos no deploy.</li>
 <li><strong>Alertas de offline</strong> — as regras de limiar aceitam o desvio <code>offline</code> entre 30 e 86400 segundos.</li>
 <li><strong>Dispositivos contidos</strong> — bloqueados ou em quarentena continuam a aceitar métricas, mas não voltam a <code>online</code> e só recebem comandos de contenção (<code>isolate</code>, <code>unisolate</code>, <code>quarantine</code>).</li>
 </ul>
-<p>Exemplo do poll de baixa latência:</p>
+<p>Exemplo do poll de comandos:</p>
 <div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-http">POST /api/devices/command-poll
 Content-Type: application/json
 X-Agent-Secret: &lt;AGENT_SECRET&gt;

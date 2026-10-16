@@ -36,11 +36,11 @@ Quatro funções de sistema, com permissões atribuídas no seed (`SEED_ROLE_PER
 | Função | Alcance |
 |--------|---------|
 | `admin` | Todas as permissões do catálogo (acesso total) |
-| `supervisor` | Gestão de dispositivos e utilizadores (`devices.manage`, `devices.commands`, `users.view`, `logs.view`, alertas, redes) |
-| `technician` | Ver dispositivos e executar comandos (`devices.view`, `devices.commands`, `alerts.view`, `network.view`) |
+| `supervisor` | Principais permissões: `devices.manage`, `devices.commands`, `users.view`, `logs.view` — gestão de dispositivos e utilizadores, alertas e redes |
+| `technician` | Principais permissões: `devices.view`, `devices.commands` — ver dispositivos e executar comandos |
 | `user` | Apenas visualização (leitura) — é a função que o registo gratuito recebe |
 
-- O enforcement é no servidor: cada rota usa `requirePermission(...)` e sem a permissão devolve `403` com `AUTH_PERMISSION_DENIED` — mesmo que o JWT diga o contrário (as permissões são lidas da BD com cache de 60 segundos, por isso uma alteração de permissão apanha sempre a próxima renovação de sessão).
+- O enforcement é no servidor: cada rota usa `requirePermission(...)` e sem a permissão devolve `403` com `AUTH_PERMISSION_DENIED` — mesmo que o JWT diga o contrário. O cache de permissões (60 segundos) serve exactamente para isso: o RBAC relê as permissões actuais da BD mesmo com um JWT antigo, por isso uma alteração de permissões passa a valer em até 60 segundos — ou de imediato quando o cache é invalidado — sem esperar pela renovação da sessão.
 - Novos registos entram como `user` (early access gratuito); administradores convidam com `POST /api/auth/invite`, que exige `users.manage` e escolhe a função do convidado.
 
 ```json

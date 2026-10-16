@@ -89,7 +89,7 @@
 <h2 id="create-an-account-and-get-the-token">Create an account and get the token</h2>
 <p>Create an account (free early access sign-up), sign in to the panel and open the <strong>Install Agent</strong> page. The panel fetches the account&#39;s enrollment token with <code>GET /api/devices/enroll-token</code> and shows the command already complete, token included.</p>
 <p>You can also mint the token yourself from an admin session:</p>
-<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code class="language-bash">curl -H &quot;Authorization: Bearer &lt;ADMIN_JWT&gt;&quot; https://endpointx.onrender.com/api/devices/enroll-token
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code class="language-bash">curl -H &quot;Authorization: Bearer &lt;ADMIN_JWT&gt;&quot; https://endpointx-api-5ypc.onrender.com/api/devices/enroll-token
 </code></pre></div>
 <p>The token lasts 30 days (<code>expires_in: &quot;30d&quot;</code>), belongs to the account that issued it and is a credential — never commit it or share it outside the panel. Without a valid token the installation scripts refuse to run (HTTP 403 «Valid enrolment token required»).</p>
 <h2 id="windows-powershell">Windows (PowerShell)</h2>

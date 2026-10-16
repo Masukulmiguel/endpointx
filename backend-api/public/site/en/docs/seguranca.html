@@ -115,11 +115,11 @@
 </tr>
 <tr>
 <td><code>supervisor</code></td>
-<td>Device and user management (<code>devices.manage</code>, <code>devices.commands</code>, <code>users.view</code>, <code>logs.view</code>, alerts, networks)</td>
+<td>Key permissions: <code>devices.manage</code>, <code>devices.commands</code>, <code>users.view</code>, <code>logs.view</code> — device and user management, alerts and networks</td>
 </tr>
 <tr>
 <td><code>technician</code></td>
-<td>View devices and run commands (<code>devices.view</code>, <code>devices.commands</code>, <code>alerts.view</code>, <code>network.view</code>)</td>
+<td>Key permissions: <code>devices.view</code>, <code>devices.commands</code> — viewing devices and running commands</td>
 </tr>
 <tr>
 <td><code>user</code></td>
@@ -127,7 +127,7 @@
 </tr>
 </tbody></table>
 <ul>
-<li>Enforcement happens on the server: every route uses <code>requirePermission(...)</code> and without the permission you get <code>403</code> with <code>AUTH_PERMISSION_DENIED</code> — even if the JWT says otherwise (permissions are read from the database with a 60-second cache, so a permission change always lands on the next session renewal).</li>
+<li>Enforcement happens on the server: every route uses <code>requirePermission(...)</code> and without the permission you get <code>403</code> with <code>AUTH_PERMISSION_DENIED</code> — even if the JWT says otherwise. That is exactly what the 60-second permission cache is for: RBAC re-reads the current permissions from the database even when the JWT is stale, so a permission change takes effect within 60 seconds — or immediately when the cache is invalidated — without waiting for a session renewal.</li>
 <li>New registrations enter as <code>user</code> (free early access); administrators invite others with <code>POST /api/auth/invite</code>, which requires <code>users.manage</code> and picks the invitee&#39;s role.</li>
 </ul>
 <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code class="language-json">{

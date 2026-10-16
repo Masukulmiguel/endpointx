@@ -115,11 +115,11 @@
 </tr>
 <tr>
 <td><code>supervisor</code></td>
-<td>Gestão de dispositivos e utilizadores (<code>devices.manage</code>, <code>devices.commands</code>, <code>users.view</code>, <code>logs.view</code>, alertas, redes)</td>
+<td>Principais permissões: <code>devices.manage</code>, <code>devices.commands</code>, <code>users.view</code>, <code>logs.view</code> — gestão de dispositivos e utilizadores, alertas e redes</td>
 </tr>
 <tr>
 <td><code>technician</code></td>
-<td>Ver dispositivos e executar comandos (<code>devices.view</code>, <code>devices.commands</code>, <code>alerts.view</code>, <code>network.view</code>)</td>
+<td>Principais permissões: <code>devices.view</code>, <code>devices.commands</code> — ver dispositivos e executar comandos</td>
 </tr>
 <tr>
 <td><code>user</code></td>
@@ -127,7 +127,7 @@
 </tr>
 </tbody></table>
 <ul>
-<li>O enforcement é no servidor: cada rota usa <code>requirePermission(...)</code> e sem a permissão devolve <code>403</code> com <code>AUTH_PERMISSION_DENIED</code> — mesmo que o JWT diga o contrário (as permissões são lidas da BD com cache de 60 segundos, por isso uma alteração de permissão apanha sempre a próxima renovação de sessão).</li>
+<li>O enforcement é no servidor: cada rota usa <code>requirePermission(...)</code> e sem a permissão devolve <code>403</code> com <code>AUTH_PERMISSION_DENIED</code> — mesmo que o JWT diga o contrário. O cache de permissões (60 segundos) serve exactamente para isso: o RBAC relê as permissões actuais da BD mesmo com um JWT antigo, por isso uma alteração de permissões passa a valer em até 60 segundos — ou de imediato quando o cache é invalidado — sem esperar pela renovação da sessão.</li>
 <li>Novos registos entram como <code>user</code> (early access gratuito); administradores convidam com <code>POST /api/auth/invite</code>, que exige <code>users.manage</code> e escolhe a função do convidado.</li>
 </ul>
 <div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-json">{

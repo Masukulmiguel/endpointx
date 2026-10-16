@@ -101,12 +101,12 @@ server_url: https://endpointx-api-5ypc.onrender.com/api
 <h2 id="heartbeat-and-thresholds">Heartbeat and thresholds</h2>
 <ul>
 <li><strong>Interval</strong> — configurable (<code>heartbeat_interval</code>, 60 seconds by default). Each heartbeat updates state, metrics and hardware capacity, and returns the device&#39;s pending commands.</li>
-<li><strong>Command polling</strong> — the agent calls <code>POST /api/devices/command-poll</code> roughly every 3 seconds, so a panel command does not wait for the next heartbeat.</li>
+<li><strong>Command polling</strong> — the agent calls <code>POST /api/devices/command-poll</code> roughly every 15 seconds (the default; configurable via <code>command_poll_interval</code> in <code>config.yaml</code>), so a panel command does not wait for the next heartbeat.</li>
 <li><strong>Offline</strong> — a device that misses the heartbeat for <code>OFFLINE_THRESHOLD</code> (300 seconds, 5 minutes, by default) becomes <code>offline</code>. Phones use <code>MOBILE_OFFLINE_THRESHOLD</code> (1800 seconds, 30 minutes) because browsers freeze background timers — both values are set at deploy time.</li>
 <li><strong>Offline alerts</strong> — threshold rules accept an <code>offline</code> deviation between 30 and 86400 seconds.</li>
 <li><strong>Contained devices</strong> — blocked or quarantined devices keep reporting metrics, but never return to <code>online</code> and only receive containment commands (<code>isolate</code>, <code>unisolate</code>, <code>quarantine</code>).</li>
 </ul>
-<p>Example of the low-latency poll:</p>
+<p>Example of the command poll:</p>
 <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code class="language-http">POST /api/devices/command-poll
 Content-Type: application/json
 X-Agent-Secret: &lt;AGENT_SECRET&gt;

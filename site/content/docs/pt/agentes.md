@@ -6,7 +6,7 @@ description: Como o agente EndpointX se enrola, o ciclo de heartbeat e os seus l
 
 ## O que é o agent
 
-O agente é o programa corre nos endpoints autorizados e alimenta o painel de dados reais. Em Windows, Linux e macOS é um agente Python (baseado em `psutil`) que:
+O agente é o programa que corre nos endpoints autorizados e alimenta o painel de dados reais. Em Windows, Linux e macOS é um agente Python (baseado em `psutil`) que:
 
 - **recolhe inventário** — software, serviços, processos, partições e interfaces;
 - **reporta métricas** — CPU, RAM, disco e tráfego de rede, com a capacidade total de cada componente;
@@ -33,12 +33,12 @@ server_url: https://endpointx-api-5ypc.onrender.com/api
 ## Heartbeat e limiares
 
 - **Intervalo** — configurável (`heartbeat_interval`, 60 segundos por omissão). Cada heartbeat actualiza estado, métricas e capacidade de hardware, e devolve os comandos pendentes do dispositivo.
-- **Poll de comandos** — `POST /api/devices/command-poll` é feito pelo agente de ~3 em ~3 segundos, para um comando do painel não ficar à espera do próximo heartbeat.
+- **Poll de comandos** — `POST /api/devices/command-poll` é feito pelo agente de 15 em 15 segundos (por omissão; configurável com `command_poll_interval` no `config.yaml`), para um comando do painel não ficar à espera do próximo heartbeat.
 - **Offline** — um dispositivo sem heartbeat durante `OFFLINE_THRESHOLD` (300 segundos, 5 minutos, por omissão) passa a `offline`. Os telemóveis usam `MOBILE_OFFLINE_THRESHOLD` (1800 segundos, 30 minutos) porque os navegadores congelam os timers em segundo plano — ambos os valores estão definidos no deploy.
 - **Alertas de offline** — as regras de limiar aceitam o desvio `offline` entre 30 e 86400 segundos.
 - **Dispositivos contidos** — bloqueados ou em quarentena continuam a aceitar métricas, mas não voltam a `online` e só recebem comandos de contenção (`isolate`, `unisolate`, `quarantine`).
 
-Exemplo do poll de baixa latência:
+Exemplo do poll de comandos:
 
 ```http
 POST /api/devices/command-poll

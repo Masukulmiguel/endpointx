@@ -22,7 +22,7 @@ Create an account (free early access sign-up), sign in to the panel and open the
 You can also mint the token yourself from an admin session:
 
 ```bash
-curl -H "Authorization: Bearer <ADMIN_JWT>" https://endpointx.onrender.com/api/devices/enroll-token
+curl -H "Authorization: Bearer <ADMIN_JWT>" https://endpointx-api-5ypc.onrender.com/api/devices/enroll-token
 ```
 
 The token lasts 30 days (`expires_in: "30d"`), belongs to the account that issued it and is a credential — never commit it or share it outside the panel. Without a valid token the installation scripts refuse to run (HTTP 403 «Valid enrolment token required»).

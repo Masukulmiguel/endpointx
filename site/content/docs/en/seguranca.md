@@ -36,11 +36,11 @@ Four system roles, with permissions assigned at seed time (`SEED_ROLE_PERMISSION
 | Role | Scope |
 |------|-------|
 | `admin` | Every permission in the catalog (full access) |
-| `supervisor` | Device and user management (`devices.manage`, `devices.commands`, `users.view`, `logs.view`, alerts, networks) |
-| `technician` | View devices and run commands (`devices.view`, `devices.commands`, `alerts.view`, `network.view`) |
+| `supervisor` | Key permissions: `devices.manage`, `devices.commands`, `users.view`, `logs.view` — device and user management, alerts and networks |
+| `technician` | Key permissions: `devices.view`, `devices.commands` — viewing devices and running commands |
 | `user` | View-only (read) — the role free sign-ups receive |
 
-- Enforcement happens on the server: every route uses `requirePermission(...)` and without the permission you get `403` with `AUTH_PERMISSION_DENIED` — even if the JWT says otherwise (permissions are read from the database with a 60-second cache, so a permission change always lands on the next session renewal).
+- Enforcement happens on the server: every route uses `requirePermission(...)` and without the permission you get `403` with `AUTH_PERMISSION_DENIED` — even if the JWT says otherwise. That is exactly what the 60-second permission cache is for: RBAC re-reads the current permissions from the database even when the JWT is stale, so a permission change takes effect within 60 seconds — or immediately when the cache is invalidated — without waiting for a session renewal.
 - New registrations enter as `user` (free early access); administrators invite others with `POST /api/auth/invite`, which requires `users.manage` and picks the invitee's role.
 
 ```json

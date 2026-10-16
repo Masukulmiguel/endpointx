@@ -33,12 +33,12 @@ server_url: https://endpointx-api-5ypc.onrender.com/api
 ## Heartbeat and thresholds
 
 - **Interval** — configurable (`heartbeat_interval`, 60 seconds by default). Each heartbeat updates state, metrics and hardware capacity, and returns the device's pending commands.
-- **Command polling** — the agent calls `POST /api/devices/command-poll` roughly every 3 seconds, so a panel command does not wait for the next heartbeat.
+- **Command polling** — the agent calls `POST /api/devices/command-poll` roughly every 15 seconds (the default; configurable via `command_poll_interval` in `config.yaml`), so a panel command does not wait for the next heartbeat.
 - **Offline** — a device that misses the heartbeat for `OFFLINE_THRESHOLD` (300 seconds, 5 minutes, by default) becomes `offline`. Phones use `MOBILE_OFFLINE_THRESHOLD` (1800 seconds, 30 minutes) because browsers freeze background timers — both values are set at deploy time.
 - **Offline alerts** — threshold rules accept an `offline` deviation between 30 and 86400 seconds.
 - **Contained devices** — blocked or quarantined devices keep reporting metrics, but never return to `online` and only receive containment commands (`isolate`, `unisolate`, `quarantine`).
 
-Example of the low-latency poll:
+Example of the command poll:
 
 ```http
 POST /api/devices/command-poll

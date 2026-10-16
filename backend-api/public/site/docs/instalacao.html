@@ -89,7 +89,7 @@
 <h2 id="criar-conta-e-obter-o-token">Criar conta e obter o token</h2>
 <p>Crie a conta (registo gratuito de early access), entre no painel e abra a página <strong>Instalar Agente</strong>. O painel busca o token de enrolamento da conta com <code>GET /api/devices/enroll-token</code> e apresenta o comando já completo, com o token incluído.</p>
 <p>O token também pode ser obtido à mão com uma sessão admin:</p>
-<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash">curl -H &quot;Authorization: Bearer &lt;ADMIN_JWT&gt;&quot; https://endpointx.onrender.com/api/devices/enroll-token
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash">curl -H &quot;Authorization: Bearer &lt;ADMIN_JWT&gt;&quot; https://endpointx-api-5ypc.onrender.com/api/devices/enroll-token
 </code></pre></div>
 <p>O token dura 30 dias (<code>expires_in: &quot;30d&quot;</code>), pertence à conta que o emitiu e é uma credencial — nunca o comite nem o partilhe fora do painel. Sem um token válido, os scripts de instalação recusam-se a correr (HTTP 403 «Valid enrolment token required»).</p>
 <h2 id="windows-powershell">Windows (PowerShell)</h2>

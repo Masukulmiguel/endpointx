@@ -22,7 +22,7 @@ Crie a conta (registo gratuito de early access), entre no painel e abra a págin
 O token também pode ser obtido à mão com uma sessão admin:
 
 ```bash
-curl -H "Authorization: Bearer <ADMIN_JWT>" https://endpointx.onrender.com/api/devices/enroll-token
+curl -H "Authorization: Bearer <ADMIN_JWT>" https://endpointx-api-5ypc.onrender.com/api/devices/enroll-token
 ```
 
 O token dura 30 dias (`expires_in: "30d"`), pertence à conta que o emitiu e é uma credencial — nunca o comite nem o partilhe fora do painel. Sem um token válido, os scripts de instalação recusam-se a correr (HTTP 403 «Valid enrolment token required»).
