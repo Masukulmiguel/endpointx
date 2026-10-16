@@ -356,7 +356,8 @@ img {
   overflow: hidden;
 }
 
-.lang-switch button {
+.lang-switch button,
+.lang-switch a {
   padding: 0.32rem 0.6rem;
   font-size: 0.76rem;
   font-weight: 700;
@@ -364,14 +365,18 @@ img {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+  text-decoration: none;
+  text-align: center;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.lang-switch button:hover {
+.lang-switch button:hover,
+.lang-switch a:hover {
   color: var(--text);
 }
 
-.lang-switch button[aria-pressed='true'] {
+.lang-switch button[aria-pressed='true'],
+.lang-switch a[aria-current] {
   background: var(--accent-soft);
   color: var(--accent);
 }

@@ -44,8 +44,8 @@
         </nav>
         <div class="header-actions">
           <div class="lang-switch" role="group" aria-label="Idioma">
-            <a href="{{hreflang_pt}}">PT</a>
-            <a href="{{hreflang_en}}">EN</a>
+            <a href="{{hreflang_pt}}" data-lang-link="pt">PT</a>
+            <a href="{{hreflang_en}}" data-lang-link="en">EN</a>
           </div>
           <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
           <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
@@ -118,7 +118,7 @@
       </div>
     </footer>
 
-    <script src="/src/js/i18n.js"></script>
+    <script type="module" src="/src/js/i18n.js"></script>
     <script type="module" src="/src/js/docs.js"></script>
   </body>
 </html>

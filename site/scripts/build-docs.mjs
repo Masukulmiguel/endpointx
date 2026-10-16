@@ -241,7 +241,8 @@ for (const lang of LANGS) {
       year: String(new Date().getFullYear()),
     })
       .replace(/<a class="docs-prev" href="##none##">[\s\S]*?<\/a>/, '<span></span>')
-      .replace(/<a class="docs-next" href="##none##">[\s\S]*?<\/a>/, '<span></span>');
+      .replace(/<a class="docs-next" href="##none##">[\s\S]*?<\/a>/, '<span></span>')
+      .replace(`data-lang-link="${lang}"`, `data-lang-link="${lang}" aria-current="true"`);
 
     const leftover = html.match(/\{\{[a-z_]+\}\}/g);
     if (leftover) console.warn(`[build-docs] aviso: placeholders por preencher em ${lang}/${page.slug}: ${[...new Set(leftover)].join(', ')}`);
