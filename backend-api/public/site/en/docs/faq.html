@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frequently asked questions · EndpointX</title>
+    <meta name="description" content="Pricing, requirements, supported systems, mobile devices, offline behaviour, data collected, HERMES, backups, languages and support for EndpointX." />
+    <meta property="og:title" content="Frequently asked questions" />
+    <meta property="og:description" content="Pricing, requirements, supported systems, mobile devices, offline behaviour, data collected, HERMES, backups, languages and support for EndpointX." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://endpointx.onrender.com/en/docs/faq" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/en/docs/faq" />
+    <link rel="alternate" hreflang="pt" href="https://endpointx.onrender.com/docs/faq" />
+    <link rel="alternate" hreflang="en" href="https://endpointx.onrender.com/en/docs/faq" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/i18n-Be6PmA_U.js"></script>
+    <script type="module" crossorigin src="/assets/docs-C80S_Aa2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/i18n-B8MjnuQc.css">
+  </head>
+  <body data-copy-label="Copy">
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="https://endpointx.onrender.com/en/docs/faq" data-i18n="nav.docs">Documentation</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <a href="https://endpointx.onrender.com/docs/faq" data-lang-link="pt">PT</a>
+            <a href="https://endpointx.onrender.com/en/docs/faq" data-lang-link="en" aria-current="true">EN</a>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="docs-layout">
+        <aside class="docs-side">
+          <input class="docs-search" type="search" placeholder="Search the documentation…" aria-label="Search the documentation…" />
+          <p class="docs-nav-title">Documentation</p>
+          <nav aria-label="Documentation">
+<a href="/en/docs/visao-geral" data-slug="visao-geral">Platform overview</a>
+<a href="/en/docs/instalacao" data-slug="instalacao">Installation and requirements</a>
+<a href="/en/docs/agentes" data-slug="agentes">Agent management</a>
+<a href="/en/docs/discovery" data-slug="discovery">Network Discovery</a>
+<a href="/en/docs/seguranca" data-slug="seguranca">Security and permissions</a>
+<a href="/en/docs/faq" class="active" data-slug="faq">Frequently asked questions</a>
+</nav>
+<div class="docs-empty">No results found.</div>
+        </aside>
+        <div class="docs-main">
+          <p class="docs-lang"><a href="/docs/faq">View in Portuguese →</a></p>
+          <h1>Frequently asked questions</h1>
+          <p class="docs-lead">Short answers to the most common questions.</p>
+          
+          <div class="docs-body"><h3 id="is-endpointx-paid">Is EndpointX paid?</h3>
+<p>No. Version 1.3.0 is in free early access — sign up and start using it with no credit card.</p>
+<div class="docs-callout"><strong>Note:</strong> it is a product under active development; features marked as &quot;in development&quot; (NAC, software deployment, CVE feed) are not ready yet, and we would rather say so than pretend otherwise.</div>
+<h3 id="what-are-the-minimum-requirements">What are the minimum requirements?</h3>
+<p>An account, a network that can reach the API over HTTPS, and Python on the endpoint: 3.8+ on Linux and macOS (3.10+ recommended on PCs). On Windows, install Python with &quot;Add Python to PATH&quot; checked — the scripts take care of the rest.</p>
+<h3 id="which-operating-systems-are-supported">Which operating systems are supported?</h3>
+<p>Windows (installation via PowerShell), Linux (Debian/Ubuntu/Fedora) and macOS (systemd/launchd) run the Python agent; Android 8.0+ gets an APK and a mobile page; iOS uses the mobile page (PWA) for registration and metrics. The full guide is in <a href="/en/docs/instalacao">Installation</a>.</p>
+<h3 id="what-about-mobile-devices">What about mobile devices?</h3>
+<p>By opening <code>https://endpointx-api-5ypc.onrender.com/api/devices/public/mobile?t=&lt;ENROLL_TOKEN&gt;</code> (or the QR code on the <strong>Install Agent</strong> page). The phone arrives as <strong>PENDING</strong> until approved in the panel (Zero Trust), and the Android app adds remote screen viewing and control — on iOS you get registration, presence and metrics.</p>
+<h3 id="what-happens-when-a-device-goes-offline">What happens when a device goes offline?</h3>
+<p>The agent does not uninstall itself or lose data: it keeps running locally and reconnects on its own (retries with exponential backoff). In the panel the device becomes <code>offline</code> after 300 seconds without a heartbeat (1800 seconds for phones) and returns to <code>online</code> on the next heartbeat; commands pending for more than 5 minutes become <code>failed</code>.</p>
+<h3 id="what-data-does-the-agent-collect">What data does the agent collect?</h3>
+<p>Inventory (hardware, software, services, processes, partitions, interfaces), CPU, memory, disk and network metrics, and connection state. It <strong>never</strong> collects passwords, keystrokes or file contents — see <a href="/en/docs/seguranca">Security</a>.</p>
+<h3 id="is-hermes-an-offensive-tool">Is HERMES an offensive tool?</h3>
+<p>No. It is defensive security: it analyses vulnerabilities and risk on authorized devices and the configured private ranges (by default <code>192.168.0.0/16</code>, <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code> — everything else is ignored). The module is under development in this version.</p>
+<h3 id="how-do-i-stop-a-hermes-scan">How do I stop a HERMES scan?</h3>
+<p>A single scan: <code>POST /api/hermes/scans/:id/stop</code> (it becomes <code>stopped</code>). Emergency, all at once: <code>POST /api/hermes/emergency-stop</code> — it switches on the emergency stop (<code>hermes_emergency_stop</code>) and stops every active scan; both require the <code>hermes.manage</code> permission and are recorded in the audit trail.</p>
+<h3 id="how-many-administrator-accounts-can-i-have">How many administrator accounts can I have?</h3>
+<p>As many as you need. The first administrator is created at boot (<code>SEED_ADMIN_PASSWORD</code>) and free sign-ups receive the <code>user</code> role (read-only). Invite as many as you like with <code>POST /api/auth/invite</code> and choose each person&#39;s role (admin, supervisor, technician or user).</p>
+<h3 id="how-do-i-back-up-the-database">How do I back up the database?</h3>
+<p>With <code>pg_dump</code> (custom-format dump):</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code class="language-bash">pg_dump -U endpointx -d endpointx -F c -f backup_$(date +%Y%m%d).dump
+pg_restore -U endpointx -d endpointx backup_20250115.dump
+</code></pre></div>
+<p>Store the dumps on another machine and test a restore now and then — a backup you have never restored is not a backup.</p>
+<h3 id="which-languages-is-the-documentation-in">Which languages is the documentation in?</h3>
+<p>Portuguese and English, with the same structure and content in both. The selector at the top of the site switches the whole page&#39;s language.</p>
+<h3 id="how-do-i-contact-support">How do I contact support?</h3>
+<p>Through the form at <a href="/contacto">/contacto</a> — describe the problem, the device involved and what you have already tried; we reply by email.</p>
+<h3 id="where-do-i-find-the-full-documentation">Where do I find the full documentation?</h3>
+<p>Right here, inside the site: <a href="/en/docs/visao-geral">/en/docs/visao-geral</a> in English and <a href="/docs/visao-geral">/docs/visao-geral</a> in Portuguese. The docs live in the site itself — no jumps to external repositories.</p>
+</div>
+          <nav class="docs-footer-nav">
+            <a class="docs-prev" href="/en/docs/seguranca">← Security and permissions</a>
+            <span></span>
+          </nav>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="https://endpointx.onrender.com/en/docs/faq" data-i18n="nav.docs">Documentation</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </body>
+</html>

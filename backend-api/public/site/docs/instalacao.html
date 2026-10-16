@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Instalação e requisitos · EndpointX</title>
+    <meta name="description" content="Requisitos, conta, token de enrolamento e comandos exactos para instalar o agente EndpointX em Windows, Linux, macOS e telemóveis." />
+    <meta property="og:title" content="Instalação e requisitos" />
+    <meta property="og:description" content="Requisitos, conta, token de enrolamento e comandos exactos para instalar o agente EndpointX em Windows, Linux, macOS e telemóveis." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://endpointx.onrender.com/docs/instalacao" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/docs/instalacao" />
+    <link rel="alternate" hreflang="pt" href="https://endpointx.onrender.com/docs/instalacao" />
+    <link rel="alternate" hreflang="en" href="https://endpointx.onrender.com/en/docs/instalacao" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/i18n-Be6PmA_U.js"></script>
+    <script type="module" crossorigin src="/assets/docs-C80S_Aa2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/i18n-B8MjnuQc.css">
+  </head>
+  <body data-copy-label="Copiar">
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="https://endpointx.onrender.com/docs/instalacao" data-i18n="nav.docs">Documentação</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <a href="https://endpointx.onrender.com/docs/instalacao" data-lang-link="pt" aria-current="true">PT</a>
+            <a href="https://endpointx.onrender.com/en/docs/instalacao" data-lang-link="en">EN</a>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="docs-layout">
+        <aside class="docs-side">
+          <input class="docs-search" type="search" placeholder="Pesquisar na documentação…" aria-label="Pesquisar na documentação…" />
+          <p class="docs-nav-title">Documentação</p>
+          <nav aria-label="Documentação">
+<a href="/docs/visao-geral" data-slug="visao-geral">Visão geral da plataforma</a>
+<a href="/docs/instalacao" class="active" data-slug="instalacao">Instalação e requisitos</a>
+<a href="/docs/agentes" data-slug="agentes">Gestão de agentes</a>
+<a href="/docs/discovery" data-slug="discovery">Network Discovery</a>
+<a href="/docs/seguranca" data-slug="seguranca">Segurança e permissões</a>
+<a href="/docs/faq" data-slug="faq">Perguntas frequentes</a>
+</nav>
+<div class="docs-empty">Nenhum resultado encontrado.</div>
+        </aside>
+        <div class="docs-main">
+          <p class="docs-lang"><a href="/en/docs/instalacao">Ver em English →</a></p>
+          <h1>Instalação e requisitos</h1>
+          <p class="docs-lead">Pré-requisitos, primeiros passos e instalação do agente.</p>
+          <nav class="docs-toc"><span class="k">Nesta página</span><ol><li><a href="#requisitos">Requisitos</a></li><li><a href="#criar-conta-e-obter-o-token">Criar conta e obter o token</a></li><li><a href="#windows-powershell">Windows (PowerShell)</a></li><li><a href="#linux-e-macos">Linux e macOS</a></li><li><a href="#telemovel-android-ios">Telemóvel (Android/iOS)</a></li><li><a href="#verificar-que-o-dispositivo-entrou">Verificar que o dispositivo entrou</a></li><li><a href="#actualizacoes">Actualizações</a></li></ol></nav>
+          <div class="docs-body"><h2 id="requisitos">Requisitos</h2>
+<p>Para instalar o agente num endpoint autorizado precisa de:</p>
+<ul>
+<li><strong>Conta no EndpointX</strong> — o early access gratuito da versão 1.3.0 arranca com uma conta de administrador criada no primeiro boot (a partir de <code>SEED_ADMIN_PASSWORD</code>, mínimo 12 caracteres) e permite registo livre de novos utilizadores.</li>
+<li><strong>Python no endpoint</strong> — no Windows, Python instalado com «Add Python to PATH» marcado; em Linux e macOS, Python 3.8+. O guia de instalação recomenda Python 3.10+ nos PCs remotos.</li>
+<li><strong>Rede</strong> — o endpoint tem de alcançar a API por HTTPS. Em instalações locais, o firewall não pode bloquear a porta do backend (3001 por omissão).</li>
+<li><strong>Permissão de gestão</strong> — os comandos de instalação e os tokens de enrolamento são emitidos por contas com a permissão <code>devices.manage</code> (funções administradoras).</li>
+</ul>
+<p>Os scripts configuram o agente automaticamente para apontar à API — não é preciso editar <code>config.yaml</code> manualmente.</p>
+<h2 id="criar-conta-e-obter-o-token">Criar conta e obter o token</h2>
+<p>Crie a conta (registo gratuito de early access), entre no painel e abra a página <strong>Instalar Agente</strong>. O painel busca o token de enrolamento da conta com <code>GET /api/devices/enroll-token</code> e apresenta o comando já completo, com o token incluído.</p>
+<p>O token também pode ser obtido à mão com uma sessão admin:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash">curl -H &quot;Authorization: Bearer &lt;ADMIN_JWT&gt;&quot; https://endpointx.onrender.com/api/devices/enroll-token
+</code></pre></div>
+<p>O token dura 30 dias (<code>expires_in: &quot;30d&quot;</code>), pertence à conta que o emitiu e é uma credencial — nunca o comite nem o partilhe fora do painel. Sem um token válido, os scripts de instalação recusam-se a correr (HTTP 403 «Valid enrolment token required»).</p>
+<h2 id="windows-powershell">Windows (PowerShell)</h2>
+<p>No PC remoto, abra o PowerShell e cole (não feche a shell):</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-powershell">irm https://endpointx-api-5ypc.onrender.com/api/devices/public/install.ps1?t=&lt;ENROLL_TOKEN&gt; | iex
+</code></pre></div>
+<p>O comando é exactamente o que a página <strong>Instalar Agente</strong> mostra, já com o <code>?t=</code> da sua conta. O script:</p>
+<ol>
+<li>verifica que o Python está no PATH (falha com instruções se não estiver);</li>
+<li>cria <code>C:\endpointx\endpoint-agent</code> e descarrega os ficheiros do agente;</li>
+<li>escreve o <code>config.yaml</code> com o servidor, o segredo da frota e o seu token;</li>
+<li>instala as dependências (<code>psutil</code>, <code>requests</code>, <code>pyyaml</code>) e regista o dispositivo (<code>python agent.py --register</code>);</li>
+<li>cria um lançador em background e copia-o para a pasta de Arranque, para o agente arrancar em cada sessão de login.</li>
+</ol>
+<h2 id="linux-e-macos">Linux e macOS</h2>
+<p>No terminal do dispositivo (configuração e registo automáticos):</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash"># Linux (Debian/Ubuntu/Fedora — requer sudo)
+curl -fsSL https://endpointx-api-5ypc.onrender.com/api/devices/public/install-linux.sh?t=&lt;ENROLL_TOKEN&gt; | sudo bash
+
+# macOS (utilizador normal)
+curl -fsSL https://endpointx-api-5ypc.onrender.com/api/devices/public/install-macos.sh?t=&lt;ENROLL_TOKEN&gt; | bash
+</code></pre></div>
+<p>O agent corre como serviço — systemd no Linux, launchd no macOS — e arranca automaticamente. Para acompanhar:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash"># Linux
+systemctl status endpointx-agent
+journalctl -u endpointx-agent -f
+
+# macOS
+tail -f ~/endpointx-agent/agent-stdout.log
+</code></pre></div>
+<h2 id="telemovel-android-ios">Telemóvel (Android/iOS)</h2>
+<p>No telemóvel, abra o link de registo (página mobile, com o token da conta):</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code>https://endpointx-api-5ypc.onrender.com/api/devices/public/mobile?t=&lt;ENROLL_TOKEN&gt;
+</code></pre></div>
+<p>A página também está acessível por QR code na página <strong>Instalar Agente</strong>, em <code>GET /api/devices/public/mobile</code>, e o registo passa por <code>POST /api/devices/mobile/register</code>. Para gestão por MDM: Android Enterprise, Apple Business Manager, Intune e Jamf.</p>
+<p>Para <strong>ver e controlar o ecrã</strong> do telemóvel a partir do painel (remoto assistido), instale a app Android (Android 8.0+, v1.3.0, assinada, ~1 MB, com permissões de acessibilidade e partilha de ecrã):</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code>https://endpointx-api-5ypc.onrender.com/api/devices/public/endpointx-agent.apk
+</code></pre></div>
+<p>Com o telemóvel ligado por USB e depuração USB activa, a instalação assistida activa o controlo sem tocar nas definições do Android:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash">adb shell pm grant pt.endpointx.agent android.permission.WRITE_SECURE_SETTINGS
+adb shell settings put secure enabled_accessibility_services pt.endpointx.agent/.ControlService
+adb shell settings put secure accessibility_enabled 1
+</code></pre></div>
+<p>Há também o script <code>https://endpointx-api-5ypc.onrender.com/api/devices/public/enable-control.bat</code>, que instala o APK e liga o serviço de acessibilidade. Nota (Android 13+): o controlo remoto é bloqueado em apps instaladas por APK até se activar «Permitir definições restritas» em Definições → Apps → EndpointX.</p>
+<h2 id="verificar-que-o-dispositivo-entrou">Verificar que o dispositivo entrou</h2>
+<ol>
+<li>Aguarde até um ciclo de heartbeat (60 segundos por omissão) — o agente regista-se e começa a reportar de imediato.</li>
+<li>No painel, abra <strong>Dispositivos</strong>: o endpoint deve aparecer com estado <code>online</code>, métricas e inventário.</li>
+<li>Telemóveis entram como <code>PENDING</code> (Zero Trust) até um administrador os aprovar em <strong>Dispositivos</strong> — aprovados, passam a <code>approved</code>/<code>is_authorized</code>.</li>
+<li>Em caso de dúvida, confirme o log local <code>endpointx-agent.log</code> na pasta do agente e consulte a lista com <code>GET /api/devices</code> (requer <code>devices.view</code>).</li>
+</ol>
+<h2 id="actualizacoes">Actualizações</h2>
+<p>Actualização rápida do agente já instalado, em Windows:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-powershell">irm https://endpointx-api-5ypc.onrender.com/api/devices/public/update.ps1 | iex
+</code></pre></div>
+<p>O script para o agente, descarrega os ficheiros actualizados e volta a arrancá-lo em background. Também pode mandar a actualização pelo painel: o comando <code>update_agent</code> (criado com <code>POST /api/devices/:id/update-agent</code>, requer <code>devices.commands</code>) é entregue ao agente no próximo heartbeat. Em Linux e macOS, correr de novo o script de instalação da secção anterior repõe os ficheiros mais recentes.</p>
+</div>
+          <nav class="docs-footer-nav">
+            <a class="docs-prev" href="/docs/visao-geral">← Visão geral da plataforma</a>
+            <a class="docs-next" href="/docs/agentes">Gestão de agentes →</a>
+          </nav>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="https://endpointx.onrender.com/docs/instalacao" data-i18n="nav.docs">Documentação</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </body>
+</html>

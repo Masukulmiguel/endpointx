@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Network Discovery · EndpointX</title>
+    <meta name="description" content="Como executar uma descoberta de rede, validar os intervalos CIDR, rever os nós encontrados e transformá-los em pedidos de instalação com consentimento." />
+    <meta property="og:title" content="Network Discovery" />
+    <meta property="og:description" content="Como executar uma descoberta de rede, validar os intervalos CIDR, rever os nós encontrados e transformá-los em pedidos de instalação com consentimento." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://endpointx.onrender.com/docs/discovery" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/docs/discovery" />
+    <link rel="alternate" hreflang="pt" href="https://endpointx.onrender.com/docs/discovery" />
+    <link rel="alternate" hreflang="en" href="https://endpointx.onrender.com/en/docs/discovery" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/i18n-Be6PmA_U.js"></script>
+    <script type="module" crossorigin src="/assets/docs-C80S_Aa2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/i18n-B8MjnuQc.css">
+  </head>
+  <body data-copy-label="Copiar">
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="https://endpointx.onrender.com/docs/discovery" data-i18n="nav.docs">Documentação</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <a href="https://endpointx.onrender.com/docs/discovery" data-lang-link="pt" aria-current="true">PT</a>
+            <a href="https://endpointx.onrender.com/en/docs/discovery" data-lang-link="en">EN</a>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="docs-layout">
+        <aside class="docs-side">
+          <input class="docs-search" type="search" placeholder="Pesquisar na documentação…" aria-label="Pesquisar na documentação…" />
+          <p class="docs-nav-title">Documentação</p>
+          <nav aria-label="Documentação">
+<a href="/docs/visao-geral" data-slug="visao-geral">Visão geral da plataforma</a>
+<a href="/docs/instalacao" data-slug="instalacao">Instalação e requisitos</a>
+<a href="/docs/agentes" data-slug="agentes">Gestão de agentes</a>
+<a href="/docs/discovery" class="active" data-slug="discovery">Network Discovery</a>
+<a href="/docs/seguranca" data-slug="seguranca">Segurança e permissões</a>
+<a href="/docs/faq" data-slug="faq">Perguntas frequentes</a>
+</nav>
+<div class="docs-empty">Nenhum resultado encontrado.</div>
+        </aside>
+        <div class="docs-main">
+          <p class="docs-lang"><a href="/en/docs/discovery">Ver em English →</a></p>
+          <h1>Network Discovery</h1>
+          <p class="docs-lead">Intervalos CIDR, revisão de nós e pedidos de instalação.</p>
+          <nav class="docs-toc"><span class="k">Nesta página</span><ol><li><a href="#o-que-e-a-network-discovery">O que é a Network Discovery</a></li><li><a href="#intervalos-cidr-autorizados">Intervalos CIDR autorizados</a></li><li><a href="#correr-uma-descoberta">Correr uma descoberta</a></li><li><a href="#fila-de-revisao">Fila de revisão</a></li><li><a href="#do-no-ao-pedido-de-instalacao">Do nó ao pedido de instalação</a></li><li><a href="#netsentinel-nac-em-desenvolvimento">NetSentinel/NAC (em desenvolvimento)</a></li></ol></nav>
+          <div class="docs-body"><h2 id="o-que-e-a-network-discovery">O que é a Network Discovery</h2>
+<p>A Network Discovery usa um agente autorizado com estado <code>online</code> para mapear os equipamentos da sua rede: endereço MAC (com vendor OUI), IP, nome resolvido e sistema operativo estimado.</p>
+<p>A descoberta <strong>corre no endpoint, não no servidor</strong>: o painel emite o comando <code>network_discovery</code> e o agente faz a varredura com a tabela de vizinhos (ARP/neighbours), um ping orçamentado e reverse DNS. Os resultados ficam em <code>network_nodes</code> — <code>review_status</code> inicial <code>new</code>, deduplicados por MAC (sem MAC, por IP) — e os hosts sem agente associado ficam como <code>node_type = UNKNOWN</code>, gerando uma recomendação HERMES «identify_device» para os identificar.</p>
+<p>Áreas do painel: <strong>Rede</strong> (<code>/network</code>) para o mapa e <strong>Dispositivos Descobertos</strong> (<code>/network/discovery</code>) para as execuções e a fila de revisão. Listar nós: <code>GET /api/netsentinel/discovery/nodes</code> (requer <code>network.view</code>).</p>
+<h2 id="intervalos-cidr-autorizados">Intervalos CIDR autorizados</h2>
+<p>Dois níveis de validação:</p>
+<ul>
+<li><strong>Servidor</strong> — o campo <code>cidr</code> tem de ser uma rede privada RFC1918 com prefixo entre /8 e /30 (ex.: <code>192.168.1.0/24</code>, <code>10.0.0.0/24</code>); caso contrário devolve <code>Invalid cidr: use a private RFC1918 CIDR like 192.168.1.0/24</code>.</li>
+<li><strong>Agente</strong> — só varre as sub-redes RFC1918 do próprio equipamento (no máximo 4 sub-redes; redes maiores que /22 são truncadas ao primeiro bloco de /22, nunca expandidas). Um <code>cidr</code> pedido tem de estar contido numa dessas sub-redes e não pode passar do tecto de /22 (1024 hosts).</li>
+</ul>
+<p>Limites de segurança da varredura: orçamento de 60 segundos e no máximo 64 pings em simultâneo. Sem <code>cidr</code>, o agente varre as suas próprias sub-redes.</p>
+<div class="docs-callout"><strong>Nota:</strong> deixe o campo vazio para descobrir apenas a sub-rede onde o agente está instalado; use um <code>cidr</code> explícito para alargar dentro do mesmo segmento.</div>
+<h2 id="correr-uma-descoberta">Correr uma descoberta</h2>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-http">POST /api/netsentinel/discovery/run
+Authorization: Bearer &lt;ACCESS_TOKEN&gt;
+Content-Type: application/json
+
+{
+  &quot;device_id&quot;: &quot;…&quot;,
+  &quot;cidr&quot;: &quot;192.168.1.0/24&quot;
+}
+</code></pre></div>
+<p>Resposta <code>201</code>:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-json">{ &quot;run_id&quot;: &quot;…&quot;, &quot;command_id&quot;: &quot;…&quot;, &quot;device_id&quot;: &quot;…&quot; }
+</code></pre></div>
+<ul>
+<li>Requer a permissão <code>network.view</code> e um agente <code>online</code>; sem agente disponível devolve <code>No online agent available to run discovery</code>, e um dispositivo desligado <code>Device is offline or not an agent</code>.</li>
+<li>Cada agente só pode ter uma execução de cada vez (<code>409</code> se já houver uma em curso).</li>
+<li>O resultado aparece na fila de revisão; as execuções ficam visíveis em <code>GET /api/netsentinel/discovery</code>.</li>
+</ul>
+<h2 id="fila-de-revisao">Fila de revisão</h2>
+<p>Cada nó novo fica <code>new</code> até decidir. Por nó (<code>POST /api/netsentinel/discovery/nodes/:id/...</code>, <code>network.view</code>, excepto <code>enroll-request</code>):</p>
+<ul>
+<li><strong><code>mark-known</code></strong> — o equipamento é da sua rede e já é conhecido.</li>
+<li><strong><code>ignore</code></strong> — sai do fluxo de revisão (routers, impressoras, etc.).</li>
+<li><strong><code>identify</code></strong> — regista um nome/nota para o nó.</li>
+<li><strong><code>enroll-request</code></strong> — (requer <code>devices.manage</code>) abre um pedido de instalação, passando o nó a <code>enrollment_requested</code>.</li>
+</ul>
+<p><code>GET /api/netsentinel/discovery/nodes/:id</code> devolve o detalhe de cada nó, incluindo o histórico de execuções em que foi visto.</p>
+<h2 id="do-no-ao-pedido-de-instalacao">Do nó ao pedido de instalação</h2>
+<ol>
+<li><strong>Criar</strong> — <code>POST /api/netsentinel/discovery/install-requests</code> com <code>node_ids</code> (lote até 100) e <code>devices.manage</code>. Cada pedido guarda <code>invite_token</code>, <code>install_jti</code> e <code>os_hint</code>, com validade de <strong>7 dias</strong> (<code>REQUEST_TTL_DAYS</code>), e gera os comandos certos para o SO do nó (<code>buildInstallCommands</code>).</li>
+<li><strong>Entregar</strong> — o link de consentimento é <code>https://endpointx.onrender.com/api/enroll/invite/&lt;TOKEN&gt;</code> (<code>buildInviteUrl</code>); o pedido passa a <code>delivered</code> quando o destinatário abre o link.</li>
+<li><strong>Decidir</strong> — no link web (ou no diálogo nativo do instalador) o utilizador autoriza ou recusa: <code>authorized</code> avança para instalação (script com o token de instalação embutido), <code>refused</code> fecha o pedido e o nó volta a <code>new</code>.</li>
+<li><strong>Completar</strong> — <code>installing</code> → <code>installed</code> → <code>integrated</code>, à medida que o agente se regista e é aprovado; <code>GET /api/netsentinel/discovery/install-requests</code> lista os pedidos.</li>
+<li><strong>Gestão</strong> — <code>POST /api/netsentinel/discovery/install-requests/:id/cancel</code> cancela, <code>.../retry</code> gera um novo token e volta a abrir o pedido. Expirados ou cancelados, os pedidos não podem ser reutilizados e o nó volta a <code>new</code> — só existe um pedido activo por nó.</li>
+</ol>
+<h2 id="netsentinel-nac-em-desenvolvimento">NetSentinel/NAC (em desenvolvimento)</h2>
+<p>A camada Zero Trust do EndpointX (NetSentinel) está <strong>em desenvolvimento</strong> nesta versão 1.3.0, como o resto do produto. Enquanto isso já existem as bases: políticas NAC (<code>GET/POST /api/netsentinel/nac/policies</code>), avaliação (<code>POST /api/netsentinel/nac/evaluate</code>), decisões de confiança (<code>GET /api/netsentinel/nac/decisions</code>, <code>GET /api/netsentinel/devices/:id/trust</code>) e incidentes (<code>/api/netsentinel/incidents</code>), mas o motor de políticas e a aplicação automática de acesso estão em construção — trate-os como pré-visualização, não como comportamento final.</p>
+</div>
+          <nav class="docs-footer-nav">
+            <a class="docs-prev" href="/docs/agentes">← Gestão de agentes</a>
+            <a class="docs-next" href="/docs/seguranca">Segurança e permissões →</a>
+          </nav>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="https://endpointx.onrender.com/docs/discovery" data-i18n="nav.docs">Documentação</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </body>
+</html>

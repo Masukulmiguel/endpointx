@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestão de agentes · EndpointX</title>
+    <meta name="description" content="Como o agente EndpointX se enrola, o ciclo de heartbeat e os seus limiares, os tipos de token, os comandos remotos e a actualização ou desinstalação." />
+    <meta property="og:title" content="Gestão de agentes" />
+    <meta property="og:description" content="Como o agente EndpointX se enrola, o ciclo de heartbeat e os seus limiares, os tipos de token, os comandos remotos e a actualização ou desinstalação." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://endpointx.onrender.com/docs/agentes" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/docs/agentes" />
+    <link rel="alternate" hreflang="pt" href="https://endpointx.onrender.com/docs/agentes" />
+    <link rel="alternate" hreflang="en" href="https://endpointx.onrender.com/en/docs/agentes" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/i18n-Be6PmA_U.js"></script>
+    <script type="module" crossorigin src="/assets/docs-C80S_Aa2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/i18n-B8MjnuQc.css">
+  </head>
+  <body data-copy-label="Copiar">
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="https://endpointx.onrender.com/docs/agentes" data-i18n="nav.docs">Documentação</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <a href="https://endpointx.onrender.com/docs/agentes" data-lang-link="pt" aria-current="true">PT</a>
+            <a href="https://endpointx.onrender.com/en/docs/agentes" data-lang-link="en">EN</a>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="docs-layout">
+        <aside class="docs-side">
+          <input class="docs-search" type="search" placeholder="Pesquisar na documentação…" aria-label="Pesquisar na documentação…" />
+          <p class="docs-nav-title">Documentação</p>
+          <nav aria-label="Documentação">
+<a href="/docs/visao-geral" data-slug="visao-geral">Visão geral da plataforma</a>
+<a href="/docs/instalacao" data-slug="instalacao">Instalação e requisitos</a>
+<a href="/docs/agentes" class="active" data-slug="agentes">Gestão de agentes</a>
+<a href="/docs/discovery" data-slug="discovery">Network Discovery</a>
+<a href="/docs/seguranca" data-slug="seguranca">Segurança e permissões</a>
+<a href="/docs/faq" data-slug="faq">Perguntas frequentes</a>
+</nav>
+<div class="docs-empty">Nenhum resultado encontrado.</div>
+        </aside>
+        <div class="docs-main">
+          <p class="docs-lang"><a href="/en/docs/agentes">Ver em English →</a></p>
+          <h1>Gestão de agentes</h1>
+          <p class="docs-lead">Enrolamento, heartbeat, tokens e actualizações.</p>
+          <nav class="docs-toc"><span class="k">Nesta página</span><ol><li><a href="#o-que-e-o-agent">O que é o agent</a></li><li><a href="#enrolamento-e-estado-pending">Enrolamento e estado PENDING</a></li><li><a href="#heartbeat-e-limiares">Heartbeat e limiares</a></li><li><a href="#tokens-enrolamento-vs-sessao">Tokens (enrolamento vs sessão)</a></li><li><a href="#comandos-remotos">Comandos remotos</a></li><li><a href="#actualizar-ou-desinstalar">Actualizar ou desinstalar</a></li></ol></nav>
+          <div class="docs-body"><h2 id="o-que-e-o-agent">O que é o agent</h2>
+<p>O agente é o programa corre nos endpoints autorizados e alimenta o painel de dados reais. Em Windows, Linux e macOS é um agente Python (baseado em <code>psutil</code>) que:</p>
+<ul>
+<li><strong>recolhe inventário</strong> — software, serviços, processos, partições e interfaces;</li>
+<li><strong>reporta métricas</strong> — CPU, RAM, disco e tráfego de rede, com a capacidade total de cada componente;</li>
+<li><strong>mantém heartbeat</strong> — envia <code>POST /api/devices/heartbeat</code> e <code>POST /api/devices/command-poll</code> à API por HTTPS, autenticando-se com o segredo partilhado da frota (<code>X-Agent-Secret</code>);</li>
+<li><strong>executa comandos</strong> — recebe comandos do painel na resposta do heartbeat ou do poll e devolve o resultado.</li>
+</ul>
+<p>Em Windows corre em background com arranque automático no login; em Linux corre como serviço systemd e em macOS como serviço launchd. Os telemóveis não correm o agente Python: a página mobile regista o dispositivo e mantém presença com <code>POST /api/devices/mobile/heartbeat</code> (com o seu próprio token), e a app Android acrescenta o controlo remoto.</p>
+<p>Exemplo da configuração escrita pelo instalador:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-yaml">agent_id: AUTO
+heartbeat_interval: 60
+server_url: https://endpointx-api-5ypc.onrender.com/api
+</code></pre></div>
+<h2 id="enrolamento-e-estado-pending">Enrolamento e estado PENDING</h2>
+<ul>
+<li><strong>PCs</strong> — o instalador corre <code>python agent.py --register</code>, que chama <code>POST /api/devices/register</code> com o segredo da frota e o token de enrolamento da conta. O dispositivo fica ligado à conta (<code>created_by</code>) e autorizado para trabalhar.</li>
+<li><strong>Telemóveis</strong> — <code>POST /api/devices/mobile/register</code> exige também token de enrolamento e cria o dispositivo com <code>approval_status = &#39;pending&#39;</code> e <code>is_authorized = false</code>: entra como <strong>PENDING</strong> no painel.</li>
+<li><strong>Aprovação (Zero Trust)</strong> — <code>POST /api/netsentinel/devices/:id/approve</code> passa o dispositivo a <code>approved</code>/<code>is_authorized</code> e o <code>trust_level</code> a <code>KNOWN</code>; <code>POST /api/netsentinel/devices/:id/reject</code> marca <code>rejected</code>, <code>trust_level = BLOCKED</code> e <code>is_authorized = false</code>. Só a conta que criou o dispositivo (ou um administrador) pode decidir.</li>
+<li><strong>Sem duplicados</strong> — um re-registo da mesma máquina (mesmo IP, mesmo SO e nome/modelo correspondentes) reutiliza a linha existente em vez de criar um segundo registo; o mesmo vale para telemóveis com o APK reinstalado.</li>
+</ul>
+<h2 id="heartbeat-e-limiares">Heartbeat e limiares</h2>
+<ul>
+<li><strong>Intervalo</strong> — configurável (<code>heartbeat_interval</code>, 60 segundos por omissão). Cada heartbeat actualiza estado, métricas e capacidade de hardware, e devolve os comandos pendentes do dispositivo.</li>
+<li><strong>Poll de comandos</strong> — <code>POST /api/devices/command-poll</code> é feito pelo agente de ~3 em ~3 segundos, para um comando do painel não ficar à espera do próximo heartbeat.</li>
+<li><strong>Offline</strong> — um dispositivo sem heartbeat durante <code>OFFLINE_THRESHOLD</code> (300 segundos, 5 minutos, por omissão) passa a <code>offline</code>. Os telemóveis usam <code>MOBILE_OFFLINE_THRESHOLD</code> (1800 segundos, 30 minutos) porque os navegadores congelam os timers em segundo plano — ambos os valores estão definidos no deploy.</li>
+<li><strong>Alertas de offline</strong> — as regras de limiar aceitam o desvio <code>offline</code> entre 30 e 86400 segundos.</li>
+<li><strong>Dispositivos contidos</strong> — bloqueados ou em quarentena continuam a aceitar métricas, mas não voltam a <code>online</code> e só recebem comandos de contenção (<code>isolate</code>, <code>unisolate</code>, <code>quarantine</code>).</li>
+</ul>
+<p>Exemplo do poll de baixa latência:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-http">POST /api/devices/command-poll
+Content-Type: application/json
+X-Agent-Secret: &lt;AGENT_SECRET&gt;
+
+{
+  &quot;agent_id&quot;: &quot;agt_…&quot;
+}
+</code></pre></div>
+<h2 id="tokens-enrolamento-vs-sessao">Tokens (enrolamento vs sessão)</h2>
+<table>
+<thead>
+<tr>
+<th>Tipo</th>
+<th>Para quê</th>
+<th>Duração</th>
+<th>Como se obtém</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Enrolamento (<code>typ: enroll</code>)</td>
+<td>Ligar dispositivos à conta nos scripts e links mobile</td>
+<td>30 dias</td>
+<td><code>GET /api/devices/enroll-token</code> (requer <code>devices.manage</code>), levado em <code>?t=</code></td>
+</tr>
+<tr>
+<td>Instalação (<code>typ: install</code>)</td>
+<td>Pedidos de instalação originados na Network Discovery</td>
+<td>7 dias, ligado ao pedido (jti)</td>
+<td>Devolvido com o pedido (<code>buildInstallCommands</code>); só liberta scripts se o pedido estiver autorizado</td>
+</tr>
+<tr>
+<td>Sessão de administrador</td>
+<td>Autenticar o painel e a API</td>
+<td>Access de curta duração + refresh de 7 dias ligado a <code>sid</code></td>
+<td>Login (<code>POST /api/auth/login</code>); revogada no logout</td>
+</tr>
+<tr>
+<td>Segredo do agente</td>
+<td><code>register</code>, <code>heartbeat</code>, <code>command-poll</code></td>
+<td>Enquanto configurado no deploy</td>
+<td><code>X-Agent-Secret</code>, gerado no servidor</td>
+</tr>
+</tbody></table>
+<p>Os agentes <strong>nunca</strong> usam tokens de sessão de administrador — apenas o segredo da frota e, quando existir, o token de enrolamento/instalação embutido na configuração.</p>
+<p>Resposta de emissão do token de enrolamento:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: { &quot;token&quot;: &quot;eyJhbGciOi…&quot;, &quot;expires_in&quot;: &quot;30d&quot; }
+}
+</code></pre></div>
+<h2 id="comandos-remotos">Comandos remotos</h2>
+<p>Comandos aceites (<code>POST /api/commands</code>, requer <code>devices.commands</code>):</p>
+<p><code>reboot</code>, <code>shutdown</code>, <code>lock</code>, <code>unlock</code>, <code>inventory</code>, <code>update_agent</code>, <code>scan</code>, <code>get_info</code>, <code>uninstall_agent</code>, <code>isolate</code>, <code>unisolate</code>, <code>quarantine</code>, <code>network_discovery</code>.</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-http">POST /api/commands
+Authorization: Bearer &lt;ACCESS_TOKEN&gt;
+Content-Type: application/json
+
+{
+  &quot;device_id&quot;: &quot;…&quot;,
+  &quot;command_type&quot;: &quot;reboot&quot;
+}
+</code></pre></div>
+<ul>
+<li><strong>Entrega</strong> — os comandos <code>pending</code> são reclamados pelo heartbeat (até 10 de cada vez, 5 em contenção) ou pelo poll; <code>processing</code> sem confirmação durante 5 minutos passa a <code>failed</code>.</li>
+<li><strong>Cancelamento</strong> — <code>POST /api/commands/:id/cancel</code> cancela comandos ainda <code>pending</code>.</li>
+<li><strong>Auditoria</strong> — cada comando é registado em <code>audit_logs</code> com a acção <code>command_execute</code> e o IP de quem o emitiu.</li>
+<li><strong>Restrição</strong> — <code>uninstall_agent</code> só pode ser emitido por administradores e o payload leva assinatura HMAC-SHA256 que o agente valida antes de correr.</li>
+</ul>
+<h2 id="actualizar-ou-desinstalar">Actualizar ou desinstalar</h2>
+<p><strong>Actualizar (Windows):</strong></p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-powershell">irm https://endpointx-api-5ypc.onrender.com/api/devices/public/update.ps1 | iex
+</code></pre></div>
+<p><strong>Actualizar (painel):</strong> o comando <code>update_agent</code>, criado com <code>POST /api/devices/:id/update-agent</code>, actualiza os ficheiros do agente no dispositivo seleccionado.</p>
+<p><strong>Desinstalar:</strong> envie o comando <code>uninstall_agent</code> pelo painel (função admin, com a assinatura HMAC descrita acima). Localmente, a pasta do agente inclui também o script <code>desinstalar.bat</code> para remoção manual. Depois de desinstalar, volta a instalar com os comandos da página de <a href="/docs/instalacao">Instalação</a>.</p>
+</div>
+          <nav class="docs-footer-nav">
+            <a class="docs-prev" href="/docs/instalacao">← Instalação e requisitos</a>
+            <a class="docs-next" href="/docs/discovery">Network Discovery →</a>
+          </nav>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="https://endpointx.onrender.com/docs/agentes" data-i18n="nav.docs">Documentação</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </body>
+</html>

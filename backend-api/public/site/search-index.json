@@ -30,6 +30,155 @@
     "text": "O que é o EndpointX EndpointX é uma plataforma de gestão de identidade, acesso e endpoints (IAM + EPM) para gerir dispositivos autorizados numa rede corporativa. Combina monitorização em tempo real, execução remota de comandos e registo de eventos de segurança, tudo a partir de um painel administrativo único. A plataforma é defensiva por desenho: só trabalha com dispositivos registados e autorizados, com intervalos de rede configurados pelo administrador, e não recolhe palavras-passe, keystrokes nem conteúdo de ficheiros. Arquitectura em 4 camadas O sistema organiza-se em quatro camadas: Agentes — correm nos endpoints autorizados (Windows, Linux e macOS), recolhem inventário e métricas e enviam heartbeats periódicos à API por HTTPS, com assinatura HMAC-SHA256. API Express — backend em Node.js com Express e Socket.IO, autenticação JWT com refresh tokens, RBAC com permissões granulares, validação de entradas e registo de auditoria imutável. PostgreSQL — base de dados principal (PostgreSQL 16) com chaves UUID, índices e logs de auditoria imutáveis; o Redis é usado como cache e para dados partilhados em tempo real. Dashboard React — painel administrativo em React com actualizações em tempo real via WebSocket, interface sensível a permissões (RBAC-aware) e modo escuro. Nota: o intervalo de heartbeat é configurável (por omissão, 60 segundos) e o agente retenta automaticamente falhas de comunicação. Conceitos-chave Utilizador e sessão — os administradores autenticam-se com email e palavra-passe; a sessão usa um token de acesso de curta duração e um refresh token revogável, com MFA opcional. Dispositivo e agente — cada endpoint autorizado tem um registo no painel e um agente instalado que recolhe inventário (software, serviços, processos, partições, interfaces) e métricas de saúde. Enrolamento — os PCs juntam-se com um token de enrolamento e os telemóveis através de uma página PWA; cada dispositivo entra como pendente (PENDING) até ser aprovado por um administrador (Zero Tr"
   },
   {
+    "lang": "pt",
+    "slug": "instalacao",
+    "title": "Instalação e requisitos",
+    "lead": "Pré-requisitos, primeiros passos e instalação do agente.",
+    "url": "/docs/instalacao",
+    "headings": [
+      {
+        "id": "requisitos",
+        "text": "Requisitos"
+      },
+      {
+        "id": "criar-conta-e-obter-o-token",
+        "text": "Criar conta e obter o token"
+      },
+      {
+        "id": "windows-powershell",
+        "text": "Windows (PowerShell)"
+      },
+      {
+        "id": "linux-e-macos",
+        "text": "Linux e macOS"
+      },
+      {
+        "id": "telemovel-android-ios",
+        "text": "Telemóvel (Android/iOS)"
+      },
+      {
+        "id": "verificar-que-o-dispositivo-entrou",
+        "text": "Verificar que o dispositivo entrou"
+      },
+      {
+        "id": "actualizacoes",
+        "text": "Actualizações"
+      }
+    ],
+    "text": "Requisitos Para instalar o agente num endpoint autorizado precisa de: Conta no EndpointX — o early access gratuito da versão 1.3.0 arranca com uma conta de administrador criada no primeiro boot (a partir de SEED_ADMIN_PASSWORD , mínimo 12 caracteres) e permite registo livre de novos utilizadores. Python no endpoint — no Windows, Python instalado com «Add Python to PATH» marcado; em Linux e macOS, Python 3.8+. O guia de instalação recomenda Python 3.10+ nos PCs remotos. Rede — o endpoint tem de alcançar a API por HTTPS. Em instalações locais, o firewall não pode bloquear a porta do backend (3001 por omissão). Permissão de gestão — os comandos de instalação e os tokens de enrolamento são emitidos por contas com a permissão devices.manage (funções administradoras). Os scripts configuram o agente automaticamente para apontar à API — não é preciso editar config.yaml manualmente. Criar conta e obter o token Crie a conta (registo gratuito de early access), entre no painel e abra a página Instalar Agente . O painel busca o token de enrolamento da conta com GET /api/devices/enroll-token e apresenta o comando já completo, com o token incluído. O token também pode ser obtido à mão com uma sessão admin: curl -H \"Authorization: Bearer <ADMIN_JWT>\" https://endpointx.onrender.com/api/devices/enroll-token O token dura 30 dias ( expires_in: \"30d\" ), pertence à conta que o emitiu e é uma credencial — nunca o comite nem o partilhe fora do painel. Sem um token válido, os scripts de instalação recusam-se a correr (HTTP 403 «Valid enrolment token required»). Windows (PowerShell) No PC remoto, abra o PowerShell e cole (não feche a shell): irm https://endpointx-api-5ypc.onrender.com/api/devices/public/install.ps1?t=<ENROLL_TOKEN> | iex O comando é exactamente o que a página Instalar Agente mostra, já com o ?t= da sua conta. O script: verifica que o Python está no PATH (falha com instruções se não estiver); cria C:\\endpointx\\endpoint-agent e descarrega os ficheiros do agente; escreve o conf"
+  },
+  {
+    "lang": "pt",
+    "slug": "agentes",
+    "title": "Gestão de agentes",
+    "lead": "Enrolamento, heartbeat, tokens e actualizações.",
+    "url": "/docs/agentes",
+    "headings": [
+      {
+        "id": "o-que-e-o-agent",
+        "text": "O que é o agent"
+      },
+      {
+        "id": "enrolamento-e-estado-pending",
+        "text": "Enrolamento e estado PENDING"
+      },
+      {
+        "id": "heartbeat-e-limiares",
+        "text": "Heartbeat e limiares"
+      },
+      {
+        "id": "tokens-enrolamento-vs-sessao",
+        "text": "Tokens (enrolamento vs sessão)"
+      },
+      {
+        "id": "comandos-remotos",
+        "text": "Comandos remotos"
+      },
+      {
+        "id": "actualizar-ou-desinstalar",
+        "text": "Actualizar ou desinstalar"
+      }
+    ],
+    "text": "O que é o agent O agente é o programa corre nos endpoints autorizados e alimenta o painel de dados reais. Em Windows, Linux e macOS é um agente Python (baseado em psutil ) que: recolhe inventário — software, serviços, processos, partições e interfaces; reporta métricas — CPU, RAM, disco e tráfego de rede, com a capacidade total de cada componente; mantém heartbeat — envia POST /api/devices/heartbeat e POST /api/devices/command-poll à API por HTTPS, autenticando-se com o segredo partilhado da frota ( X-Agent-Secret ); executa comandos — recebe comandos do painel na resposta do heartbeat ou do poll e devolve o resultado. Em Windows corre em background com arranque automático no login; em Linux corre como serviço systemd e em macOS como serviço launchd. Os telemóveis não correm o agente Python: a página mobile regista o dispositivo e mantém presença com POST /api/devices/mobile/heartbeat (com o seu próprio token), e a app Android acrescenta o controlo remoto. Exemplo da configuração escrita pelo instalador: agent_id: AUTO heartbeat_interval: 60 server_url: https://endpointx-api-5ypc.onrender.com/api Enrolamento e estado PENDING PCs — o instalador corre python agent.py --register , que chama POST /api/devices/register com o segredo da frota e o token de enrolamento da conta. O dispositivo fica ligado à conta ( created_by ) e autorizado para trabalhar. Telemóveis — POST /api/devices/mobile/register exige também token de enrolamento e cria o dispositivo com approval_status = 'pending' e is_authorized = false : entra como PENDING no painel. Aprovação (Zero Trust) — POST /api/netsentinel/devices/:id/approve passa o dispositivo a approved / is_authorized e o trust_level a KNOWN ; POST /api/netsentinel/devices/:id/reject marca rejected , trust_level = BLOCKED e is_authorized = false . Só a conta que criou o dispositivo (ou um administrador) pode decidir. Sem duplicados — um re-registo da mesma máquina (mesmo IP, mesmo SO e nome/modelo correspondentes) reutiliza a linha existe"
+  },
+  {
+    "lang": "pt",
+    "slug": "discovery",
+    "title": "Network Discovery",
+    "lead": "Intervalos CIDR, revisão de nós e pedidos de instalação.",
+    "url": "/docs/discovery",
+    "headings": [
+      {
+        "id": "o-que-e-a-network-discovery",
+        "text": "O que é a Network Discovery"
+      },
+      {
+        "id": "intervalos-cidr-autorizados",
+        "text": "Intervalos CIDR autorizados"
+      },
+      {
+        "id": "correr-uma-descoberta",
+        "text": "Correr uma descoberta"
+      },
+      {
+        "id": "fila-de-revisao",
+        "text": "Fila de revisão"
+      },
+      {
+        "id": "do-no-ao-pedido-de-instalacao",
+        "text": "Do nó ao pedido de instalação"
+      },
+      {
+        "id": "netsentinel-nac-em-desenvolvimento",
+        "text": "NetSentinel/NAC (em desenvolvimento)"
+      }
+    ],
+    "text": "O que é a Network Discovery A Network Discovery usa um agente autorizado com estado online para mapear os equipamentos da sua rede: endereço MAC (com vendor OUI), IP, nome resolvido e sistema operativo estimado. A descoberta corre no endpoint, não no servidor : o painel emite o comando network_discovery e o agente faz a varredura com a tabela de vizinhos (ARP/neighbours), um ping orçamentado e reverse DNS. Os resultados ficam em network_nodes — review_status inicial new , deduplicados por MAC (sem MAC, por IP) — e os hosts sem agente associado ficam como node_type = UNKNOWN , gerando uma recomendação HERMES «identify_device» para os identificar. Áreas do painel: Rede ( /network ) para o mapa e Dispositivos Descobertos ( /network/discovery ) para as execuções e a fila de revisão. Listar nós: GET /api/netsentinel/discovery/nodes (requer network.view ). Intervalos CIDR autorizados Dois níveis de validação: Servidor — o campo cidr tem de ser uma rede privada RFC1918 com prefixo entre /8 e /30 (ex.: 192.168.1.0/24 , 10.0.0.0/24 ); caso contrário devolve Invalid cidr: use a private RFC1918 CIDR like 192.168.1.0/24 . Agente — só varre as sub-redes RFC1918 do próprio equipamento (no máximo 4 sub-redes; redes maiores que /22 são truncadas ao primeiro bloco de /22, nunca expandidas). Um cidr pedido tem de estar contido numa dessas sub-redes e não pode passar do tecto de /22 (1024 hosts). Limites de segurança da varredura: orçamento de 60 segundos e no máximo 64 pings em simultâneo. Sem cidr , o agente varre as suas próprias sub-redes. Nota: deixe o campo vazio para descobrir apenas a sub-rede onde o agente está instalado; use um cidr explícito para alargar dentro do mesmo segmento. Correr uma descoberta POST /api/netsentinel/discovery/run Authorization: Bearer <ACCESS_TOKEN> Content-Type: application/json { \"device_id\": \"…\", \"cidr\": \"192.168.1.0/24\" } Resposta 201 : { \"run_id\": \"…\", \"command_id\": \"…\", \"device_id\": \"…\" } Requer a permissão network.view e um agente online ; sem"
+  },
+  {
+    "lang": "pt",
+    "slug": "seguranca",
+    "title": "Segurança e permissões",
+    "lead": "Sessões, MFA, funções, auditoria e protecção de downloads.",
+    "url": "/docs/seguranca",
+    "headings": [
+      {
+        "id": "sessoes-e-tokens",
+        "text": "Sessões e tokens"
+      },
+      {
+        "id": "mfa",
+        "text": "MFA"
+      },
+      {
+        "id": "funcoes-e-permissoes",
+        "text": "Funções e permissões"
+      },
+      {
+        "id": "registos-de-auditoria",
+        "text": "Registos de auditoria"
+      },
+      {
+        "id": "proteccao-de-downloads",
+        "text": "Protecção de downloads"
+      },
+      {
+        "id": "o-que-o-endpointx-nao-recolhe",
+        "text": "O que o EndpointX não recolhe"
+      }
+    ],
+    "text": "Sessões e tokens Access token de curta duração — JWT assinado com o JWT_ACCESS_SECRET , validade por omissão de 1 hora ( JWT_EXPIRES_IN ), sempre ligado a uma sessão ( sid = linha em user_sessions ). Tokens sem sid , expirados ou de sessão revogada são recusados ( AUTH_SESSION_INVALID , «Invalid session token.»). Refresh token de 7 dias — guardado apenas como hash SHA-256 em user_sessions , rotativo a cada utilização (a renovação estende a validade em 7 dias) e terminado no logout. MFA em passos — os tokens temporários mfa_temp (emitidos no login) nunca passam o gate de sessão: só após POST /api/auth/mfa-verify é que sai um token de sessão completo. Bloqueio de conta — 5 tentativas de login falhadas ( MAX_LOGIN_ATTEMPTS ) bloqueiam a conta durante 15 minutos ( LOCKOUT_DURATION , 900000 ms); palavras-passe com bcrypt com 12 rondas e mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo. Credenciais de agente — os agentes não usam sessões de administrador: autenticam com o segredo da frota ( X-Agent-Secret ) e, quando aplicável, com o token de enrolamento (30 dias) ou de instalação (7 dias) escrito na configuração. { \"sub\": \"…\", \"role_id\": \"…\", \"sid\": \"…\", \"iat\": 1792000000, \"exp\": 1792003600 } MFA Onde — TOTP (compatível com Google Authenticator, Authy e afins): o painel tem a área de MFA em Segurança , com QR code para registar o código e 10 códigos de recuperação guardados com bcrypt (cada um serve uma vez). No login — se a conta tem MFA activo, POST /api/auth/login devolve requiresMfa: true com um mfa_temp ; POST /api/auth/mfa-verify aceita o TOTP ou um código de recuperação e só então emite a sessão definitiva (acção login_mfa fica nos registos de auditoria). Opcional por premissão — a definição mfa_required («Require MFA for all users») vem false ; quando activada, o MFA deixa de ser opcional para os utilizadores do painel. Em desenvolvimento — hoje só TOTP e códigos de recuperação; verificação por SMS, e-mail e chaves físicas (FIDO2) estão planea"
+  },
+  {
+    "lang": "pt",
+    "slug": "faq",
+    "title": "Perguntas frequentes",
+    "lead": "Respostas curtas às dúvidas mais comuns.",
+    "url": "/docs/faq",
+    "headings": [],
+    "text": "O EndpointX é pago? Não. A versão 1.3.0 está em early access gratuito — registe-se e comece a usar sem cartão de crédito. Nota: é um produto em desenvolvimento activo; as funcionalidades marcadas como «em desenvolvimento» (NAC, deploy de software, feed de CVE) ainda não estão prontas, e preferimos diz-lo a fingir que estão. Quais são os requisitos mínimos? Uma conta, rede com acesso por HTTPS à API e Python no endpoint: 3.8+ em Linux e macOS (3.10+ recomendado nos PCs). No Windows, instale o Python com «Add Python to PATH» marcado — os scripts tratam do resto. Que sistemas operativos suportados? Windows (instalação por PowerShell), Linux Debian/Ubuntu/Fedora e macOS (systemd/launchd) correm o agente Python; Android 8.0+ tem APK e página mobile; iOS usa a página mobile (PWA) com registo e métricas. O guia completo está em Instalação . E os telemóveis? Abrindo o link https://endpointx-api-5ypc.onrender.com/api/devices/public/mobile?t=<ENROLL_TOKEN> (ou o QR code da página Instalar Agente ). O telemóvel entra como PENDING até aprovação no painel (Zero Trust) e a app Android acrescenta ver e controlar o ecrã a distância — no iOS ficam registo, presença e métricas. O que acontece se o equipamento ficar offline? O agente não desinstala nem perde dados: continua a correr localmente e volta a ligar-se sozinho (retentativas com backoff exponencial). No painel, o dispositivo passa a offline após 300 segundos sem heartbeat (1800 segundos em telemóveis) e volta a online no primeiro heartbeat seguinte; comandos pendentes há mais de 5 minutos passam a failed . Que dados o agente recolhe? Inventário (hardware, software, serviços, processos, partições, interfaces), métricas de CPU, memória, disco e rede e o estado de ligação. Nunca recolhe palavras-passe, keystrokes nem conteúdo de ficheiros — ver Segurança . O HERMES é uma ferramenta ofensiva? Não. É segurança defensiva: analisa vulnerabilidades e risco dos equipamentos autorizados e dos intervalos privados configurados (por omiss"
+  },
+  {
     "lang": "en",
     "slug": "visao-geral",
     "title": "Platform overview",
@@ -58,5 +207,154 @@
       }
     ],
     "text": "What is EndpointX EndpointX is an Identity, Access and Endpoint Management (IAM + EPM) platform for managing authorized devices on a corporate network. It brings together real-time monitoring, remote command execution and security event tracking, all from a single admin panel. The platform is defensive by design: it only works with registered and authorized devices, with network ranges configured by the administrator, and it never collects passwords, keystrokes or file contents. Architecture in 4 layers The system is organized in four layers: Agents — run on authorized endpoints (Windows, Linux and macOS), collect inventory and metrics and send periodic heartbeats to the API over HTTPS, signed with HMAC-SHA256. Express API — Node.js backend with Express and Socket.IO, JWT authentication with refresh tokens, RBAC with granular permissions, input validation and immutable audit logging. PostgreSQL — main database (PostgreSQL 16) with UUID keys, indexes and immutable audit logs; Redis is used as cache and for shared real-time data. React dashboard — React admin panel with real-time updates over WebSocket, permission-aware (RBAC-aware) UI and dark mode. Note: the heartbeat interval is configurable (60 seconds by default) and the agent automatically retries failed communication. Key concepts User and session — administrators sign in with email and password; the session uses a short-lived access token and a revocable refresh token, with optional MFA. Device and agent — every authorized endpoint has a record in the panel and an installed agent that collects inventory (software, services, processes, partitions, interfaces) and health metrics. Enrollment — PCs join with an enrollment token and mobiles through a PWA page; every device enters as PENDING until an administrator approves it (Zero Trust). Heartbeat — the agent sends POST /api/devices/heartbeat with metrics (CPU, RAM, disk); the API replies with any commands pending for the device. Example of the heartbeat cycle: PO"
+  },
+  {
+    "lang": "en",
+    "slug": "instalacao",
+    "title": "Installation and requirements",
+    "lead": "Prerequisites, first steps and agent installation.",
+    "url": "/en/docs/instalacao",
+    "headings": [
+      {
+        "id": "requirements",
+        "text": "Requirements"
+      },
+      {
+        "id": "create-an-account-and-get-the-token",
+        "text": "Create an account and get the token"
+      },
+      {
+        "id": "windows-powershell",
+        "text": "Windows (PowerShell)"
+      },
+      {
+        "id": "linux-and-macos",
+        "text": "Linux and macOS"
+      },
+      {
+        "id": "mobile-android-ios",
+        "text": "Mobile (Android/iOS)"
+      },
+      {
+        "id": "verify-the-device-came-online",
+        "text": "Verify the device came online"
+      },
+      {
+        "id": "updates",
+        "text": "Updates"
+      }
+    ],
+    "text": "Requirements To install the agent on an authorized endpoint you need: An EndpointX account — the free early access of version 1.3.0 boots with an administrator account created on first start (built from SEED_ADMIN_PASSWORD , 12 characters minimum) and allows anyone to sign up. Python on the endpoint — on Windows, Python installed with \"Add Python to PATH\" checked; on Linux and macOS, Python 3.8+. The installation guide recommends Python 3.10+ on remote PCs. Network — the endpoint must reach the API over HTTPS. In self-hosted setups the firewall must not block the backend port (3001 by default). Manage permission — installation commands and enrollment tokens are issued by accounts with the devices.manage permission (admin roles). The scripts configure the agent to point at the API automatically — you never have to edit config.yaml by hand. Create an account and get the token Create an account (free early access sign-up), sign in to the panel and open the Install Agent page. The panel fetches the account's enrollment token with GET /api/devices/enroll-token and shows the command already complete, token included. You can also mint the token yourself from an admin session: curl -H \"Authorization: Bearer <ADMIN_JWT>\" https://endpointx.onrender.com/api/devices/enroll-token The token lasts 30 days ( expires_in: \"30d\" ), belongs to the account that issued it and is a credential — never commit it or share it outside the panel. Without a valid token the installation scripts refuse to run (HTTP 403 «Valid enrolment token required»). Windows (PowerShell) On the remote PC, open PowerShell and paste (do not close the shell): irm https://endpointx-api-5ypc.onrender.com/api/devices/public/install.ps1?t=<ENROLL_TOKEN> | iex This is exactly the command the Install Agent page shows, with your account's ?t= already in it. The script: checks that Python is on the PATH (it fails with instructions if not); creates C:\\endpointx\\endpoint-agent and downloads the agent files; writes config.ya"
+  },
+  {
+    "lang": "en",
+    "slug": "agentes",
+    "title": "Agent management",
+    "lead": "Enrollment, heartbeat, tokens and updates.",
+    "url": "/en/docs/agentes",
+    "headings": [
+      {
+        "id": "what-the-agent-is",
+        "text": "What the agent is"
+      },
+      {
+        "id": "enrollment-and-the-pending-state",
+        "text": "Enrollment and the PENDING state"
+      },
+      {
+        "id": "heartbeat-and-thresholds",
+        "text": "Heartbeat and thresholds"
+      },
+      {
+        "id": "tokens-enrollment-vs-session",
+        "text": "Tokens (enrollment vs session)"
+      },
+      {
+        "id": "remote-commands",
+        "text": "Remote commands"
+      },
+      {
+        "id": "update-or-uninstall",
+        "text": "Update or uninstall"
+      }
+    ],
+    "text": "What the agent is The agent is the program that runs on authorized endpoints and feeds the panel with real data. On Windows, Linux and macOS it is a Python agent (built on psutil ) that: collects inventory — software, services, processes, partitions and network interfaces; reports metrics — CPU, RAM, disk and network traffic, including the full capacity of each component; keeps the heartbeat — sends POST /api/devices/heartbeat and POST /api/devices/command-poll to the API over HTTPS, authenticating with the shared fleet secret ( X-Agent-Secret ); runs commands — picks up panel commands from the heartbeat or poll response and returns their results. On Windows it runs in the background and starts automatically at login; on Linux it runs as a systemd service and on macOS as a launchd service. Phones do not run the Python agent: the mobile page registers the device and keeps it present via POST /api/devices/mobile/heartbeat (with its own token), and the Android app adds remote control. Example of the configuration written by the installer: agent_id: AUTO heartbeat_interval: 60 server_url: https://endpointx-api-5ypc.onrender.com/api Enrollment and the PENDING state PCs — the installer runs python agent.py --register , which calls POST /api/devices/register with the fleet secret and the account's enrollment token. The device is linked to the account ( created_by ) and authorized to work. Phones — POST /api/devices/mobile/register also requires an enrollment token and creates the device with approval_status = 'pending' and is_authorized = false : it lands in PENDING in the panel. Approval (Zero Trust) — POST /api/netsentinel/devices/:id/approve moves the device to approved / is_authorized and trust_level = KNOWN ; POST /api/netsentinel/devices/:id/reject marks it rejected , trust_level = BLOCKED and is_authorized = false . Only the account that created the device (or an administrator) can decide. No duplicates — re-registering the same machine (same IP, same OS and matchin"
+  },
+  {
+    "lang": "en",
+    "slug": "discovery",
+    "title": "Network Discovery",
+    "lead": "CIDR ranges, node review and installation requests.",
+    "url": "/en/docs/discovery",
+    "headings": [
+      {
+        "id": "what-network-discovery-is",
+        "text": "What Network Discovery is"
+      },
+      {
+        "id": "allowed-cidr-ranges",
+        "text": "Allowed CIDR ranges"
+      },
+      {
+        "id": "run-a-discovery",
+        "text": "Run a discovery"
+      },
+      {
+        "id": "review-queue",
+        "text": "Review queue"
+      },
+      {
+        "id": "from-node-to-installation-request",
+        "text": "From node to installation request"
+      },
+      {
+        "id": "netsentinel-nac-in-development",
+        "text": "NetSentinel/NAC (in development)"
+      }
+    ],
+    "text": "What Network Discovery is Network Discovery uses an authorized agent in the online state to map out your network: MAC address (with vendor OUI), IP, resolved hostname and estimated operating system. The scan runs on the endpoint, not on the server : the panel issues the network_discovery command and the agent performs the sweep using the neighbour (ARP) table, a budgeted ping sweep and reverse DNS. Results land in network_nodes — initial review_status of new , deduplicated by MAC (by IP when there is no MAC) — and hosts with no linked agent stay node_type = UNKNOWN and raise a HERMES identify_device recommendation so someone can identify them. Panel areas: Network ( /network ) for the map and Discovered Devices ( /network/discovery ) for runs and the review queue. List nodes with GET /api/netsentinel/discovery/nodes (requires network.view ). Allowed CIDR ranges Two levels of validation: Server — the cidr field must be a private RFC1918 network with a prefix between /8 and /30 (e.g. 192.168.1.0/24 , 10.0.0.0/24 ); otherwise you get Invalid cidr: use a private RFC1918 CIDR like 192.168.1.0/24 . Agent — it only sweeps the endpoint's own RFC1918 subnets (at most 4 subnets; networks larger than /22 are truncated to the first /22 block, never expanded). A requested cidr must be contained in one of those subnets and cannot exceed the /22 ceiling (1024 hosts). Sweep safety limits: a 60-second budget and at most 64 concurrent pings. With no cidr , the agent scans its own subnets. Note: leave the field empty to discover only the subnet where the agent is installed; pass an explicit cidr to widen it within the same segment. Run a discovery POST /api/netsentinel/discovery/run Authorization: Bearer <ACCESS_TOKEN> Content-Type: application/json { \"device_id\": \"…\", \"cidr\": \"192.168.1.0/24\" } Response 201 : { \"run_id\": \"…\", \"command_id\": \"…\", \"device_id\": \"…\" } Requires the network.view permission and an online agent; with no agent available you get No online agent available to run"
+  },
+  {
+    "lang": "en",
+    "slug": "seguranca",
+    "title": "Security and permissions",
+    "lead": "Sessions, MFA, roles, auditing and download protection.",
+    "url": "/en/docs/seguranca",
+    "headings": [
+      {
+        "id": "sessions-and-tokens",
+        "text": "Sessions and tokens"
+      },
+      {
+        "id": "mfa",
+        "text": "MFA"
+      },
+      {
+        "id": "roles-and-permissions",
+        "text": "Roles and permissions"
+      },
+      {
+        "id": "audit-logs",
+        "text": "Audit logs"
+      },
+      {
+        "id": "download-protection",
+        "text": "Download protection"
+      },
+      {
+        "id": "what-endpointx-does-not-collect",
+        "text": "What EndpointX does not collect"
+      }
+    ],
+    "text": "Sessions and tokens Short-lived access token — JWT signed with JWT_ACCESS_SECRET , valid for 1 hour by default ( JWT_EXPIRES_IN ), always bound to a session ( sid = the row in user_sessions ). Tokens without sid , expired tokens or tokens whose session was revoked are rejected ( AUTH_SESSION_INVALID , «Invalid session token.»). 7-day refresh token — stored only as a SHA-256 hash in user_sessions , rotated on every use (renewal extends validity by another 7 days) and terminated on logout. Step-up MFA — temporary mfa_temp tokens (issued at login) never pass the session gate: only after POST /api/auth/mfa-verify is a full session token issued. Account lockout — 5 failed login attempts ( MAX_LOGIN_ATTEMPTS ) lock the account for 15 minutes ( LOCKOUT_DURATION , 900000 ms); passwords are hashed with bcrypt at 12 rounds, 12 characters minimum with upper case, lower case, number and symbol. Agent credentials — agents never use administrator sessions: they authenticate with the fleet secret ( X-Agent-Secret ) and, where applicable, with the enrollment token (30 days) or installation token (7 days) written into their configuration. { \"sub\": \"…\", \"role_id\": \"…\", \"sid\": \"…\", \"iat\": 1792000000, \"exp\": 1792003600 } MFA Where — TOTP (compatible with Google Authenticator, Authy and friends): the panel has the MFA area under Security , with a QR code to register the app and 10 recovery codes stored with bcrypt (each one works once). At login — if the account has MFA enabled, POST /api/auth/login returns requiresMfa: true with an mfa_temp ; POST /api/auth/mfa-verify accepts the TOTP code or a recovery code and only then issues the real session (the login_mfa action is written to the audit trail). Optional by default — the mfa_required setting («Require MFA for all users») ships as false ; when enabled, MFA stops being optional for panel users. In development — today it is TOTP and recovery codes only; verification by SMS, email and hardware keys (FIDO2) are planned, not implemented i"
+  },
+  {
+    "lang": "en",
+    "slug": "faq",
+    "title": "Frequently asked questions",
+    "lead": "Short answers to the most common questions.",
+    "url": "/en/docs/faq",
+    "headings": [],
+    "text": "Is EndpointX paid? No. Version 1.3.0 is in free early access — sign up and start using it with no credit card. Note: it is a product under active development; features marked as \"in development\" (NAC, software deployment, CVE feed) are not ready yet, and we would rather say so than pretend otherwise. What are the minimum requirements? An account, a network that can reach the API over HTTPS, and Python on the endpoint: 3.8+ on Linux and macOS (3.10+ recommended on PCs). On Windows, install Python with \"Add Python to PATH\" checked — the scripts take care of the rest. Which operating systems are supported? Windows (installation via PowerShell), Linux (Debian/Ubuntu/Fedora) and macOS (systemd/launchd) run the Python agent; Android 8.0+ gets an APK and a mobile page; iOS uses the mobile page (PWA) for registration and metrics. The full guide is in Installation . What about mobile devices? By opening https://endpointx-api-5ypc.onrender.com/api/devices/public/mobile?t=<ENROLL_TOKEN> (or the QR code on the Install Agent page). The phone arrives as PENDING until approved in the panel (Zero Trust), and the Android app adds remote screen viewing and control — on iOS you get registration, presence and metrics. What happens when a device goes offline? The agent does not uninstall itself or lose data: it keeps running locally and reconnects on its own (retries with exponential backoff). In the panel the device becomes offline after 300 seconds without a heartbeat (1800 seconds for phones) and returns to online on the next heartbeat; commands pending for more than 5 minutes become failed . What data does the agent collect? Inventory (hardware, software, services, processes, partitions, interfaces), CPU, memory, disk and network metrics, and connection state. It never collects passwords, keystrokes or file contents — see Security . Is HERMES an offensive tool? No. It is defensive security: it analyses vulnerabilities and risk on authorized devices and the configured private ranges "
   }
 ]

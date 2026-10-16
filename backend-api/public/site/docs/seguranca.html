@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Segurança e permissões · EndpointX</title>
+    <meta name="description" content="Como o EndpointX valida sessões, tokens e MFA, que funções e permissões existem, como auditam as acções e o que os downloads e o agente recolhem." />
+    <meta property="og:title" content="Segurança e permissões" />
+    <meta property="og:description" content="Como o EndpointX valida sessões, tokens e MFA, que funções e permissões existem, como auditam as acções e o que os downloads e o agente recolhem." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://endpointx.onrender.com/docs/seguranca" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/docs/seguranca" />
+    <link rel="alternate" hreflang="pt" href="https://endpointx.onrender.com/docs/seguranca" />
+    <link rel="alternate" hreflang="en" href="https://endpointx.onrender.com/en/docs/seguranca" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/i18n-Be6PmA_U.js"></script>
+    <script type="module" crossorigin src="/assets/docs-C80S_Aa2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/i18n-B8MjnuQc.css">
+  </head>
+  <body data-copy-label="Copiar">
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="https://endpointx.onrender.com/docs/seguranca" data-i18n="nav.docs">Documentação</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <a href="https://endpointx.onrender.com/docs/seguranca" data-lang-link="pt" aria-current="true">PT</a>
+            <a href="https://endpointx.onrender.com/en/docs/seguranca" data-lang-link="en">EN</a>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="docs-layout">
+        <aside class="docs-side">
+          <input class="docs-search" type="search" placeholder="Pesquisar na documentação…" aria-label="Pesquisar na documentação…" />
+          <p class="docs-nav-title">Documentação</p>
+          <nav aria-label="Documentação">
+<a href="/docs/visao-geral" data-slug="visao-geral">Visão geral da plataforma</a>
+<a href="/docs/instalacao" data-slug="instalacao">Instalação e requisitos</a>
+<a href="/docs/agentes" data-slug="agentes">Gestão de agentes</a>
+<a href="/docs/discovery" data-slug="discovery">Network Discovery</a>
+<a href="/docs/seguranca" class="active" data-slug="seguranca">Segurança e permissões</a>
+<a href="/docs/faq" data-slug="faq">Perguntas frequentes</a>
+</nav>
+<div class="docs-empty">Nenhum resultado encontrado.</div>
+        </aside>
+        <div class="docs-main">
+          <p class="docs-lang"><a href="/en/docs/seguranca">Ver em English →</a></p>
+          <h1>Segurança e permissões</h1>
+          <p class="docs-lead">Sessões, MFA, funções, auditoria e protecção de downloads.</p>
+          <nav class="docs-toc"><span class="k">Nesta página</span><ol><li><a href="#sessoes-e-tokens">Sessões e tokens</a></li><li><a href="#mfa">MFA</a></li><li><a href="#funcoes-e-permissoes">Funções e permissões</a></li><li><a href="#registos-de-auditoria">Registos de auditoria</a></li><li><a href="#proteccao-de-downloads">Protecção de downloads</a></li><li><a href="#o-que-o-endpointx-nao-recolhe">O que o EndpointX não recolhe</a></li></ol></nav>
+          <div class="docs-body"><h2 id="sessoes-e-tokens">Sessões e tokens</h2>
+<ul>
+<li><strong>Access token de curta duração</strong> — JWT assinado com o <code>JWT_ACCESS_SECRET</code>, validade por omissão de 1 hora (<code>JWT_EXPIRES_IN</code>), sempre ligado a uma sessão (<code>sid</code> = linha em <code>user_sessions</code>). Tokens sem <code>sid</code>, expirados ou de sessão revogada são recusados (<code>AUTH_SESSION_INVALID</code>, «Invalid session token.»).</li>
+<li><strong>Refresh token de 7 dias</strong> — guardado apenas como hash SHA-256 em <code>user_sessions</code>, rotativo a cada utilização (a renovação estende a validade em 7 dias) e terminado no logout.</li>
+<li><strong>MFA em passos</strong> — os tokens temporários <code>mfa_temp</code> (emitidos no login) nunca passam o gate de sessão: só após <code>POST /api/auth/mfa-verify</code> é que sai um token de sessão completo.</li>
+<li><strong>Bloqueio de conta</strong> — 5 tentativas de login falhadas (<code>MAX_LOGIN_ATTEMPTS</code>) bloqueiam a conta durante 15 minutos (<code>LOCKOUT_DURATION</code>, 900000 ms); palavras-passe com bcrypt com 12 rondas e mínimo de 12 caracteres com maiúsculas, minúsculas, número e símbolo.</li>
+<li><strong>Credenciais de agente</strong> — os agentes não usam sessões de administrador: autenticam com o segredo da frota (<code>X-Agent-Secret</code>) e, quando aplicável, com o token de enrolamento (30 dias) ou de instalação (7 dias) escrito na configuração.</li>
+</ul>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-json">{
+  &quot;sub&quot;: &quot;…&quot;,
+  &quot;role_id&quot;: &quot;…&quot;,
+  &quot;sid&quot;: &quot;…&quot;,
+  &quot;iat&quot;: 1792000000,
+  &quot;exp&quot;: 1792003600
+}
+</code></pre></div>
+<h2 id="mfa">MFA</h2>
+<ul>
+<li><strong>Onde</strong> — TOTP (compatível com Google Authenticator, Authy e afins): o painel tem a área de MFA em <strong>Segurança</strong>, com QR code para registar o código e 10 códigos de recuperação guardados com bcrypt (cada um serve uma vez).</li>
+<li><strong>No login</strong> — se a conta tem MFA activo, <code>POST /api/auth/login</code> devolve <code>requiresMfa: true</code> com um <code>mfa_temp</code>; <code>POST /api/auth/mfa-verify</code> aceita o TOTP ou um código de recuperação e só então emite a sessão definitiva (acção <code>login_mfa</code> fica nos registos de auditoria).</li>
+<li><strong>Opcional por premissão</strong> — a definição <code>mfa_required</code> («Require MFA for all users») vem <code>false</code>; quando activada, o MFA deixa de ser opcional para os utilizadores do painel.</li>
+<li><strong>Em desenvolvimento</strong> — hoje só TOTP e códigos de recuperação; verificação por SMS, e-mail e chaves físicas (FIDO2) estão planeadas, não implementadas nesta versão.</li>
+</ul>
+<h2 id="funcoes-e-permissoes">Funções e permissões</h2>
+<p>Quatro funções de sistema, com permissões atribuídas no seed (<code>SEED_ROLE_PERMISSIONS</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Função</th>
+<th>Alcance</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>admin</code></td>
+<td>Todas as permissões do catálogo (acesso total)</td>
+</tr>
+<tr>
+<td><code>supervisor</code></td>
+<td>Gestão de dispositivos e utilizadores (<code>devices.manage</code>, <code>devices.commands</code>, <code>users.view</code>, <code>logs.view</code>, alertas, redes)</td>
+</tr>
+<tr>
+<td><code>technician</code></td>
+<td>Ver dispositivos e executar comandos (<code>devices.view</code>, <code>devices.commands</code>, <code>alerts.view</code>, <code>network.view</code>)</td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td>Apenas visualização (leitura) — é a função que o registo gratuito recebe</td>
+</tr>
+</tbody></table>
+<ul>
+<li>O enforcement é no servidor: cada rota usa <code>requirePermission(...)</code> e sem a permissão devolve <code>403</code> com <code>AUTH_PERMISSION_DENIED</code> — mesmo que o JWT diga o contrário (as permissões são lidas da BD com cache de 60 segundos, por isso uma alteração de permissão apanha sempre a próxima renovação de sessão).</li>
+<li>Novos registos entram como <code>user</code> (early access gratuito); administradores convidam com <code>POST /api/auth/invite</code>, que exige <code>users.manage</code> e escolhe a função do convidado.</li>
+</ul>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-json">{
+  &quot;success&quot;: false,
+  &quot;error&quot;: {
+    &quot;message&quot;: &quot;You do not have the required permissions to perform this action.&quot;,
+    &quot;code&quot;: &quot;AUTH_PERMISSION_DENIED&quot;
+  }
+}
+</code></pre></div>
+<h2 id="registos-de-auditoria">Registos de auditoria</h2>
+<ul>
+<li><code>audit_logs</code> é <strong>append-only</strong>: as rotas do painel só leem, nunca escrevem nem apagam — escrita apenas pela própria API em operações sensíveis.</li>
+<li>Leitura com permissão <code>logs.view</code>: <code>GET /api/audit</code> (paginação por <code>page</code>/<code>limit</code>), <code>GET /api/audit/stats</code> e <code>GET /api/audit/:id</code>; exportação com <code>logs.export</code> em <code>GET /api/audit/export</code>, ficheiro CSV com as 1000 linhas mais recentes (colunas ID, User, Action, Target, Description, IP, Date).</li>
+<li>Acções registadas incluem <code>login</code>, <code>logout</code>, <code>login_mfa</code>, <code>command_execute</code>, <code>scan_stopped</code>, <code>emergency_stop_enabled</code>, aprovações de dispositivos e decisões de instalação — sempre com utilizador e IP de origem.</li>
+</ul>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copiar">Copiar</button><pre><code class="language-bash">curl -H &quot;Authorization: Bearer &lt;ACCESS_TOKEN&gt;&quot; https://endpointx-api-5ypc.onrender.com/api/audit/export -o audit-logs.csv
+</code></pre></div>
+<h2 id="proteccao-de-downloads">Protecção de downloads</h2>
+<div class="docs-callout"><strong>Nota:</strong> a protecção dos binários públicos (instalador Windows e APK) — token de enrolamento válido ou sessão autorizada — é comportamento da plataforma na versão 1.3.0, aterando no mesmo release.</div>
+<p>O que já está assim hoje:</p>
+<ul>
+<li>Os scripts de instalação (<code>install.ps1</code>, <code>install-linux.sh</code>, <code>install-macos.sh</code>) exigem token de enrolamento em <code>?t=</code>; sem ele a API responde <code>403</code> «Valid enrolment token required».</li>
+<li>Os downloads internos do painel exigem sessão autenticada: <code>GET /api/devices/download/installer</code> precisa de <code>devices.manage</code> e <code>GET /api/devices/download/agent/:filename</code> de sessão válida.</li>
+<li>O token de enrolamento só é emitido a sessões com <code>devices.manage</code> (<code>GET /api/devices/enroll-token</code>) e os scripts nunca guardam credenciais de administrador — apenas o token de enrolamento na configuração do agente.</li>
+</ul>
+<h2 id="o-que-o-endpointx-nao-recolhe">O que o EndpointX não recolhe</h2>
+<p>O agente <strong>não</strong> recolhe palavras-passe, keystrokes nem conteúdo de ficheiros — só o que é preciso para gerir e proteger o equipamento: inventário de hardware e software, processos e serviços, métricas de CPU, memória, disco e rede, e o estado de ligação do dispositivo.</p>
+<ul>
+<li>Os dados dos equipamentos ficam na base de dados da própria instalação (PostgreSQL): o agente só fala com a API do EndpointX e os registos ficam onde os corre. À parte, os módulos OSINT consultam fontes públicas externas (ex.: WHOIS, Shodan) apenas quando alguém executa uma consulta — e o SSO opcional liga-se a Microsoft/Google só se for activado.</li>
+<li>O alcance de cada módulo é declarado na API: <code>GET /api/netsentinel/privacy</code> devolve o que a camada Zero Trust lê e escreve.</li>
+<li>Módulos ainda em desenvolvimento (NAC, deploy de software, feed de CVE) aparecem como em desenvolvimento nesta versão 1.3.0, como o resto do produto.</li>
+</ul>
+</div>
+          <nav class="docs-footer-nav">
+            <a class="docs-prev" href="/docs/discovery">← Network Discovery</a>
+            <a class="docs-next" href="/docs/faq">Perguntas frequentes →</a>
+          </nav>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="https://endpointx.onrender.com/docs/seguranca" data-i18n="nav.docs">Documentação</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </body>
+</html>
