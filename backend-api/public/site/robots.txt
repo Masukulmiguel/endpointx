@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /login.html
+Disallow: /register.html
+Disallow: /forgot-password.html
+
+Sitemap: https://endpointx.onrender.com/sitemap.xml

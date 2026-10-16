@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title data-i18n-title="contact.title">Contacto · EndpointX</title>
+    <meta name="description" content="Contacte a equipa EndpointX — requisitos, integração e suporte." />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/contacto-CVtk4BRF.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/main-CLnLKcEY.js">
+    <link rel="modulepreload" crossorigin href="/assets/main-4__mmVvE.js">
+    <link rel="stylesheet" crossorigin href="/assets/main-Dzym4w8u.css">
+  </head>
+  <body>
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="/docs/visao-geral" data-i18n="nav.docs">Documentação</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <button type="button" data-lang-btn="pt">PT</button>
+            <button type="button" data-lang-btn="en">EN</button>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main class="section">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow" data-i18n="contact.title">Contacto e suporte</span>
+          <h2 data-i18n="contact.title">Contacto e suporte</h2>
+          <p data-i18n="contact.lead">Fale connosco sobre requisitos, integração ou problemas na plataforma.</p>
+        </div>
+
+        <div class="contact-grid">
+          <aside class="contact-aside" data-reveal>
+            <h3 data-i18n="contact.side.t">Como tratamos as mensagens</h3>
+            <p data-i18n="contact.side.d">
+              Cada mensagem é registada e lida pela equipa. Não partilhamos os seus dados com terceiros.
+            </p>
+            <ul>
+              <li data-i18n="contact.side.l1">Dúvidas de instalação e configuração</li>
+              <li data-i18n="contact.side.l2">Problemas de acesso ou funcionamento</li>
+              <li data-i18n="contact.side.l3">Pedidos de funcionalidades e integrações</li>
+            </ul>
+          </aside>
+
+          <div class="contact-form" data-reveal>
+            <div id="contact-alert" class="alert alert-error" hidden></div>
+            <form id="contact-form" class="form-stack" novalidate>
+              <div class="field">
+                <label for="name" data-i18n="contact.name">Nome</label>
+                <input id="name" name="name" type="text" autocomplete="name" required data-i18n-placeholder="contact.name" placeholder="Nome" />
+              </div>
+              <div class="field">
+                <label for="email" data-i18n="contact.email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" required data-i18n-placeholder="contact.email" placeholder="Email" />
+              </div>
+              <div class="field">
+                <label for="message" data-i18n="contact.message">Mensagem</label>
+                <textarea id="message" name="message" rows="5" required maxlength="4000" data-i18n-placeholder="contact.message" placeholder="Mensagem"></textarea>
+              </div>
+              <button id="contact-submit" class="btn btn-primary btn-block" type="submit" data-i18n="contact.submit">
+                Enviar mensagem
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <p class="auth-meta" style="margin-top: 2rem">
+          <a href="/" data-i18n="contact.back">← Voltar ao início</a>
+        </p>
+      </div>
+    </main>
+
+    <script src="/src/js/i18n.js"></script>
+  </body>
+</html>

@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EndpointX — Gestão de endpoints e segurança defensiva</title>
+    <meta
+      name="description"
+      content="EndpointX: descoberta de dispositivos, gestão de endpoints, inventário em tempo real e inteligência de segurança HERMES. Early access gratuito pela CodingLife-Dev."
+    />
+    <meta property="og:title" content="EndpointX — Gestão de endpoints e segurança defensiva" />
+    <meta
+      property="og:description"
+      content="Descoberta de dispositivos, gestão de endpoints e análise de segurança numa só plataforma defensiva."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://endpointx.onrender.com/" />
+    <meta property="og:image" content="https://endpointx.onrender.com/img/dashboard.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/main-CLnLKcEY.js"></script>
+    <script type="module" crossorigin src="/assets/main-4__mmVvE.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/main-Dzym4w8u.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="#security" data-i18n="nav.security">Segurança</a>
+          <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="/docs/visao-geral" data-i18n="nav.docs">Documentação</a>
+          <a href="#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <button type="button" data-lang-btn="pt">PT</button>
+            <button type="button" data-lang-btn="en">EN</button>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- ======================= HERO ======================= -->
+      <section class="hero">
+        <div class="grid-motif" aria-hidden="true"></div>
+        <div class="glow glow-cyan" style="width: 520px; height: 520px; top: -180px; left: -140px" aria-hidden="true"></div>
+        <div class="container">
+          <div class="hero-grid">
+            <div>
+              <span class="hero-badge" data-reveal>
+                <span class="pulse-dot" aria-hidden="true"></span>
+                <span data-i18n="hero.badge">Monitorização · Gestão · Segurança</span>
+              </span>
+              <h1 data-reveal data-i18n="hero.title">Veja, proteja e governe cada endpoint da sua rede</h1>
+              <p class="hero-lead" data-reveal data-i18n="hero.lead">
+                EndpointX reúne descoberta de dispositivos, gestão de endpoints e análise de segurança numa só
+                plataforma defensiva — com inventário em tempo real, políticas de conformidade e o motor HERMES.
+              </p>
+              <div class="hero-cta" data-reveal>
+                <a class="btn btn-primary btn-lg" href="#platform" data-i18n="hero.cta1">Conhecer a plataforma</a>
+                <a class="btn btn-ghost btn-lg" href="#features" data-i18n="hero.cta2">Explorar funcionalidades</a>
+                <a class="btn btn-soft btn-lg" href="/register" data-i18n="hero.cta3">Aceder à plataforma</a>
+              </div>
+              <div class="hero-trust" data-reveal>
+                <span><i aria-hidden="true"></i><span data-i18n="hero.trust1">Defensivo por desenho</span></span>
+                <span><i aria-hidden="true"></i><span data-i18n="hero.trust2">PT e EN</span></span>
+                <span><i aria-hidden="true"></i><span data-i18n="hero.trust3">Versão 1.3.0 · em desenvolvimento contínuo</span></span>
+              </div>
+            </div>
+            <div class="hero-visual" data-reveal>
+              <div class="shot-frame" data-plx="0.035">
+                <div class="shot-bar">
+                  <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span class="label">endpointx · dashboard</span>
+                </div>
+                <img src="/img/dashboard.png" alt="Painel EndpointX — visão geral" width="1261" height="841" />
+              </div>
+              <div class="hero-chip chip-a" aria-hidden="true">
+                <span class="dot"></span>
+                <span data-i18n="hero.chipA">Dispositivos online</span>
+                <b>●</b>
+              </div>
+              <div class="hero-chip chip-b" aria-hidden="true">
+                <span class="dot"></span>
+                <span data-i18n="hero.chipB">Heartbeats recebidos</span>
+                <b>●</b>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= FUNCIONALIDADES ======================= -->
+      <section id="features" class="section section-soft">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow" data-i18n="feat.eyebrow">Funcionalidades</span>
+            <h2 data-i18n="feat.title">Uma plataforma, do inventário à decisão</h2>
+            <p data-i18n="feat.lead">
+              Cada capacidade resolve um problema real de equipas de TI e de segurança — está identificada a que já
+              está disponível e a que ainda está em construção.
+            </p>
+          </div>
+
+          <div class="split" data-reveal>
+            <div class="split-copy">
+              <span class="eyebrow" data-i18n="split1.k">Network Discovery</span>
+              <h3 data-i18n="split1.t">Descubra o que existe na rede, antes de instalar qualquer agente</h3>
+              <p data-i18n="split1.d">
+                A descoberta varre os intervalos CIDR que o administrador autorizar, identifica hosts, serviços e
+                fabricantes e apresenta tudo numa fila de revisão. Nada entra sozinho: cada nó é aprovado, ignorado ou
+                enviado para instalação pela equipa.
+              </p>
+              <ul class="meta-list">
+                <li data-i18n="split1.l1">Runs com intervalos, portas e políticas configuráveis</li>
+                <li data-i18n="split1.l2">Nós com estado, fabricante (MAC/OUI) e histórico de primeira/última vista</li>
+                <li data-i18n="split1.l3">Decisões de acesso de rede (NAC) em desenvolvimento</li>
+              </ul>
+            </div>
+            <div class="diagram" aria-hidden="true">
+              <svg viewBox="0 0 460 260" role="img" aria-label="Diagrama de descoberta de rede">
+                <g stroke="var(--line-strong)" stroke-width="1.4" fill="none">
+                  <path d="M230 60 L90 190 M230 60 L180 200 M230 60 L300 200 M230 60 L380 185 M90 190 L180 200 M300 200 L380 185" />
+                </g>
+                <g fill="var(--bg)" stroke="var(--accent)" stroke-width="1.6">
+                  <circle cx="230" cy="60" r="16" />
+                  <circle cx="90" cy="190" r="12" />
+                  <circle cx="180" cy="200" r="12" />
+                  <circle cx="300" cy="200" r="12" />
+                  <circle cx="380" cy="185" r="12" />
+                </g>
+                <circle cx="230" cy="60" r="5" fill="var(--accent)" />
+                <g font-family="var(--font-mono)" font-size="10" fill="var(--muted)">
+                  <text x="252" y="57">endpointx · run</text>
+                  <text x="56" y="216">192.168.1.0/24</text>
+                  <text x="330" y="212">host · serviço</text>
+                </g>
+                <g stroke="var(--accent)" stroke-width="1.4" fill="none" opacity="0.65" stroke-dasharray="3 6">
+                  <path d="M90 190 Q 230 110 380 185" />
+                </g>
+              </svg>
+            </div>
+          </div>
+
+          <div class="split flip" data-reveal>
+            <div class="split-copy">
+              <span class="eyebrow" data-i18n="split2.k">Endpoint Management</span>
+              <h3 data-i18n="split2.t">Inventário, estado e controlo remoto de cada endpoint</h3>
+              <p data-i18n="split2.d">
+                Com o agente instalado, cada dispositivo reporta inventário completo — software, serviços, processos,
+                partições, interfaces — e mantém um heartbeat contínuo. O painel mostra quem está online, quem caiu e o
+                que mudou.
+              </p>
+              <ul class="meta-list">
+                <li data-i18n="split2.l1">Comandos remotos, bloqueio e isolamento com auditoria</li>
+                <li data-i18n="split2.l2">Relatórios e exportações para equipas de segurança</li>
+                <li data-i18n="split2.l3">Deploy de software e conformidade por políticas</li>
+              </ul>
+            </div>
+            <div class="shot-frame" data-plx="0.03">
+              <div class="shot-bar">
+                <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="label">endpointx · devices</span>
+              </div>
+              <img src="/img/dashboard-device.png" alt="Gestão de dispositivos EndpointX" width="1261" height="841" loading="lazy" />
+            </div>
+          </div>
+
+          <div class="cap-grid">
+            <article class="cap-card" data-reveal>
+              <span class="badge badge-ok" data-i18n="cap.available">Disponível</span>
+              <span class="num">01</span>
+              <h4 data-i18n="cap.1.t">Device Enrollment</h4>
+              <p data-i18n="cap.1.d">
+                Registo de PCs por token de enrolamento e de telemóveis por página PWA — cada dispositivo entra como
+                PENDING até aprovação (Zero Trust).
+              </p>
+            </article>
+            <article class="cap-card" data-reveal>
+              <span class="badge badge-ok" data-i18n="cap.available">Disponível</span>
+              <span class="num">02</span>
+              <h4 data-i18n="cap.2.t">Monitorização e estado</h4>
+              <p data-i18n="cap.2.d">
+                Heartbeats com limiares configuráveis, alertas de offline e eventos de segurança em tempo real, com
+                socket.io no painel.
+              </p>
+            </article>
+            <article class="cap-card" data-reveal>
+              <span class="badge badge-ok" data-i18n="cap.available">Disponível</span>
+              <span class="num">03</span>
+              <h4 data-i18n="cap.3.t">Análise de vulnerabilidades</h4>
+              <p data-i18n="cap.3.d">
+                Correlação de CVEs com o inventário real dos activos, pontuação de risco e recomendações com evidência.
+              </p>
+            </article>
+            <article class="cap-card" data-reveal>
+              <span class="badge badge-ok" data-i18n="cap.available">Disponível</span>
+              <span class="num">04</span>
+              <h4 data-i18n="cap.4.t">Security Monitoring</h4>
+              <p data-i18n="cap.4.d">
+                Alertas com severidade, regras, incidentes e registos de auditoria — tudo consultável e filtrável no
+                painel.
+              </p>
+            </article>
+            <article class="cap-card" data-reveal>
+              <span class="badge badge-ok" data-i18n="cap.available">Disponível</span>
+              <span class="num">05</span>
+              <h4 data-i18n="cap.5.t">Controlo de acesso e auditoria</h4>
+              <p data-i18n="cap.5.d">
+                Funções e permissões granulares, MFA, sessões auditadas e revogação efectiva no logout.
+              </p>
+            </article>
+            <article class="cap-card" data-reveal>
+              <span class="badge badge-dev" data-i18n="cap.dev">Em desenvolvimento</span>
+              <span class="num">06</span>
+              <h4 data-i18n="cap.6.t">NetSentinel / NAC</h4>
+              <p data-i18n="cap.6.d">
+                Decisões de acesso de rede e políticas NAC por dispositivo — módulo em evolução dentro da área de rede.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= PLATAFORMA / DEMO ======================= -->
+      <section id="platform" class="section">
+        <div class="container">
+          <div class="section-head center" data-reveal>
+            <span class="eyebrow" data-i18n="plat.eyebrow">A plataforma em operação</span>
+            <h2 data-i18n="plat.title">Um fluxo real, do descobrimento à decisão</h2>
+            <p data-i18n="plat.lead">
+              Estas são capturas do painel EndpointX em uso — não maquetas. O mesmo fluxo que vai usar: descobrir,
+              inventariar, analisar.
+            </p>
+          </div>
+
+          <div class="steps" data-reveal>
+            <article class="step">
+              <h4 data-i18n="plat.s1.t">Descobrir</h4>
+              <p data-i18n="plat.s1.d">A rede varrida aparece com hosts, serviços e estados — pronto para revisão.</p>
+            </article>
+            <article class="step">
+              <h4 data-i18n="plat.s2.t">Inventariar</h4>
+              <p data-i18n="plat.s2.d">O inventário por dispositivo: software, processos, partições e saúde em tempo real.</p>
+            </article>
+            <article class="step">
+              <h4 data-i18n="plat.s3.t">Analisar</h4>
+              <p data-i18n="plat.s3.d">HERMES correlaciona evidências e apresenta risco com recomendações accionáveis.</p>
+            </article>
+          </div>
+
+          <div class="shots" style="margin-top: clamp(2rem, 4vw, 3rem)">
+            <figure data-reveal>
+              <div class="shot-frame">
+                <div class="shot-bar">
+                  <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span class="label">dashboard</span>
+                </div>
+                <img src="/img/dashboard.png" alt="Dashboard EndpointX" width="1261" height="841" loading="lazy" />
+              </div>
+              <figcaption data-i18n="plat.cap1">Visão geral do dashboard</figcaption>
+            </figure>
+            <figure data-reveal>
+              <div class="shot-frame">
+                <div class="shot-bar">
+                  <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span class="label">devices</span>
+                </div>
+                <img src="/img/dashboard-device.png" alt="Inventário de dispositivos EndpointX" width="1261" height="841" loading="lazy" />
+              </div>
+              <figcaption data-i18n="plat.cap2">Inventário e saúde dos endpoints</figcaption>
+            </figure>
+            <figure data-reveal>
+              <div class="shot-frame">
+                <div class="shot-bar">
+                  <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span class="label">hermes</span>
+                </div>
+                <img src="/img/dashboard-hermes.png" alt="HERMES EndpointX" width="1261" height="841" loading="lazy" />
+              </div>
+              <figcaption data-i18n="plat.cap3">HERMES — inteligência defensiva</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= HERMES ======================= -->
+      <section id="hermes" class="section section-soft">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow" data-i18n="hermes.eyebrow">HERMES Security Intelligence</span>
+            <h2 data-i18n="hermes.title">Evidência primeiro, recomendação sempre</h2>
+            <p data-i18n="hermes.lead">
+              HERMES (Host Evaluation Risk Monitoring Engine · Security) observa e correlaciona — nunca explora hosts
+              de forma ofensiva. Analisa activos autorizados, cruza inventário com superfície de ataque e devolve risco
+              com fonte, confiança e timestamp.
+            </p>
+          </div>
+
+          <div class="hermes-panel" data-reveal>
+            <div class="grid-motif" aria-hidden="true" style="opacity: 0.35"></div>
+            <div class="pipeline" style="position: relative">
+              <div class="pipe-stage">
+                <span class="k" data-i18n="hermes.s1.k">01 · Evidência</span>
+                <h4 data-i18n="hermes.s1.t">Recolha</h4>
+                <p data-i18n="hermes.s1.d">Activos sincronizados, sondagens TCP não destrutivas e inventário real dos endpoints.</p>
+              </div>
+              <div class="pipe-arrow" aria-hidden="true">→</div>
+              <div class="pipe-stage">
+                <span class="k" data-i18n="hermes.s2.k">02 · Correlação</span>
+                <h4 data-i18n="hermes.s2.t">Análise</h4>
+                <p data-i18n="hermes.s2.d">Portas, serviços e CVEs cruzados com o que existe de facto em cada máquina.</p>
+              </div>
+              <div class="pipe-arrow" aria-hidden="true">→</div>
+              <div class="pipe-stage">
+                <span class="k" data-i18n="hermes.s3.k">03 · Recomendação</span>
+                <h4 data-i18n="hermes.s3.t">Decisão</h4>
+                <p data-i18n="hermes.s3.d">Pontuação de risco e recomendações accionáveis; remediação disruptiva exige aprovação humana.</p>
+              </div>
+            </div>
+            <p class="hermes-note" data-i18n="hermes.note">
+              HERMES não detecta «todas as ameaças»: apresenta o que mede, com a evidência que a suporta. Scans
+              respeitam os intervalos CIDR autorizados e podem ser detidos a qualquer momento pelo administrador.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= SEGURANÇA / CONFIANÇA ======================= -->
+      <section id="security" class="section">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow" data-i18n="sec.eyebrow">Confiança e transparência</span>
+            <h2 data-i18n="sec.title">Princípios de privacidade e segurança</h2>
+            <p data-i18n="sec.lead">
+              EndpointX é uma ferramenta defensiva. O que recolhe — e o que nunca recolhe — está explicitado, e o
+              estado real do desenvolvimento não é adornado.
+            </p>
+          </div>
+
+          <div class="principles" data-reveal>
+            <div class="principle">
+              <span class="tick" aria-hidden="true">✓</span>
+              <div>
+                <strong data-i18n="sec.p1.t">Só endpoints autorizados</strong>
+                <span data-i18n="sec.p1.d">Só dispositivos registados, com agente e ranges CIDR configurados pelo administrador.</span>
+              </div>
+            </div>
+            <div class="principle">
+              <span class="tick" aria-hidden="true">✓</span>
+              <div>
+                <strong data-i18n="sec.p2.t">Sem recolha invasiva</strong>
+                <span data-i18n="sec.p2.d">Sem palavras-passe, keystrokes ou conteúdo de ficheiros.</span>
+              </div>
+            </div>
+            <div class="principle">
+              <span class="tick" aria-hidden="true">✓</span>
+              <div>
+                <strong data-i18n="sec.p3.t">Evidência e auditoria</strong>
+                <span data-i18n="sec.p3.d">Cada conclusão tem fonte, confiança, timestamp e rasto nos registos de auditoria.</span>
+              </div>
+            </div>
+            <div class="principle">
+              <span class="tick" aria-hidden="true">✓</span>
+              <div>
+                <strong data-i18n="sec.p4.t">Aprovação humana</strong>
+                <span data-i18n="sec.p4.d">Remediação disruptiva requer aprovação de administrador.</span>
+              </div>
+            </div>
+            <div class="principle" style="grid-column: 1 / -1">
+              <span class="tick" aria-hidden="true">i</span>
+              <div>
+                <strong data-i18n="sec.status.t">Estado do desenvolvimento</strong>
+                <span data-i18n="sec.status.d">
+                  Versão 1.3.0 em early access gratuito. Funcionalidades assinaladas como «em desenvolvimento» ainda
+                  não estão prontas — preferimos diz-lo a fingir que estão. Sem clientes, certificações ou números
+                  inventados nesta página.
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= ESTATÍSTICAS ======================= -->
+      <section class="section section-soft">
+        <div class="container">
+          <div class="section-head center" data-reveal>
+            <span class="eyebrow" data-i18n="stats.eyebrow">Números reais</span>
+            <h2 data-i18n="stats.title">A plataforma, em dados</h2>
+            <p data-i18n="stats.lead">
+              Contadores directos da base de dados, sem valores inventados. Actualiza automaticamente; se a fonte
+              estiver indisponível, mostramos «Dados indisponíveis».
+            </p>
+          </div>
+
+          <div
+            data-stats
+            data-stats-empty="Dados indisponíveis"
+            data-stats-updated="Última actualização"
+            data-reveal
+          >
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-value is-empty" data-stat="devices">—</div>
+                <div class="stat-label" data-i18n="stats.devices">Dispositivos registados</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value is-empty" data-stat="online">—</div>
+                <div class="stat-label" data-i18n="stats.online">Activos (24 h)</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value is-empty" data-stat="users">—</div>
+                <div class="stat-label" data-i18n="stats.users">Utilizadores</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value is-empty" data-stat="downloads">—</div>
+                <div class="stat-label" data-i18n="stats.downloads">Downloads do agente</div>
+              </div>
+            </div>
+            <p class="stats-meta">
+              <span data-stat="version">v1.3.0</span>
+              ·
+              <span data-stat="updated" data-i18n="stats.updated">Última actualização</span>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= DOCUMENTAÇÃO ======================= -->
+      <section id="docs" class="section">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow" data-i18n="docs.eyebrow">Documentação própria</span>
+            <h2 data-i18n="docs.title">Tudo o que precisa, dentro do site</h2>
+            <p data-i18n="docs.lead">
+              Guias escritos a partir do sistema real — instalação, agentes, descoberta de rede, segurança e perguntas
+              frequentes. Sem saltos para repositórios externos.
+            </p>
+          </div>
+
+          <div class="docs-grid">
+            <a class="doc-card" href="/docs/visao-geral" data-reveal>
+              <span class="k">01</span>
+              <h4 data-i18n="docs.d1.t">Visão geral da plataforma</h4>
+              <p data-i18n="docs.d1.d">Arquitectura, conceitos e o que cada área do painel faz.</p>
+            </a>
+            <a class="doc-card" href="/docs/instalacao" data-reveal>
+              <span class="k">02</span>
+              <h4 data-i18n="docs.d2.t">Instalação e requisitos</h4>
+              <p data-i18n="docs.d2.d">Pré-requisitos, primeiros passos e instalação do agente.</p>
+            </a>
+            <a class="doc-card" href="/docs/agentes" data-reveal>
+              <span class="k">03</span>
+              <h4 data-i18n="docs.d3.t">Gestão de agentes</h4>
+              <p data-i18n="docs.d3.d">Enrolamento, heartbeat, tokens e actualizações.</p>
+            </a>
+            <a class="doc-card" href="/docs/discovery" data-reveal>
+              <span class="k">04</span>
+              <h4 data-i18n="docs.d4.t">Network Discovery</h4>
+              <p data-i18n="docs.d4.d">Intervalos CIDR, revisão de nós e pedidos de instalação.</p>
+            </a>
+            <a class="doc-card" href="/docs/seguranca" data-reveal>
+              <span class="k">05</span>
+              <h4 data-i18n="docs.d5.t">Segurança e permissões</h4>
+              <p data-i18n="docs.d5.d">Sessões, MFA, funções, auditoria e protecção de downloads.</p>
+            </a>
+            <a class="doc-card" href="/docs/faq" data-reveal>
+              <span class="k">06</span>
+              <h4 data-i18n="docs.d6.t">Perguntas frequentes</h4>
+              <p data-i18n="docs.d6.d">Respostas curtas às dúvidas mais comuns.</p>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= SOBRE + CTA ======================= -->
+      <section id="about" class="section section-soft">
+        <div class="container">
+          <div class="section-head center" data-reveal>
+            <span class="eyebrow" data-i18n="about.eyebrow">Sobre o projecto</span>
+            <h2 data-i18n="about.title">EndpointX, pela CodingLife-Dev</h2>
+            <p data-i18n="about.body">
+              EndpointX é um sistema de gestão de identidade, endpoints e segurança defensiva, construído e mantido
+              pela CodingLife-Dev. O produto está em desenvolvimento activo: esta versão é o early access gratuito
+              1.3.0, e cada release documenta o que mudou.
+            </p>
+            <p data-i18n="about.body2">
+              Dúvidas sobre requisitos, integração ou utilização? A documentação interna cobre o essencial — e o
+              formulário de contacto chega à equipa.
+            </p>
+          </div>
+
+          <div class="cta-band" data-reveal>
+            <h2 data-i18n="cta.title">Comece em minutos</h2>
+            <p data-i18n="cta.sub">
+              Crie a conta, abra a página «Instalar» no painel e copie o comando já com o seu token — os scripts
+              recusam-se a correr sem ele.
+            </p>
+            <div class="cta-actions">
+              <a class="btn btn-primary btn-lg" href="/register" data-i18n="cta.primary">Criar conta grátis</a>
+              <a class="btn btn-ghost btn-lg" href="/login" data-i18n="cta.secondary">Já tenho conta</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="/docs/visao-geral" data-i18n="nav.docs">Documentação</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/src/js/i18n.js"></script>
+  </body>
+</html>

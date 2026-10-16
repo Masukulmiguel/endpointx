@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Platform overview · EndpointX</title>
+    <meta name="description" content="Explore the four-layer EndpointX architecture, the key concepts — devices, agents, enrollment and heartbeat — and what each area of the panel does." />
+    <meta property="og:title" content="Platform overview" />
+    <meta property="og:description" content="Explore the four-layer EndpointX architecture, the key concepts — devices, agents, enrollment and heartbeat — and what each area of the panel does." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://endpointx.onrender.com/en/docs/visao-geral" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0a0e13" />
+    <link rel="canonical" href="https://endpointx.onrender.com/en/docs/visao-geral" />
+    <link rel="alternate" hreflang="pt" href="https://endpointx.onrender.com/docs/visao-geral" />
+    <link rel="alternate" hreflang="en" href="https://endpointx.onrender.com/en/docs/visao-geral" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon-mobile.png" />
+    <script>
+      try {
+        var p = localStorage.getItem('endpointx_theme') || 'system';
+        var d = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', d);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/main-CLnLKcEY.js"></script>
+    <script type="module" crossorigin src="/assets/docs-C80S_Aa2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/main-Dzym4w8u.css">
+  </head>
+  <body data-copy-label="Copy">
+    <header class="site-header scrolled">
+      <div class="header-inner">
+        <a class="brand" href="/">
+          <img src="/icon.png" alt="" width="30" height="30" />
+          <span>Endpoint<span class="x">X</span></span>
+        </a>
+        <nav class="nav" aria-label="Principal">
+          <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+          <a href="/#security" data-i18n="nav.security">Segurança</a>
+          <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+          <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+          <a href="https://endpointx.onrender.com/en/docs/visao-geral" data-i18n="nav.docs">Documentation</a>
+          <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+        </nav>
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Idioma">
+            <a href="https://endpointx.onrender.com/docs/visao-geral">PT</a>
+            <a href="https://endpointx.onrender.com/en/docs/visao-geral">EN</a>
+          </div>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
+          <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+        </div>
+        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="docs-layout">
+        <aside class="docs-side">
+          <input class="docs-search" type="search" placeholder="Search the documentation…" aria-label="Search the documentation…" />
+          <p class="docs-nav-title">Documentation</p>
+          <nav aria-label="Documentation">
+<a href="/en/docs/visao-geral" class="active" data-slug="visao-geral">Platform overview</a>
+<a href="/en/docs/instalacao" data-slug="instalacao">Installation and requirements</a>
+<a href="/en/docs/agentes" data-slug="agentes">Agent management</a>
+<a href="/en/docs/discovery" data-slug="discovery">Network Discovery</a>
+<a href="/en/docs/seguranca" data-slug="seguranca">Security and permissions</a>
+<a href="/en/docs/faq" data-slug="faq">Frequently asked questions</a>
+</nav>
+<div class="docs-empty">No results found.</div>
+        </aside>
+        <div class="docs-main">
+          <p class="docs-lang"><a href="/docs/visao-geral">View in Portuguese →</a></p>
+          <h1>Platform overview</h1>
+          <p class="docs-lead">Architecture, concepts and what each area of the panel does.</p>
+          <nav class="docs-toc"><span class="k">On this page</span><ol><li><a href="#what-is-endpointx">What is EndpointX</a></li><li><a href="#architecture-in-4-layers">Architecture in 4 layers</a></li><li><a href="#key-concepts">Key concepts</a></li><li><a href="#panel-areas">Panel areas</a></li><li><a href="#development-status">Development status</a></li></ol></nav>
+          <div class="docs-body"><h2 id="what-is-endpointx">What is EndpointX</h2>
+<p>EndpointX is an Identity, Access and Endpoint Management (IAM + EPM) platform for managing authorized devices on a corporate network. It brings together real-time monitoring, remote command execution and security event tracking, all from a single admin panel.</p>
+<p>The platform is defensive by design: it only works with registered and authorized devices, with network ranges configured by the administrator, and it never collects passwords, keystrokes or file contents.</p>
+<h2 id="architecture-in-4-layers">Architecture in 4 layers</h2>
+<p>The system is organized in four layers:</p>
+<ol>
+<li><strong>Agents</strong> — run on authorized endpoints (Windows, Linux and macOS), collect inventory and metrics and send periodic heartbeats to the API over HTTPS, signed with HMAC-SHA256.</li>
+<li><strong>Express API</strong> — Node.js backend with Express and Socket.IO, JWT authentication with refresh tokens, RBAC with granular permissions, input validation and immutable audit logging.</li>
+<li><strong>PostgreSQL</strong> — main database (PostgreSQL 16) with UUID keys, indexes and immutable audit logs; Redis is used as cache and for shared real-time data.</li>
+<li><strong>React dashboard</strong> — React admin panel with real-time updates over WebSocket, permission-aware (RBAC-aware) UI and dark mode.</li>
+</ol>
+<div class="docs-callout"><strong>Note:</strong> the heartbeat interval is configurable (60 seconds by default) and the agent automatically retries failed communication.</div>
+<h2 id="key-concepts">Key concepts</h2>
+<ul>
+<li><strong>User and session</strong> — administrators sign in with email and password; the session uses a short-lived access token and a revocable refresh token, with optional MFA.</li>
+<li><strong>Device and agent</strong> — every authorized endpoint has a record in the panel and an installed agent that collects inventory (software, services, processes, partitions, interfaces) and health metrics.</li>
+<li><strong>Enrollment</strong> — PCs join with an enrollment token and mobiles through a PWA page; every device enters as PENDING until an administrator approves it (Zero Trust).</li>
+<li><strong>Heartbeat</strong> — the agent sends <code>POST /api/devices/heartbeat</code> with metrics (CPU, RAM, disk); the API replies with any commands pending for the device.</li>
+</ul>
+<p>Example of the heartbeat cycle:</p>
+<div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code class="language-http">POST /api/devices/heartbeat
+Content-Type: application/json
+
+{
+  &quot;agent_id&quot;: &quot;agt_…&quot;,
+  &quot;metrics&quot;: { &quot;cpu&quot;: 42, &quot;ram&quot;: 61, &quot;disk&quot;: 73 }
+}
+</code></pre></div>
+<h2 id="panel-areas">Panel areas</h2>
+<ul>
+<li><strong>Dashboard</strong> — overview with device status, recent activity and alerts.</li>
+<li><strong>Devices</strong> — inventory and health of every endpoint, remote commands and history.</li>
+<li><strong>Network / Discovery</strong> — sweeps of authorized CIDR ranges, review of discovered nodes (approve, ignore or request installation) and network access decisions (NAC), under development.</li>
+<li><strong>HERMES</strong> — defensive intelligence engine that correlates inventory, ports, services and CVEs, presenting risk with evidence, confidence and timestamp.</li>
+<li><strong>Security</strong> — alerts, rules, incidents, MFA and audit records.</li>
+<li><strong>Settings</strong> — installation configuration, users, roles and permissions.</li>
+</ul>
+<h2 id="development-status">Development status</h2>
+<p>EndpointX is in free early access at version 1.3.0, under continuous development. Device enrollment, heartbeat monitoring, vulnerability analysis, security monitoring and access control with auditing are available.</p>
+<p>Network access decisions (NetSentinel / NAC) and other capabilities marked as “in development” in the panel are under construction — we would rather say so than pretend they are ready. This documentation describes the real system, with no invented client numbers or certifications.</p>
+</div>
+          <nav class="docs-footer-nav">
+            <span></span>
+            <a class="docs-next" href="/en/docs/instalacao">Installation and requirements →</a>
+          </nav>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <a class="brand" href="/">
+              <img src="/icon.png" alt="" width="30" height="30" />
+              <span>Endpoint<span class="x">X</span></span>
+            </a>
+            <p class="footer-about" data-i18n="footer.about">
+              Gestão de identidade, endpoints e segurança defensiva com HERMES. Early access gratuito.
+            </p>
+          </div>
+          <div>
+            <h5 data-i18n="footer.product">Produto</h5>
+            <a href="/#features" data-i18n="nav.features">Funcionalidades</a>
+            <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
+            <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
+            <a href="https://endpointx.onrender.com/en/docs/visao-geral" data-i18n="nav.docs">Documentation</a>
+          </div>
+          <div>
+            <h5 data-i18n="footer.project">Projecto</h5>
+            <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
+            <a href="/contacto" data-i18n="nav.contact">Contacto</a>
+            <a href="/login" data-i18n="nav.login">Entrar</a>
+            <a href="/register" data-i18n="nav.register">Aceder à plataforma</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <div>
+            © <span data-year>2026</span> EndpointX · <span data-i18n="footer.madeby">CodingLife-Dev</span>.
+            <span data-i18n="footer.rights">Todos os direitos reservados.</span>
+          </div>
+          <div>
+            <a href="https://www.linkedin.com/in/masukulu-miguel-55a7b2345/" target="_blank" rel="noopener noreferrer" data-i18n="footer.creator">
+              Criado por
+            </a>
+            Masukulu Miguel
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/src/js/i18n.js"></script>
+  </body>
+</html>

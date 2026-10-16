@@ -1,0 +1,62 @@
+[
+  {
+    "lang": "pt",
+    "slug": "visao-geral",
+    "title": "Visão geral da plataforma",
+    "lead": "Arquitectura, conceitos e o que cada área do painel faz.",
+    "url": "/docs/visao-geral",
+    "headings": [
+      {
+        "id": "o-que-e-o-endpointx",
+        "text": "O que é o EndpointX"
+      },
+      {
+        "id": "arquitectura-em-4-camadas",
+        "text": "Arquitectura em 4 camadas"
+      },
+      {
+        "id": "conceitos-chave",
+        "text": "Conceitos-chave"
+      },
+      {
+        "id": "areas-do-painel",
+        "text": "Áreas do painel"
+      },
+      {
+        "id": "estado-do-desenvolvimento",
+        "text": "Estado do desenvolvimento"
+      }
+    ],
+    "text": "O que é o EndpointX EndpointX é uma plataforma de gestão de identidade, acesso e endpoints (IAM + EPM) para gerir dispositivos autorizados numa rede corporativa. Combina monitorização em tempo real, execução remota de comandos e registo de eventos de segurança, tudo a partir de um painel administrativo único. A plataforma é defensiva por desenho: só trabalha com dispositivos registados e autorizados, com intervalos de rede configurados pelo administrador, e não recolhe palavras-passe, keystrokes nem conteúdo de ficheiros. Arquitectura em 4 camadas O sistema organiza-se em quatro camadas: Agentes — correm nos endpoints autorizados (Windows, Linux e macOS), recolhem inventário e métricas e enviam heartbeats periódicos à API por HTTPS, com assinatura HMAC-SHA256. API Express — backend em Node.js com Express e Socket.IO, autenticação JWT com refresh tokens, RBAC com permissões granulares, validação de entradas e registo de auditoria imutável. PostgreSQL — base de dados principal (PostgreSQL 16) com chaves UUID, índices e logs de auditoria imutáveis; o Redis é usado como cache e para dados partilhados em tempo real. Dashboard React — painel administrativo em React com actualizações em tempo real via WebSocket, interface sensível a permissões (RBAC-aware) e modo escuro. Nota: o intervalo de heartbeat é configurável (por omissão, 60 segundos) e o agente retenta automaticamente falhas de comunicação. Conceitos-chave Utilizador e sessão — os administradores autenticam-se com email e palavra-passe; a sessão usa um token de acesso de curta duração e um refresh token revogável, com MFA opcional. Dispositivo e agente — cada endpoint autorizado tem um registo no painel e um agente instalado que recolhe inventário (software, serviços, processos, partições, interfaces) e métricas de saúde. Enrolamento — os PCs juntam-se com um token de enrolamento e os telemóveis através de uma página PWA; cada dispositivo entra como pendente (PENDING) até ser aprovado por um administrador (Zero Tr"
+  },
+  {
+    "lang": "en",
+    "slug": "visao-geral",
+    "title": "Platform overview",
+    "lead": "Architecture, concepts and what each area of the panel does.",
+    "url": "/en/docs/visao-geral",
+    "headings": [
+      {
+        "id": "what-is-endpointx",
+        "text": "What is EndpointX"
+      },
+      {
+        "id": "architecture-in-4-layers",
+        "text": "Architecture in 4 layers"
+      },
+      {
+        "id": "key-concepts",
+        "text": "Key concepts"
+      },
+      {
+        "id": "panel-areas",
+        "text": "Panel areas"
+      },
+      {
+        "id": "development-status",
+        "text": "Development status"
+      }
+    ],
+    "text": "What is EndpointX EndpointX is an Identity, Access and Endpoint Management (IAM + EPM) platform for managing authorized devices on a corporate network. It brings together real-time monitoring, remote command execution and security event tracking, all from a single admin panel. The platform is defensive by design: it only works with registered and authorized devices, with network ranges configured by the administrator, and it never collects passwords, keystrokes or file contents. Architecture in 4 layers The system is organized in four layers: Agents — run on authorized endpoints (Windows, Linux and macOS), collect inventory and metrics and send periodic heartbeats to the API over HTTPS, signed with HMAC-SHA256. Express API — Node.js backend with Express and Socket.IO, JWT authentication with refresh tokens, RBAC with granular permissions, input validation and immutable audit logging. PostgreSQL — main database (PostgreSQL 16) with UUID keys, indexes and immutable audit logs; Redis is used as cache and for shared real-time data. React dashboard — React admin panel with real-time updates over WebSocket, permission-aware (RBAC-aware) UI and dark mode. Note: the heartbeat interval is configurable (60 seconds by default) and the agent automatically retries failed communication. Key concepts User and session — administrators sign in with email and password; the session uses a short-lived access token and a revocable refresh token, with optional MFA. Device and agent — every authorized endpoint has a record in the panel and an installed agent that collects inventory (software, services, processes, partitions, interfaces) and health metrics. Enrollment — PCs join with an enrollment token and mobiles through a PWA page; every device enters as PENDING until an administrator approves it (Zero Trust). Heartbeat — the agent sends POST /api/devices/heartbeat with metrics (CPU, RAM, disk); the API replies with any commands pending for the device. Example of the heartbeat cycle: PO"
+  }
+]

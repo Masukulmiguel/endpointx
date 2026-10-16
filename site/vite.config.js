@@ -7,7 +7,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 function walk(dir, out) {
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name.startsWith('.')) continue;
+    if (name === 'node_modules' || name === 'scripts' || name.startsWith('.')) continue;
     const full = join(dir, name);
     if (statSync(full).isDirectory()) walk(full, out);
     else if (name.endsWith('.html')) out.push(full);
