@@ -193,6 +193,82 @@ function requireEnrollToken(req: AuthRequest, res: Response, next: NextFunction)
 }
 
 // ---------------------------------------------------------------------------
+// Fase D (site redesign): public binary downloads are gated AND counted.
+// A valid enrolment token (?t=, only minted by devices.manage holders) or an
+// authenticated session holding devices.manage opens the gate; every denial
+// answers the same DOWNLOAD_FORBIDDEN body; authorised downloads are counted
+// in download_events.
+type DownloadKind = 'windows-exe' | 'android-apk';
+
+// One denial shape for every failure mode (missing/invalid token, no session,
+// expired/revoked session, missing permission) - the contract the docs publish.
+function denyDownload(res: Response): void {
+  res.status(403).json({
+    success: false,
+    error: {
+      message: 'Download requires an enrolment token or an authorised session',
+      code: 'DOWNLOAD_FORBIDDEN',
+    },
+  });
+}
+
+// Counter: fire-and-forget INSERT that never blocks or fails the response.
+function recordDownload(req: AuthRequest, kind: DownloadKind): void {
+  void query('INSERT INTO download_events (kind, ip_address) VALUES ($1, $2)', [
+    kind,
+    requestIp(req),
+  ]).catch(() => undefined);
+}
+
+// The shared authenticate() answers auth failures by writing its own 401 body
+// to the response. The download contract demands the single 403
+// DOWNLOAD_FORBIDDEN above for every denial, so authenticate runs against a
+// capture stand-in: on success it only sets req.user and calls next() (its
+// real writes go to the stand-in), which lets this gate re-emit the unified
+// body on the real response without touching shared middleware.
+interface CaptureResponse {
+  status(): CaptureResponse;
+  json(): CaptureResponse;
+}
+
+function requireDownloadAccess(kind: DownloadKind) {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    // 1. Enrolment token from the install link / download link (?t=).
+    if (verifyEnrollToken(req.query?.t)) {
+      recordDownload(req, kind);
+      next();
+      return;
+    }
+
+    // 2. Otherwise: an authenticated session holding devices.manage.
+    let settled = false;
+    const settle = (authenticated: boolean): void => {
+      if (settled) return;
+      settled = true;
+      const allowed = authenticated && (req.user?.permissions || []).includes('devices.manage');
+      if (!allowed) {
+        // 3. Any failure mode lands here (never counts a download).
+        denyDownload(res);
+        return;
+      }
+      recordDownload(req, kind);
+      next();
+    };
+
+    const standIn: CaptureResponse = {
+      status: () => standIn,
+      json: () => {
+        settle(false);
+        return standIn;
+      },
+    };
+
+    void authenticate(req, standIn as unknown as Response, () => settle(true)).catch(() => settle(false));
+  };
+}
+
+
+// ---------------------------------------------------------------------------
 // Registration dedupe by source IP.
 // The same physical device often comes back with a brand new agent_id (APK
 // reinstalled, app data cleared, or the enrolment page opened twice), which used
@@ -2023,8 +2099,8 @@ router.get('/public/manifest.webmanifest', async (_req: AuthRequest, res: Respon
   }
 });
 
-// PUBLIC - Android agent APK (download link from the install page)
-router.get('/public/endpointx-agent.apk', (_req: AuthRequest, res: Response, next: NextFunction) => {
+// PUBLIC - Android agent APK (download link from the install page; gated + counted, Fase D)
+router.get('/public/endpointx-agent.apk', requireDownloadAccess('android-apk'), (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const filePath = join(__dirname, '..', '..', 'public', 'apk', 'endpointx-agent.apk');
     if (!existsSync(filePath)) {
@@ -2040,8 +2116,8 @@ router.get('/public/endpointx-agent.apk', (_req: AuthRequest, res: Response, nex
   }
 });
 
-// PUBLIC - Windows PC installer (download button on the public site)
-router.get('/public/endpointx.exe', (_req: AuthRequest, res: Response, next: NextFunction) => {
+// PUBLIC - Windows PC installer (download button on the public site; gated + counted, Fase D)
+router.get('/public/endpointx.exe', requireDownloadAccess('windows-exe'), (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const filePath = join(__dirname, '..', '..', 'public', 'exe', 'endpointx.exe');
     if (!existsSync(filePath)) {

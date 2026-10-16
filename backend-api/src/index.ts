@@ -22,6 +22,7 @@ import { renderPrometheusMetrics } from './services/prometheus';
 import { isAllowedOrigin, corsOriginCheck } from './utils/cors';
 import { setSetting } from './services/settings';
 import { securityHeadersMiddleware } from './config/securityHeaders';
+import { canonicalHtmlRedirect } from './middleware/canonicalRedirects';
 
 // Validate secrets before starting
 try {
@@ -249,6 +250,11 @@ app.use('/api/osint', osintRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/enroll', enrollRoutes);
 app.use('/api/public', publicRoutes);
+
+// Canonical .html redirects (Fase D): must run BEFORE express.static below,
+// which would otherwise serve /index.html, /docs/<slug>.html, ... directly
+// instead of answering the permanent redirect to the extension-less URL.
+app.use(canonicalHtmlRedirect);
 
 // Public site (landing, login, register) - served before 404 handler
 const publicSitePath = path.join(__dirname, '..', 'public', 'site');

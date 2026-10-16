@@ -169,18 +169,20 @@ async function main(): Promise<void> {
       });
     }
 
-    // 7. Public Windows PC installer (site download button) streams as attachment
+    // 7. Public Windows PC installer is now gated (Fase D): the anonymous
+    // download answers 403 DOWNLOAD_FORBIDDEN and streams no binary bytes.
+    // The 200 + attachment path is covered by downloadAccess.test.ts with ?t=.
     {
       const res = await fetch(`${base}/public/endpointx.exe`);
-      check('GET /public/endpointx.exe -> 200 + attachment headers', () => {
-        assert.strictEqual(res.status, 200, `got ${res.status}`);
-        assert.strictEqual(res.headers.get('content-type'), 'application/octet-stream');
-        assert.ok(
-          (res.headers.get('content-disposition') || '').includes('filename="endpointx.exe"'),
-          `got disposition ${res.headers.get('content-disposition')}`
-        );
+      const body = await res.text();
+      check('GET /public/endpointx.exe anonymous -> 403 DOWNLOAD_FORBIDDEN', () => {
+        assert.strictEqual(res.status, 403, `got ${res.status}`);
+        assert.ok(body.length < 512, `body is ${body.length} bytes - binary leaked`);
+        const parsed = JSON.parse(body) as { success?: boolean; error?: { code?: string } };
+        assert.strictEqual(parsed.success, false, `expected success false: ${body}`);
+        assert.strictEqual(parsed.error?.code, 'DOWNLOAD_FORBIDDEN', `expected DOWNLOAD_FORBIDDEN: ${body}`);
+        assert.strictEqual(res.headers.get('content-disposition'), null, 'attachment headers must not be set');
       });
-      await res.body?.cancel();
     }
   } finally {
     // Close the listener AND the keep-alive sockets, then let the process
