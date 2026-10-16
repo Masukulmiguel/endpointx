@@ -1307,6 +1307,7 @@ const seedDefaults = async (): Promise<void> => {
     ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
     ['osint.view', 'View OSINT', 'View OSINT lookups and history', 'osint'],
     ['osint.manage', 'Manage OSINT', 'Perform OSINT queries and manage API keys', 'osint'],
+    ['contacts.view', 'View Contact Messages', 'Read messages submitted from the public site contact form', 'contacts'],
   ];
   for (const [code, name, desc, category] of allPerms) {
     await pool.query(

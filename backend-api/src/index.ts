@@ -224,6 +224,7 @@ import reportsRoutes from './routes/reports';
 import alertRulesRoutes from './routes/alertRules';
 import enrollRoutes from './routes/enroll';
 import publicRoutes from './routes/public';
+import contactsRoutes from './routes/contacts';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -235,6 +236,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/alert-rules', alertRulesRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/contacts', contactsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/network', networkRoutes);
