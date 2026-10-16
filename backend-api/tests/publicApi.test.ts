@@ -26,6 +26,10 @@ const check = (label: string, fn: () => void) => {
 // ---- Fake pg (installed before config/database is first required) --------
 // Stats runs four COUNT queries, contact inserts into contacts then
 // audit_logs; the inline schema and seed statements answer empty.
+// Every statement is also appended to `calls` (sql + bound params) so the
+// contact assertions can pin real SQL side effects, not just the response.
+const calls: Array<{ sql: string; params?: unknown[] }> = [];
+
 const respond = (sql: string) =>
   sql.includes('INSERT INTO contacts')
     ? { rows: [{ id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }], rowCount: 1 }
@@ -37,7 +41,7 @@ const respond = (sql: string) =>
 
 class FakeClient {
   query(sql: string, params?: unknown[]) {
-    void params;
+    calls.push({ sql, params });
     return Promise.resolve(respond(sql));
   }
   release(): void {
@@ -48,7 +52,7 @@ class FakeClient {
 class FakePool {
   constructor(_cfg: unknown) {}
   query(sql: string, params?: unknown[]) {
-    void params;
+    calls.push({ sql, params });
     return Promise.resolve(respond(sql));
   }
   connect(): Promise<FakeClient> {
@@ -111,8 +115,10 @@ async function main(): Promise<void> {
         assert.strictEqual(body?.success, true, `success flag missing: ${JSON.stringify(body)}`);
         const data = body!.data!;
         assert.strictEqual(data.version, backendPkg.version, `version must be ${backendPkg.version}, got ${String(data.version)}`);
+        // Every counter must be the FakePool COUNT result: anything else
+        // means the route bypassed the SQL path and invented the value.
         for (const key of ['devices', 'online', 'users', 'downloads']) {
-          assert.ok(Number.isFinite(data[key]), `${key} must be finite, got ${String(data[key])}`);
+          assert.strictEqual(data[key], 42, `${key} must be the SQL COUNT result (42), got ${String(data[key])}`);
         }
         assert.ok(!Number.isNaN(Date.parse(String(data.updated_at))), `updated_at must be parseable, got ${String(data.updated_at)}`);
       });
@@ -120,9 +126,14 @@ async function main(): Promise<void> {
 
     // 2. Valid contact message -> 201 + UUID id (FakePool's fixed uuid)
     {
+      const logMark = calls.length;
       const res = await fetch(`${base}/contact`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '1.1.1.1' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': '1.1.1.1',
+          'User-Agent': 'Task3TestAgent/1.0',
+        },
         body: JSON.stringify({
           name: 'Site Visitor',
           email: 'visitor@example.com',
@@ -137,6 +148,32 @@ async function main(): Promise<void> {
           String(body!.data?.id),
           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
           `id must be a UUID, got ${String(body!.data?.id)}`
+        );
+      });
+
+      // 2b. The response alone must not go green: the write path has to hit
+      // the SQL the brief mandates (ip/agent bindings + audit trail).
+      const contactCalls = calls.slice(logMark);
+      check('valid contact binds ip/agent and writes audit_logs', () => {
+        const insertContact = contactCalls.find((c) => c.sql.includes('INSERT INTO contacts'));
+        assert.ok(
+          insertContact,
+          `INSERT INTO contacts not executed: ${JSON.stringify(contactCalls.map((c) => c.sql))}`
+        );
+        assert.strictEqual(
+          insertContact.params?.[3],
+          '1.1.1.1',
+          `contacts.ip_address must bind the X-Forwarded-For client ip, got ${String(insertContact.params?.[3])}`
+        );
+        assert.strictEqual(
+          insertContact.params?.[4],
+          'Task3TestAgent/1.0',
+          `contacts.user_agent must bind the request user-agent, got ${String(insertContact.params?.[4])}`
+        );
+        const insertAudit = contactCalls.find((c) => c.sql.includes('INSERT INTO audit_logs'));
+        assert.ok(
+          insertAudit,
+          `INSERT INTO audit_logs not executed: ${JSON.stringify(contactCalls.map((c) => c.sql))}`
         );
       });
     }
