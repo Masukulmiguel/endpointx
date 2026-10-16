@@ -42,11 +42,12 @@
   }
 
   function redirectToDashboard(accessToken, refreshToken) {
-    // Drop any previous session before handoff so admin tokens cannot stick
     try {
       window.localStorage.removeItem('access_token');
       window.localStorage.removeItem('refresh_token');
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
     const url =
       site.DASHBOARD_URL +
       '/?access_token=' +
@@ -71,9 +72,11 @@
         (data && data.message) ||
         site.t('common.error');
       if (data && data.error && data.error.details && data.error.details.length) {
-        msg = data.error.details.map(function (d) {
-          return d.message;
-        }).join(' ');
+        msg = data.error.details
+          .map(function (d) {
+            return d.message;
+          })
+          .join(' ');
       }
       throw new Error(msg);
     }
@@ -106,7 +109,6 @@
         var result = await postJson('/auth/login', { email: email.trim(), password: password });
         var payload = result && result.data;
         if (payload && payload.requiresMfa) {
-          // MFA temp token: store and hand off to dashboard login flow
           sessionStorage.setItem('endpointx_mfa_temp', payload.tempToken);
           window.location.replace(site.DASHBOARD_URL + '/login');
           return;
@@ -160,7 +162,7 @@
         if (payload && payload.accessToken) {
           redirectToDashboard(payload.accessToken, payload.refreshToken);
         } else {
-          window.location.replace('/login.html');
+          window.location.replace('/login');
         }
       } catch (err) {
         showAlert(alertBox, err.message || site.t('common.error'));
@@ -196,8 +198,4 @@
       }
     });
   }
-
-  document.querySelectorAll('[data-i18n-text]').forEach(function (el) {
-    el.textContent = site.t(el.getAttribute('data-i18n-text'));
-  });
 })();
