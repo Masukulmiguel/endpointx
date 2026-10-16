@@ -222,6 +222,7 @@ import osintRoutes from './routes/osint';
 import reportsRoutes from './routes/reports';
 import alertRulesRoutes from './routes/alertRules';
 import enrollRoutes from './routes/enroll';
+import publicRoutes from './routes/public';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -247,6 +248,7 @@ app.use('/api/netsentinel', netsentinelRoutes);
 app.use('/api/osint', osintRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/enroll', enrollRoutes);
+app.use('/api/public', publicRoutes);
 
 // Public site (landing, login, register) - served before 404 handler
 const publicSitePath = path.join(__dirname, '..', 'public', 'site');

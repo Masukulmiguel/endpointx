@@ -1205,6 +1205,27 @@ const createInlineSchema = async (): Promise<void> => {
       updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- -- Site redesign (fase D): public contact form + download counters --
+    CREATE TABLE IF NOT EXISTS contacts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(100) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      ip_address VARCHAR(45),
+      user_agent TEXT,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_contacts_created_at ON contacts(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS download_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      kind VARCHAR(30) NOT NULL,
+      ip_address VARCHAR(45),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_download_events_created_at ON download_events(created_at);
   `;
 
   await pool.query(schema);
