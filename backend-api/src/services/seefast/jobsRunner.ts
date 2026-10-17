@@ -10,8 +10,9 @@ import { getLimits, SeefastLimits } from './limits';
  *
  * Concurrency is capped at `getLimits().maxConcurrentJobs`: the slot check and
  * the `running` insert are one conditional statement, so a second near-
- * simultaneous start lands in `queued` and is promoted FIFO (oldest first) by
- * `promoteQueued()` on every completion. Cancellation is cooperative:
+ * simultaneous start lands in `queued` and is promoted FIFO (oldest first)
+ * inside finalize's slot-lock section on every completion (so the freed slot
+ * is never visible to a concurrent POST before the queue drains). Cancellation is cooperative:
  * `cancel_requested` in the DB plus SIGTERM to the exact ChildProcess held in
  * the Map below; the process's `close` decides the final state (a cancel
  * requested mid-kill always wins over the exit code). The adapter creates no
@@ -147,31 +148,37 @@ function mapRunToOutcome(raw: RawRun, artifactPath: string): FinalOutcome {
 }
 
 /**
- * Store the final state, remove the process from the Map, promote the next
- * queued job. `cancel_requested` wins over the computed outcome — the close
- * watcher is the single decider when a kill lands mid-run. Task 5 hooks the
- * findings normalisation here; today `result` is stored as-is.
+ * Store the final state and promote the next queued job — as ONE lock-held
+ * critical section: the slot-freeing UPDATE and the promotion must not be
+ * split, or a POST /jobs could count the freed slot in between and take it
+ * from an older queued job (FIFO starvation). `cancel_requested` wins over
+ * the computed outcome — the close watcher is the single decider when a kill
+ * lands mid-run. Task 5 hooks the findings normalisation here; today
+ * `result` is stored as-is.
  */
 async function finalize(jobId: string, outcome: FinalOutcome, artifactPath: string | null): Promise<void> {
   try {
-    const flag = await query('SELECT cancel_requested FROM cyberlab_jobs WHERE id = $1', [jobId]);
-    const cancelRequested = flag.rows[0]?.cancel_requested === true;
-    const status = cancelRequested ? 'cancelled' : outcome.status;
-    const error = status === 'cancelled' ? null : (outcome.error ?? null);
-    const result = status === 'cancelled' ? null : (outcome.result ?? null);
-    const updated = await query(
-      `UPDATE cyberlab_jobs SET status = $2, error = $3, result = $4, finished_at = NOW() WHERE id = $1 AND status = 'running'`,
-      [jobId, status, error, result]
-    );
-    if (updated.rowCount > 0 && status === 'cancelled') {
-      // Audit only the actual running → cancelled transition.
-      await auditJob('cyberlab.job_cancelled', jobId, null, 'Job cancelled during execution');
-    }
+    await withSlotLock(async () => {
+      const flag = await query('SELECT cancel_requested FROM cyberlab_jobs WHERE id = $1', [jobId]);
+      const cancelRequested = flag.rows[0]?.cancel_requested === true;
+      const status = cancelRequested ? 'cancelled' : outcome.status;
+      const error = status === 'cancelled' ? null : (outcome.error ?? null);
+      const result = status === 'cancelled' ? null : (outcome.result ?? null);
+      const updated = await query(
+        `UPDATE cyberlab_jobs SET status = $2, error = $3, result = $4, finished_at = NOW() WHERE id = $1 AND status = 'running'`,
+        [jobId, status, error, result]
+      );
+      if (updated.rowCount > 0 && status === 'cancelled') {
+        // Audit only the actual running → cancelled transition.
+        await auditJob('cyberlab.job_cancelled', jobId, null, 'Job cancelled during execution');
+      }
+      await promoteWhileLocked();
+    });
   } catch (error) {
     logger.error('cyberlab job finalize failed', { jobId, error: (error as Error).message });
   } finally {
+    // The adapter creates no temp files; the Map entry is the only thing to drop.
     runningProcesses.delete(jobId);
-    await promoteQueued();
   }
 }
 
@@ -308,40 +315,46 @@ export async function cancelJob(id: string, actorId: string | null): Promise<'ca
 }
 
 /**
- * Promote the oldest `queued` job while a slot is free — called after every
- * completion/cancel so the queue drains FIFO. The guarded UPDATE keeps
- * concurrent promotions from starting the same job twice.
+ * Promote the oldest `queued` job while a slot is free — the loop body that
+ * assumes the slot lock is already held (never call it without the lock).
+ * The guarded UPDATE (`status = 'queued'`) additionally protects against a
+ * concurrent cancel having taken the row.
+ */
+async function promoteWhileLocked(): Promise<void> {
+  for (;;) {
+    const limits = await getLimits();
+    const running = await query(`SELECT COUNT(*)::int AS count FROM cyberlab_jobs WHERE status = 'running'`);
+    if ((running.rows[0]?.count ?? 0) >= limits.maxConcurrentJobs) return;
+
+    const oldest = await query(
+      `SELECT id, type FROM cyberlab_jobs WHERE status = 'queued' ORDER BY created_at ASC, id ASC LIMIT 1`
+    );
+    const next = oldest.rows[0] as { id: string; type: string } | undefined;
+    if (!next) return;
+
+    const promoted = await query(
+      `UPDATE cyberlab_jobs SET status = 'running', started_at = NOW() WHERE id = $1 AND status = 'queued' RETURNING id`,
+      [next.id]
+    );
+    // Lost the row to a concurrent cancel — re-evaluate from the top.
+    if (promoted.rowCount === 0) continue;
+
+    await auditJob('cyberlab.job_started', next.id, null, `Job started: ${next.type}`);
+    // executeJob never runs synchronously; the check phase fires only after
+    // the lock is released, so the child cannot re-enter the lock from here.
+    setImmediate(() => {
+      void executeJob(next.id, next.type as JobType);
+    });
+  }
+}
+
+/**
+ * Public promotion entry: after external events (e.g. limits changed) drain
+ * the queue under the slot lock. Completions promote via finalize instead.
  */
 export async function promoteQueued(): Promise<void> {
   try {
-    for (;;) {
-      const candidate = await withSlotLock(async (): Promise<{ id: string; type: string } | { retry: true } | undefined> => {
-        const limits = await getLimits();
-        const running = await query(`SELECT COUNT(*)::int AS count FROM cyberlab_jobs WHERE status = 'running'`);
-        if ((running.rows[0]?.count ?? 0) >= limits.maxConcurrentJobs) return undefined;
-
-        const oldest = await query(
-          `SELECT id, type FROM cyberlab_jobs WHERE status = 'queued' ORDER BY created_at ASC, id ASC LIMIT 1`
-        );
-        const next = oldest.rows[0] as { id: string; type: string } | undefined;
-        if (!next) return undefined;
-
-        const promoted = await query(
-          `UPDATE cyberlab_jobs SET status = 'running', started_at = NOW() WHERE id = $1 AND status = 'queued' RETURNING id`,
-          [next.id]
-        );
-        // Lost the row to a concurrent cancel — re-evaluate from the top.
-        return promoted.rowCount === 0 ? { retry: true } : next;
-      });
-
-      if (!candidate) return;
-      if ('retry' in candidate) continue;
-
-      await auditJob('cyberlab.job_started', candidate.id, null, `Job started: ${candidate.type}`);
-      setImmediate(() => {
-        void executeJob(candidate.id, candidate.type as JobType);
-      });
-    }
+    await withSlotLock(() => promoteWhileLocked());
   } catch (error) {
     logger.error('cyberlab promoteQueued failed', { error: (error as Error).message });
   }

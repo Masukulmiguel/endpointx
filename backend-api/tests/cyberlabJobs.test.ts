@@ -247,6 +247,34 @@ const record = (sql: string, params?: unknown[]) => {
   return respond(sql, params ?? []);
 };
 
+// ---- Slot-free gate: hold finalize's slot-freeing UPDATE response ----------
+// The store side-effect (status flip) is applied immediately by record(), but
+// the response is held until release(). That is exactly the disputed window:
+// the slot is observably free while the runner has not yet promoted the older
+// queued job — a POST /jobs issued here must still not take the slot (fix:
+// finalize's UPDATE + promotion run inside one lock-held section).
+type SlotFreeGate = { signalReached: () => void; release: Promise<void> };
+let slotFreeGate: SlotFreeGate | null = null;
+
+const armSlotFreeGate = (): { reached: Promise<void>; release: () => void } => {
+  let signalReached!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    signalReached = resolve;
+  });
+  let releaseFn!: () => void;
+  const releasePromise = new Promise<void>((resolve) => {
+    releaseFn = resolve;
+  });
+  slotFreeGate = { signalReached, release: releasePromise };
+  return {
+    reached,
+    release: () => {
+      slotFreeGate = null;
+      releaseFn();
+    },
+  };
+};
+
 class FakeClient {
   query(sql: string, params?: unknown[]) {
     return Promise.resolve(record(sql, params));
@@ -259,7 +287,13 @@ class FakeClient {
 class FakePool {
   constructor(_cfg: unknown) {}
   query(sql: string, params?: unknown[]) {
-    return Promise.resolve(record(sql, params));
+    const result = record(sql, params);
+    const gate = slotFreeGate;
+    if (gate && sql.includes('UPDATE cyberlab_jobs SET status = $2')) {
+      gate.signalReached();
+      return gate.release.then(() => result);
+    }
+    return Promise.resolve(result);
   }
   connect(): Promise<FakeClient> {
     return Promise.resolve(new FakeClient());
@@ -412,6 +446,8 @@ async function main(): Promise<void> {
       await new Promise((r) => setTimeout(r, 10));
     }
   };
+
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
   const waitForStatus = async (id: string, ...statuses: string[]): Promise<Record<string, unknown>> => {
     let job: Record<string, unknown> = {};
@@ -738,6 +774,69 @@ async function main(): Promise<void> {
 
       const bad = await fetch(`${base}/jobs?status=exploded`, { headers: auth(viewToken) });
       assert.strictEqual(bad.status, 400, `invalid status must be 400, got ${bad.status}`);
+    });
+
+    // ---- Regression: queue-steal race between finalize and promotion -------
+    // The fake holds finalize's slot-freeing UPDATE *response* (store already
+    // flipped) — the exact window where a count-based POST could take the
+    // freed slot from an older queued job. Deterministic core: once released,
+    // the older queued B must own the slot and the new POST must be queued.
+    await checkAsync('test_slot_freed_by_completion_is_promoted_before_a_new_post', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'manual' }, { kind: 'manual' }, { kind: 'manual' }); // A, B, new POST
+      const artifactId = seedArtifact();
+
+      const jobOf = (payload: { data: { job: Record<string, unknown>; started: boolean } }): Record<string, unknown> =>
+        payload.data.job;
+
+      const a = jobOf((await (await postJob(manageToken, 'js_analysis', artifactId)).json()) as {
+        data: { job: Record<string, unknown>; started: boolean };
+      });
+      const b = jobOf((await (await postJob(manageToken, 'js_analysis', artifactId)).json()) as {
+        data: { job: Record<string, unknown>; started: boolean };
+      });
+      assert.strictEqual(a.status, 'running');
+      assert.strictEqual(b.status, 'queued');
+      await waitFor('A to reach runOperation', async () => pendingManual.length === 1);
+
+      const gate = armSlotFreeGate();
+      try {
+        // A completes: finalize flips the status (slot freed in the store) but
+        // its response is held — the promotion has not run yet.
+        completeNextManual({ exitCode: 0, stdout: '{"done":true}' });
+        await gate.reached;
+
+        // A new POST lands inside that window.
+        const dPromise = postJob(manageToken, 'go_binary', artifactId);
+        await sleep(150); // let the POST advance as far as it can
+        gate.release();
+
+        const dRes = await dPromise;
+        assert.strictEqual(dRes.status, 201, `expected 201, got ${dRes.status}`);
+        const dBody = (await dRes.json()) as { data: { job: Record<string, unknown>; started: boolean } };
+        assert.strictEqual(
+          dBody.data.started,
+          false,
+          'the freed slot must go to the older queued job — a new POST must not steal it'
+        );
+
+        const bNow = await readJob(String(b.id));
+        assert.ok(
+          bNow.status === 'running' || bNow.status === 'completed',
+          `older queued job must get the freed slot, got ${bNow.status}`
+        );
+        assert.strictEqual((await readJob(String(dBody.data.job.id))).status, 'queued', 'the new POST must queue');
+
+        // Cleanup: B holds the slot (manual) — finish B, then D promotes and finishes.
+        await waitFor('B to reach runOperation', async () => pendingManual.length === 1);
+        completeNextManual({ exitCode: 0, stdout: '{"b":true}' });
+        await waitForStatus(String(b.id), 'completed');
+        await waitFor('new POST job to reach runOperation', async () => pendingManual.length === 1);
+        completeNextManual({ exitCode: 0, stdout: '{"d":true}' });
+        await waitForStatus(String(dBody.data.job.id), 'completed');
+      } finally {
+        gate.release(); // idempotent: never leave finalize (or later tests) hung
+      }
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
