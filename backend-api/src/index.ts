@@ -23,6 +23,7 @@ import { isAllowedOrigin, corsOriginCheck } from './utils/cors';
 import { setSetting } from './services/settings';
 import { securityHeadersMiddleware } from './config/securityHeaders';
 import { canonicalHtmlRedirect } from './middleware/canonicalRedirects';
+import { authenticate } from './middleware/auth';
 
 // Validate secrets before starting
 try {
@@ -73,6 +74,18 @@ app.use(
   })
 );
 app.use(compression());
+// Cyberlab uploads carry base64 artifacts (25MB decoded ≈ 34MB encoded), which
+// the global 10mb parser below would reject before the route's own hard limit
+// can answer with an honest PAYLOAD_TOO_LARGE. Scoped 40mb parser, gated by
+// authentication so only signed-in clients can push large bodies; the exact
+// byte cap stays in the route ((len*3)/4 > maxArtifactBytes → 413). Requests
+// already parsed here have req._body set, so the global parser no-ops on them.
+// apiLimiter (declared below) is resolved at request time via the wrapper -
+// referencing the const directly here would hit the TDZ and crash at boot.
+// Same instance as the /api mount: unauthenticated cyberlab 401s count against
+// the shared IP bucket (accepted cost: authenticated cyberlab traffic spends
+// 2 tokens per request).
+app.use('/api/cyberlab', (req, res, next) => apiLimiter(req, res, next), authenticate, express.json({ limit: '40mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
@@ -225,6 +238,7 @@ import alertRulesRoutes from './routes/alertRules';
 import enrollRoutes from './routes/enroll';
 import publicRoutes from './routes/public';
 import contactsRoutes from './routes/contacts';
+import cyberlabRoutes from './routes/cyberlab';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentsRoutes);
@@ -252,6 +266,7 @@ app.use('/api/osint', osintRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/enroll', enrollRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/cyberlab', cyberlabRoutes);
 
 // Canonical .html redirects (Fase D): must run BEFORE express.static below,
 // which would otherwise serve /index.html, /docs/<slug>.html, ... directly
