@@ -21,7 +21,8 @@ export default function InstallPage() {
   const installScript = `irm ${API_URL}/api/devices/public/install.ps1${tokenQS} | iex`;
   const updateScript = `irm ${API_URL}/api/devices/public/update.ps1 | iex`;
   const mobileUrl = `${API_URL}/api/devices/public/mobile${tokenQS}`;
-  const apkUrl = `${API_URL}/api/devices/public/endpointx-agent.apk`;
+  const apkUrl = `${API_URL}/api/devices/public/endpointx-agent.apk${tokenQS}`;
+  const exeUrl = `${API_URL}/api/devices/public/endpointx.exe${tokenQS}`;
   const linuxInstall = `curl -fsSL ${API_URL}/api/devices/public/install-linux.sh${tokenQS} | sudo bash`;
   const macInstall = `curl -fsSL ${API_URL}/api/devices/public/install-macos.sh${tokenQS} | bash`;
 
@@ -71,6 +72,30 @@ export default function InstallPage() {
           </button>
         </div>
         <p className="text-gray-500 text-xs mt-1">Atualização rápida do agent já instalado.</p>
+
+        <div className="mt-4 pt-4 border-t border-gray-700">
+          <p className="text-gray-400 text-sm mb-3">
+            Ou descarregue o executável do agente para Windows e execute-o diretamente (sem instalação):
+          </p>
+          <div className="bg-gray-900 rounded p-3 flex items-center justify-between mb-3">
+            <code className="text-blue-400 text-sm font-mono break-all">{exeUrl}</code>
+            <button
+              onClick={() => copyToClipboard(exeUrl, 'exe')}
+              className="ml-3 p-2 hover:bg-gray-700 rounded flex-shrink-0"
+              title="Copiar link"
+            >
+              {copied === 'exe' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
+          <a
+            href={exeUrl}
+            download="endpointx.exe"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded text-sm font-medium"
+          >
+            <Download className="w-4 h-4" />
+            Descarregar agente Windows (exe)
+          </a>
+        </div>
       </div>
 
       <div className="bg-gray-800 rounded-lg p-6 mb-6">

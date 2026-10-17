@@ -27,6 +27,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import HermesPage from './pages/HermesPage';
 import InvestigationPage from './pages/InvestigationPage';
 import OsintPage from './pages/OsintPage';
+import ContactosPage from './pages/ContactosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ProfilePage from './pages/ProfilePage';
@@ -261,6 +262,14 @@ export default function App() {
           element={
             <PermissionGate permission="osint.view">
               <OsintPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="contacts"
+          element={
+            <PermissionGate permission="contacts.view">
+              <ContactosPage />
             </PermissionGate>
           }
         />

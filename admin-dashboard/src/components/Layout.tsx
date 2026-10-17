@@ -28,6 +28,7 @@ import {
   Radar,
   Map,
   Globe,
+  Mail,
 } from 'lucide-react';
 import api from '../services/api';
 import { useI18n, type Locale } from '../i18n';
@@ -55,6 +56,7 @@ const navItems = [
   { key: 'nav.audit', path: '/audit-logs', icon: FileText, permission: 'logs.view' },
   { key: 'nav.agents', path: '/agents', icon: Cpu, permission: 'devices.view' },
   { key: 'nav.settings', path: '/settings', icon: Settings, permission: 'settings.view' },
+  { key: 'nav.contacts', path: '/contacts', icon: Mail, permission: 'contacts.view' },
 ];
 
 const routeTitleKeys: Record<string, string> = {
@@ -79,6 +81,7 @@ const routeTitleKeys: Record<string, string> = {
   '/audit-logs': 'nav.audit',
   '/profile': 'nav.profile',
   '/agents': 'nav.agents',
+  '/contacts': 'page.contacts.title',
   '/settings': 'nav.settings',
 };
 
@@ -109,7 +112,7 @@ const navGroups: { key: string; label: Record<Locale, string>; paths: string[] }
   {
     key: 'system',
     label: { pt: 'Sistema', en: 'System' },
-    paths: ['/settings'],
+    paths: ['/settings', '/contacts'],
   },
 ];
 
