@@ -298,4 +298,75 @@ router.post('/jobs/:id/cancel', authenticate, requirePermission('cyberlab.manage
   }
 });
 
+const FINDING_KINDS = ['fact', 'indicator', 'hypothesis', 'validated_vuln', 'inconclusive', 'false_positive', 'recommendation'] as const;
+const FINDING_SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'] as const;
+const FINDING_STATUSES = ['open', 'acknowledged'] as const;
+
+const FindingListQuerySchema = z.object({
+  kind: z.enum(FINDING_KINDS).optional(),
+  severity: z.enum(FINDING_SEVERITIES).optional(),
+  status: z.enum(FINDING_STATUSES).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// GET /findings — newest job first, optional kind/severity/status filters.
+router.get('/findings', authenticate, requirePermission('cyberlab.view'), validateQuery(FindingListQuerySchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { kind, severity, status, limit, offset } = req.query as unknown as z.infer<typeof FindingListQuerySchema>;
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    for (const [column, value] of [['kind', kind], ['severity', severity], ['status', status]] as const) {
+      if (value) {
+        values.push(value);
+        conditions.push(`${column} = $${values.length}`);
+      }
+    }
+    const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const [rows, totalResult] = await Promise.all([
+      query(
+        `SELECT id, job_id, kind, title, severity, confidence, evidence, asset_ref, status
+           FROM cyberlab_findings${where}
+          ORDER BY job_id, id
+          LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, limit, offset]
+      ),
+      query(`SELECT COUNT(*)::int AS total FROM cyberlab_findings${where}`, values),
+    ]);
+    res.json({
+      success: true,
+      data: {
+        findings: rows.rows,
+        total: totalResult.rows[0]?.total ?? 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /findings/:id/acknowledge — 200 on the open→acknowledged transition,
+// 404 for unknown/malformed/already-acknowledged (audit only on the 200).
+router.post('/findings/:id/acknowledge', authenticate, requirePermission('cyberlab.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    if (!JOB_ID_RE.test(id)) {
+      res.status(404).json({ success: false, error: { message: 'Finding not found', code: 'FINDING_NOT_FOUND' } });
+      return;
+    }
+    const updated = await query(
+      `UPDATE cyberlab_findings SET status = 'acknowledged' WHERE id = $1 AND status = 'open' RETURNING id`,
+      [id]
+    );
+    if (updated.rowCount === 0) {
+      res.status(404).json({ success: false, error: { message: 'Finding not found', code: 'FINDING_NOT_FOUND' } });
+      return;
+    }
+    await audit('cyberlab.finding_acknowledged', req, 'cyberlab_finding', id, 'Finding acknowledged');
+    res.json({ success: true, data: { status: 'acknowledged' } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

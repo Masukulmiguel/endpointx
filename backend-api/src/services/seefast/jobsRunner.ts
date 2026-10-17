@@ -3,6 +3,7 @@ import { query } from '../../config/database';
 import logger from '../../utils/logger';
 import { JOB_OPS, runOperation, JobType, RawRun } from './adapter';
 import { getLimits, SeefastLimits } from './limits';
+import { normalizeJobResult, NewFinding, NormalizeOutcome } from './normalize';
 
 /**
  * In-process job lifecycle runner (no external queue — the repo pattern):
@@ -136,13 +137,13 @@ function parseStdout(stdout: string): unknown {
   }
 }
 
-type FinalOutcome = { status: 'completed' | 'failed' | 'cancelled' | 'partial'; result?: unknown; error?: string | null };
+type FinalOutcome = { status: 'completed' | 'failed' | 'cancelled' | 'partial'; result?: unknown; error?: string | null; rawStdout?: string };
 
 function mapRunToOutcome(raw: RawRun, artifactPath: string): FinalOutcome {
   if (raw.timedOut) return { status: 'failed', error: 'TIMEOUT' };
   if (raw.signal !== null) return { status: 'cancelled' };
   if (raw.truncated) return { status: 'partial', result: { truncated: true } };
-  if (raw.exitCode === 0) return { status: 'completed', result: parseStdout(raw.stdout) };
+  if (raw.exitCode === 0) return { status: 'completed', result: parseStdout(raw.stdout), rawStdout: raw.stdout };
   const detail = raw.stderrTail && raw.stderrTail.trim() ? raw.stderrTail : `engine exited with code ${raw.exitCode}`;
   return { status: 'failed', error: sanitizeErrorMessage(detail, artifactPath) };
 }
@@ -153,17 +154,39 @@ function mapRunToOutcome(raw: RawRun, artifactPath: string): FinalOutcome {
  * split, or a POST /jobs could count the freed slot in between and take it
  * from an older queued job (FIFO starvation). `cancel_requested` wins over
  * the computed outcome — the close watcher is the single decider when a kill
- * lands mid-run. Task 5 hooks the findings normalisation here; today
- * `result` is stored as-is.
+ * lands mid-run. The `completed` path normalises the raw stdout: ok:true
+ * stores `result.summary` and inserts the findings; ok:false (unparsable or
+ * truncated) downgrades the job to `partial` with a note — findings are never
+ * invented from non-JSON output. Cancelled/failed/timeout paths never
+ * normalise. Findings insert is best-effort (logged, never unsticks the
+ * slot lock); promotion runs regardless.
  */
-async function finalize(jobId: string, outcome: FinalOutcome, artifactPath: string | null): Promise<void> {
+async function finalize(jobId: string, outcome: FinalOutcome, artifactPath: string | null, type: JobType): Promise<void> {
   try {
     await withSlotLock(async () => {
       const flag = await query('SELECT cancel_requested FROM cyberlab_jobs WHERE id = $1', [jobId]);
       const cancelRequested = flag.rows[0]?.cancel_requested === true;
-      const status = cancelRequested ? 'cancelled' : outcome.status;
+      let status = cancelRequested ? 'cancelled' : outcome.status;
       const error = status === 'cancelled' ? null : (outcome.error ?? null);
-      const result = status === 'cancelled' ? null : (outcome.result ?? null);
+      let result = status === 'cancelled' ? null : (outcome.result ?? null);
+      let toInsert: NewFinding[] = [];
+
+      if (status === 'completed') {
+        let normalized: NormalizeOutcome;
+        try {
+          normalized = normalizeJobResult(type, outcome.rawStdout ?? '', false);
+        } catch {
+          normalized = { ok: false, reason: 'unparsable' };
+        }
+        if (normalized.ok === false) {
+          status = 'partial';
+          result = { note: `result not normalisable (${normalized.reason}); job downgraded to partial` };
+        } else {
+          result = { summary: normalized.summary };
+          toInsert = normalized.findings;
+        }
+      }
+
       const updated = await query(
         `UPDATE cyberlab_jobs SET status = $2, error = $3, result = $4, finished_at = NOW() WHERE id = $1 AND status = 'running'`,
         [jobId, status, error, result]
@@ -172,6 +195,9 @@ async function finalize(jobId: string, outcome: FinalOutcome, artifactPath: stri
         // Audit only the actual running → cancelled transition.
         await auditJob('cyberlab.job_cancelled', jobId, null, 'Job cancelled during execution');
       }
+      if (updated.rowCount > 0 && toInsert.length > 0) {
+        await insertFindings(jobId, toInsert);
+      }
       await promoteWhileLocked();
     });
   } catch (error) {
@@ -179,6 +205,20 @@ async function finalize(jobId: string, outcome: FinalOutcome, artifactPath: stri
   } finally {
     // The adapter creates no temp files; the Map entry is the only thing to drop.
     runningProcesses.delete(jobId);
+  }
+}
+
+/** Best-effort finding persistence: a failed insert is logged, never fatal. */
+async function insertFindings(jobId: string, findings: NewFinding[]): Promise<void> {
+  for (const finding of findings) {
+    try {
+      await query(
+        'INSERT INTO cyberlab_findings (job_id, kind, title, severity, confidence, evidence) VALUES ($1, $2, $3, $4, $5, $6)',
+        [jobId, finding.kind, finding.title, finding.severity, finding.confidence, finding.evidence]
+      );
+    } catch (error) {
+      logger.warn('cyberlab finding insert failed', { jobId, error: (error as Error).message });
+    }
   }
 }
 
@@ -191,13 +231,13 @@ async function executeJob(jobId: string, type: JobType): Promise<void> {
     );
     artifactPath = pathRows.rows[0]?.storage_path ?? null;
     if (!artifactPath) {
-      await finalize(jobId, { status: 'failed', error: 'artifact for this job no longer exists' }, null);
+      await finalize(jobId, { status: 'failed', error: 'artifact for this job no longer exists' }, null, type);
       return;
     }
 
     const pre = await query('SELECT cancel_requested FROM cyberlab_jobs WHERE id = $1', [jobId]);
     if (pre.rows[0]?.cancel_requested === true) {
-      await finalize(jobId, { status: 'cancelled' }, artifactPath);
+      await finalize(jobId, { status: 'cancelled' }, artifactPath, type);
       return;
     }
 
@@ -213,17 +253,18 @@ async function executeJob(jobId: string, type: JobType): Promise<void> {
       const sanitized = message.includes('SEEFAST_CLI_NOT_CONFIGURED')
         ? 'SEEFAST_CLI_NOT_CONFIGURED'
         : sanitizeErrorMessage(message, artifactPath);
-      await finalize(jobId, { status: 'failed', error: sanitized }, artifactPath);
+      await finalize(jobId, { status: 'failed', error: sanitized }, artifactPath, type);
       return;
     }
 
-    await finalize(jobId, mapRunToOutcome(raw, artifactPath), artifactPath);
+    await finalize(jobId, mapRunToOutcome(raw, artifactPath), artifactPath, type);
   } catch (error) {
     logger.error('cyberlab job execution failed', { jobId, error: (error as Error).message });
     await finalize(
       jobId,
       { status: 'failed', error: sanitizeErrorMessage((error as Error).message || 'job execution failed', artifactPath) },
-      artifactPath
+      artifactPath,
+      type
     );
   } finally {
     // The adapter creates no temp files; the Map entry is the only thing to drop.

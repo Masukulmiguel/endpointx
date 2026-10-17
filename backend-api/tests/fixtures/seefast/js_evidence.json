@@ -1,0 +1,8 @@
+{
+  "module_count": 5,
+  "ipc_count": 2,
+  "native_addon_count": 1,
+  "limitations": [
+    "cobertura parcial de dependências carregadas em runtime"
+  ]
+}

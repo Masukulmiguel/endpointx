@@ -546,7 +546,12 @@ async function main(): Promise<void> {
 
       const finished = await waitForStatus(String(job.id), 'completed');
       assert.strictEqual(finished.status, 'completed');
-      assert.deepStrictEqual(finished.result, { modules: 3, findings: [] }, 'completed result must be the parsed stdout');
+      // Task 5: completed results are normalised — result carries the summary,
+      // no longer the raw parsed stdout (findings live in cyberlab_findings).
+      assert.ok(
+        finished.result !== null && typeof (finished.result as { summary?: unknown }).summary === 'string',
+        `completed result must carry the normalised summary, got ${JSON.stringify(finished.result)}`
+      );
       assert.strictEqual(finished.error, null, 'completed job carries no error');
       assert.ok(finished.finished_at, 'finished_at must be set');
     });
@@ -579,7 +584,11 @@ async function main(): Promise<void> {
 
       completeNextManual({ exitCode: 0, stdout: '{"second":true}' });
       const secondDone = await waitForStatus(String(secondBody.data.job.id), 'completed');
-      assert.deepStrictEqual(secondDone.result, { second: true });
+      // Task 5: completed results are normalised — result carries the summary.
+      assert.ok(
+        secondDone.result !== null && typeof (secondDone.result as { summary?: unknown }).summary === 'string',
+        `completed result must carry the normalised summary, got ${JSON.stringify(secondDone.result)}`
+      );
       assert.strictEqual(auditCount('cyberlab.job_started'), 2, 'job_started audited for the start and the promotion');
     });
 
