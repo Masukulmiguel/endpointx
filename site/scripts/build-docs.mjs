@@ -24,6 +24,10 @@ const UI = {
     copy: 'Copiar',
     empty: 'Nenhum resultado encontrado.',
     langSwitchLabel: 'Ver em English →',
+    navAria: 'Principal',
+    langSwitchAria: 'Idioma',
+    themeToggleAria: 'Alternar tema',
+    menuAria: 'Menu',
     titles: {
       'visao-geral': 'Visão geral da plataforma',
       instalacao: 'Instalação e requisitos',
@@ -41,6 +45,10 @@ const UI = {
     copy: 'Copy',
     empty: 'No results found.',
     langSwitchLabel: 'View in Portuguese →',
+    navAria: 'Main',
+    langSwitchAria: 'Language',
+    themeToggleAria: 'Toggle theme',
+    menuAria: 'Menu',
     titles: {
       'visao-geral': 'Platform overview',
       instalacao: 'Installation and requirements',
@@ -238,6 +246,10 @@ for (const lang of LANGS) {
       next_href: next ? `${prefix}/${next}` : '##none##',
       next_label: escapeHtml(next ? pageTitles[lang][next] || ui.titles[next] : ''),
       copy_label: escapeHtml(ui.copy),
+      nav_aria_label: escapeHtml(ui.navAria),
+      lang_switch_aria_label: escapeHtml(ui.langSwitchAria),
+      theme_toggle_aria_label: escapeHtml(ui.themeToggleAria),
+      menu_aria_label: escapeHtml(ui.menuAria),
       year: String(new Date().getFullYear()),
     })
       .replace(/<a class="docs-prev" href="##none##">[\s\S]*?<\/a>/, '<span></span>')

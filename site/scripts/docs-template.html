@@ -34,7 +34,7 @@
           <img src="/icon.png" alt="" width="30" height="30" />
           <span>Endpoint<span class="x">X</span></span>
         </a>
-        <nav class="nav" aria-label="Principal">
+        <nav class="nav" aria-label="{{nav_aria_label}}">
           <a href="/#platform" data-i18n="nav.platform">Plataforma</a>
           <a href="/#security" data-i18n="nav.security">Segurança</a>
           <a href="/#hermes" data-i18n="nav.hermes">HERMES</a>
@@ -43,15 +43,15 @@
           <a href="/#about" data-i18n="nav.about">Sobre o projecto</a>
         </nav>
         <div class="header-actions">
-          <div class="lang-switch" role="group" aria-label="Idioma">
+          <div class="lang-switch" role="group" aria-label="{{lang_switch_aria_label}}">
             <a href="{{hreflang_pt}}" data-lang-link="pt">PT</a>
             <a href="{{hreflang_en}}" data-lang-link="en">EN</a>
           </div>
-          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="Alternar tema">◐</button>
+          <button type="button" class="icon-btn" data-theme-btn="system" aria-label="{{theme_toggle_aria_label}}">◐</button>
           <a class="btn btn-ghost" href="/login" data-i18n="nav.login">Entrar</a>
           <a class="btn btn-primary" href="/register" data-i18n="nav.register">Aceder à plataforma</a>
         </div>
-        <button class="icon-btn nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+        <button class="icon-btn nav-toggle" aria-label="{{menu_aria_label}}" aria-expanded="false">☰</button>
       </div>
     </header>
 
