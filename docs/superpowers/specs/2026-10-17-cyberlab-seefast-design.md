@@ -12,7 +12,7 @@ O EndpointX ganha um subsistema **Cyber Lab**: investigação técnica, análise
 Regras vinculativas (pedido do utilizador):
 
 1. **Preservar o projecto existente.** Nada de substituir/remover/desactivar funcionalidades actuais; reutilizar auth, RBAC, audit, AI, scheduler, testes e padrões de UI existentes. Nenhuma segunda implementação do que já existe.
-2. **Invisibilidade da proveniência.** O nome/tecnologia original do motor **não aparece em nenhum artefacto público**: nem UI, nem docs do repo, nem relatórios, nem mensagens de erro, nem `package.json`. O motor é tratado como **binário externo fornecido pelo operador** (padrão "caller-supplied"), configurado por env var `SEEFAST_CLI`. Atribuição de licença MIT obrigatória: `THIRD_PARTY_NOTICES` **incluído apenas na imagem Docker interna**, nunca publicado no repositório.
+2. **Invisibilidade da proveniência.** O nome/tecnologia original do motor **não aparece em nenhum artefacto público**: nem UI, nem docs do repo, nem relatórios, nem mensagens de erro, nem `package.json`. O motor é tratado como **binário externo fornecido pelo operador** (padrão "caller-supplied"), configurado por env var `SEEFAST_CLI`. Licença MIT: o motor é executado em serviço (SaaS), **não é distribuído** — não há publicação de atribuição; **se no futuro houver distribuição** da imagem ou dos binários, criar então `THIRD_PARTY_NOTICES` com a atribuição MIT como pré-requisito de distribuição (registado como risco residual na secção 9).
 3. **Estados honestos.** Secções não implementadas mostram `Coming Soon`/`Not Configured`/`Experimental` com explicação; zero métricas inventadas, zero botões que não executam, zero resultados simulados.
 4. **Só análise estática nesta spec.** Nenhum caminho de código executa amostras. O conjunto de operações expostas é estático por construção.
 5. **Zero dependências npm novas** no backend.
@@ -151,7 +151,7 @@ Classificação obrigatória nas conclusões: `fact | indicator | hypothesis | v
 
 - Env var `SEEFAST_CLI` (path absoluto do binário do motor) no Render; sem ela o serviço sobe normalmente e o Cyber Lab mostra `Not Configured`.
 - Motor instalado **fora do repo** (imagem Docker interna ou host); o repo público não contém o nome do motor, scripts de instalação nem dependência npm.
-- `THIRD_PARTY_NOTICES` (atribuição MIT) incluído só na imagem Docker, nunca no repositório.
+- **Risco residual de licença:** como o motor corre em serviço próprio (sem distribuição de cópias), não há obrigação activa de atribuição pública; **antes de qualquer distribuição futura** da imagem/binários, gerar `THIRD_PARTY_NOTICES` com a atribuição MIT (pré-requisito de distribuição, fora do repo até lá).
 - Docs de operação: secção de configuração na documentação interna (`SEEFAST_CLI`, limites, estados) — sem proveniência pública.
 
 ## 10. Fora do âmbito (specs seguintes)
