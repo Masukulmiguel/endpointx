@@ -1,0 +1,759 @@
+/**
+ * RED->GREEN gate for Task 4 — cyberlab jobs runner + lifecycle routes.
+ *
+ * Design notes: same FakePool harness as tests/cyberlabArtifacts.test.ts -
+ * a stubbed pg.Pool in require.cache backed by a small in-memory jobs store,
+ * so createJob/cancelJob/promoteQueued and the four job routes all run over
+ * real SQL semantics (conditional running insert, FIFO promotion, guarded
+ * updates). child_process.execFile is swapped in-place the same way
+ * cyberlabSeefastCore.test.ts does, returning FakeChild handles whose kill()
+ * is the SIGTERM spy; the adapter module itself is replaced via require.cache
+ * with a scripted runOperation (mock de runOperation via require-cache, per
+ * the brief) that still spawns through the *current* execFile, so the
+ * runner's child-capture path is exercised end to end. No engine, no temp
+ * files: the storage dir must stay empty (artifacts persist by design, the
+ * adapter never writes temps — controller ruling 3).
+ * Run: npx tsx tests/cyberlabJobs.test.ts
+ */
+import './testEnv';
+import assert from 'assert';
+import { EventEmitter } from 'events';
+import express from 'express';
+import fs from 'fs';
+import http from 'http';
+import jwt from 'jsonwebtoken';
+import os from 'os';
+import path from 'path';
+import { JWT } from '../src/config/constants';
+import type { JobType, RawRun } from '../src/services/seefast/adapter';
+import type { SeefastLimits } from '../src/services/seefast/limits';
+
+let failed = 0;
+const checkAsync = async (label: string, fn: () => Promise<void>): Promise<void> => {
+  try {
+    await fn();
+    console.log(`  ok  ${label}`);
+  } catch (error) {
+    failed++;
+    console.error(`FAIL  ${label}`);
+    console.error(`      ${(error as Error).message}`);
+  }
+};
+
+// ---- Storage: fresh temp dir (never backend-api/storage) -------------------
+const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberlab-jobs-'));
+process.env.CYBERLAB_STORAGE_DIR = storageDir;
+
+// ---- Fake child_process (in-place, installed before seefast modules load) --
+type FakeChild = EventEmitter & { killCalls: NodeJS.Signals[] };
+
+const fakeChildren: FakeChild[] = [];
+let probeScript: { error: Error | null; stdout: string; stderr: string } = {
+  error: null,
+  stdout: '{"version":"1.0.0"}',
+  stderr: '',
+};
+
+function fakeExecFile(
+  _file: string,
+  args: string[],
+  _options: Record<string, unknown>,
+  callback?: (error: Error | null, stdout: string, stderr: string) => void
+): FakeChild {
+  const child = new EventEmitter() as FakeChild;
+  child.killCalls = [];
+  child.kill = ((signal: NodeJS.Signals = 'SIGTERM') => {
+    child.killCalls.push(signal);
+    setImmediate(() => child.emit('close', null, signal));
+    return true;
+  }) as FakeChild['kill'];
+  fakeChildren.push(child);
+  if (Array.isArray(args) && args[0] === 'capabilities' && callback) {
+    const script = probeScript;
+    setImmediate(() => callback(script.error, script.stdout, script.stderr));
+  }
+  return child;
+}
+
+const cpPath = require.resolve('child_process');
+const cpModule = require(cpPath) as Record<string, unknown>;
+cpModule.execFile = fakeExecFile;
+(require.cache as unknown as Record<string, unknown>)[cpPath] = { exports: cpModule, loaded: true };
+
+// ---- Fake pg: in-memory cyberlab_jobs + cyberlab_artifacts ----------------
+type JobRecord = {
+  id: string;
+  type: string;
+  status: string;
+  target_ref: string | null;
+  params: unknown;
+  plan: unknown;
+  result: unknown;
+  error: string | null;
+  progress: number;
+  cancel_requested: boolean;
+  started_by: string | null;
+  approval_ref: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+const jobsDb = new Map<string, JobRecord>();
+const artifactsDb = new Map<string, { id: string; storage_path: string }>();
+const audits: Array<{ sql: string; params: unknown[] }> = [];
+const sqlCalls: Array<{ sql: string; params: unknown[] }> = [];
+let jobSeq = 0;
+
+const nowStamp = (): string => new Date(Date.UTC(2026, 0, 1) + jobSeq++).toISOString();
+
+const makeJob = (partial: Partial<JobRecord> & Pick<JobRecord, 'type' | 'status' | 'target_ref'>): JobRecord => ({
+  id: `00000000-0000-4000-8000-${String(jobSeq).padStart(12, '0')}`,
+  params: null,
+  plan: null,
+  result: null,
+  error: null,
+  progress: 0,
+  cancel_requested: false,
+  started_by: null,
+  approval_ref: null,
+  created_at: nowStamp(),
+  started_at: null,
+  finished_at: null,
+  ...partial,
+});
+
+const rolePermissions = new Map<string, Record<string, unknown>[]>();
+const setRolePermissions = (roleId: string, codes: string[]): void => {
+  rolePermissions.set(roleId, codes.map((code) => ({ code })));
+};
+
+const respond = (sql: string, params: unknown[] = []) => {
+  if (sql.includes('FROM permissions')) {
+    const rows = rolePermissions.get(String(params[0] ?? '')) ?? [];
+    return { rows, rowCount: rows.length };
+  }
+  if (sql.includes('JOIN users u ON u.id = s.user_id')) {
+    return {
+      rows: [{ expires_at: new Date(Date.now() + 3600e3).toISOString(), is_active: true }],
+      rowCount: 1,
+    };
+  }
+  if (sql.includes('FROM app_settings WHERE key = ANY')) {
+    return { rows: [], rowCount: 0 }; // limits resolve to defaults (maxConcurrentJobs: 1)
+  }
+  if (sql.includes('INSERT INTO audit_logs')) {
+    audits.push({ sql, params });
+    return { rows: [], rowCount: 0 };
+  }
+  if (sql.includes('INSERT INTO cyberlab_artifacts')) {
+    const id = String(params[0]);
+    artifactsDb.set(id, { id, storage_path: path.join(storageDir, `${id}.js`) });
+    return { rows: [{ created_at: nowStamp() }], rowCount: 1 };
+  }
+  if (sql.includes('JOIN cyberlab_artifacts')) {
+    const job = jobsDb.get(String(params[0]));
+    const artifact = job ? artifactsDb.get(job.target_ref ?? '') : undefined;
+    return artifact ? { rows: [{ storage_path: artifact.storage_path }], rowCount: 1 } : { rows: [], rowCount: 0 };
+  }
+  if (sql.includes('FROM cyberlab_artifacts')) {
+    const row = artifactsDb.get(String(params[0]));
+    return row ? { rows: [{ id: row.id }], rowCount: 1 } : { rows: [], rowCount: 0 };
+  }
+  if (sql.includes('INSERT INTO cyberlab_jobs') && sql.includes('WHERE (SELECT COUNT(*)')) {
+    const running = [...jobsDb.values()].filter((j) => j.status === 'running').length;
+    const max = Number(params[3]);
+    if (running >= max) return { rows: [], rowCount: 0 };
+    const row = makeJob({
+      type: String(params[0]),
+      status: 'running',
+      target_ref: String(params[1]),
+      started_by: (params[2] as string | null) ?? null,
+      started_at: nowStamp(),
+    });
+    jobsDb.set(row.id, row);
+    return { rows: [{ ...row }], rowCount: 1 };
+  }
+  if (sql.includes('INSERT INTO cyberlab_jobs')) {
+    const row = makeJob({
+      type: String(params[0]),
+      status: 'queued',
+      target_ref: String(params[1]),
+      started_by: (params[2] as string | null) ?? null,
+    });
+    jobsDb.set(row.id, row);
+    return { rows: [{ ...row }], rowCount: 1 };
+  }
+  if (sql.includes('UPDATE cyberlab_jobs SET cancel_requested')) {
+    const job = jobsDb.get(String(params[0]));
+    if (!job || job.status !== 'running') return { rows: [], rowCount: 0 };
+    job.cancel_requested = true;
+    return { rows: [{ id: job.id }], rowCount: 1 };
+  }
+  if (sql.includes("UPDATE cyberlab_jobs SET status = 'cancelled'")) {
+    const job = jobsDb.get(String(params[0]));
+    if (!job || job.status !== 'queued') return { rows: [], rowCount: 0 };
+    job.status = 'cancelled';
+    job.finished_at = nowStamp();
+    return { rows: [{ id: job.id }], rowCount: 1 };
+  }
+  if (sql.includes("UPDATE cyberlab_jobs SET status = 'running'")) {
+    const job = jobsDb.get(String(params[0]));
+    if (!job || job.status !== 'queued') return { rows: [], rowCount: 0 };
+    job.status = 'running';
+    job.started_at = nowStamp();
+    return { rows: [{ id: job.id }], rowCount: 1 };
+  }
+  if (sql.includes('UPDATE cyberlab_jobs SET status = $2')) {
+    const job = jobsDb.get(String(params[0]));
+    if (!job || job.status !== 'running') return { rows: [], rowCount: 0 };
+    job.status = String(params[1]);
+    job.error = (params[2] as string | null) ?? null;
+    job.result = params[3] ?? null;
+    job.finished_at = nowStamp();
+    return { rows: [{ id: job.id }], rowCount: 1 };
+  }
+  if (sql.includes("FROM cyberlab_jobs WHERE status = 'queued' ORDER BY")) {
+    const oldest = [...jobsDb.values()]
+      .filter((j) => j.status === 'queued')
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))[0];
+    return oldest ? { rows: [{ id: oldest.id, type: oldest.type }], rowCount: 1 } : { rows: [], rowCount: 0 };
+  }
+  if (sql.includes("AS count FROM cyberlab_jobs WHERE status = 'running'")) {
+    const count = [...jobsDb.values()].filter((j) => j.status === 'running').length;
+    return { rows: [{ count }], rowCount: 1 };
+  }
+  if (sql.includes('AS total FROM cyberlab_jobs')) {
+    const statusFilter = sql.includes('WHERE status = $1') ? String(params[0]) : null;
+    const total = [...jobsDb.values()].filter((j) => (statusFilter ? j.status === statusFilter : true)).length;
+    return { rows: [{ total }], rowCount: 1 };
+  }
+  if (sql.includes('FROM cyberlab_jobs') && sql.includes('ORDER BY created_at DESC')) {
+    const statusFilter = sql.includes('WHERE status = $1') ? String(params[0]) : null;
+    const rows = [...jobsDb.values()]
+      .filter((j) => (statusFilter ? j.status === statusFilter : true))
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
+    return { rows, rowCount: rows.length };
+  }
+  if (sql.includes('FROM cyberlab_jobs WHERE id = $1')) {
+    const job = jobsDb.get(String(params[0]));
+    return job ? { rows: [{ ...job }], rowCount: 1 } : { rows: [], rowCount: 0 };
+  }
+  return { rows: [], rowCount: 0 };
+};
+
+const record = (sql: string, params?: unknown[]) => {
+  sqlCalls.push({ sql, params: params ?? [] });
+  return respond(sql, params ?? []);
+};
+
+class FakeClient {
+  query(sql: string, params?: unknown[]) {
+    return Promise.resolve(record(sql, params));
+  }
+  release(): void {
+    /* noop */
+  }
+}
+
+class FakePool {
+  constructor(_cfg: unknown) {}
+  query(sql: string, params?: unknown[]) {
+    return Promise.resolve(record(sql, params));
+  }
+  connect(): Promise<FakeClient> {
+    return Promise.resolve(new FakeClient());
+  }
+  on(): this {
+    return this;
+  }
+  end(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+const pgPath = require.resolve('pg');
+const realPg = require(pgPath) as Record<string, unknown>;
+require.cache[pgPath]!.exports = { ...realPg, Pool: FakePool };
+
+/* eslint-disable @typescript-eslint/no-var-requires */
+const { initDatabase } = require('../src/config/database') as {
+  initDatabase: () => Promise<void>;
+};
+/* eslint-enable @typescript-eslint/no-var-requires */
+
+// ---- Mocked adapter (require-cache), spawned through the current execFile --
+type RunScript =
+  | { kind: 'completed'; stdout?: string }
+  | { kind: 'failed'; stderr?: string }
+  | { kind: 'timeout' }
+  | { kind: 'truncated'; stdout?: string }
+  | { kind: 'await_kill' }
+  | { kind: 'manual' }
+  | { kind: 'throw_cli' };
+
+const runScripts: RunScript[] = [];
+const pendingManual: Array<(raw: Partial<RawRun>) => void> = [];
+
+const completeNextManual = (raw: Partial<RawRun>): void => {
+  const resolveRun = pendingManual.shift();
+  assert.ok(resolveRun, 'no pending manual run to complete');
+  resolveRun(raw);
+};
+
+async function mockRunOperation(type: JobType, artifactPath: string, _limits: SeefastLimits): Promise<RawRun> {
+  const script = runScripts.shift() ?? ({ kind: 'completed' } as RunScript);
+  if (script.kind === 'throw_cli') throw new Error('SEEFAST_CLI_NOT_CONFIGURED');
+  return new Promise<RawRun>((resolve) => {
+    const finish = (partial: Partial<RawRun>): void =>
+      resolve({ exitCode: 0, signal: null, stdout: '', stderrTail: '', truncated: false, timedOut: false, durationMs: 3, ...partial });
+    // Spawn through the *current* execFile so the runner's child-capture wrap
+    // sees this child — cancelJob must SIGTERM the exact process in its Map.
+    const child = (cpModule.execFile as typeof fakeExecFile)(process.env.SEEFAST_CLI || 'cli', [type, artifactPath], {}, undefined);
+    if (script.kind === 'await_kill') {
+      child.once('close', (code: number | null, signal: NodeJS.Signals | null) => finish({ exitCode: code, signal }));
+      return;
+    }
+    if (script.kind === 'manual') {
+      pendingManual.push((raw) => finish(raw));
+      return;
+    }
+    if (script.kind === 'failed') {
+      setImmediate(() => finish({ exitCode: 1, stderrTail: script.stderr ?? 'engine exploded' }));
+      return;
+    }
+    if (script.kind === 'timeout') {
+      setImmediate(() => finish({ exitCode: null, signal: 'SIGTERM', timedOut: true }));
+      return;
+    }
+    if (script.kind === 'truncated') {
+      setImmediate(() => finish({ exitCode: null, truncated: true, stdout: script.stdout ?? 'partial-output' }));
+      return;
+    }
+    setImmediate(() => finish({ exitCode: 0, stdout: script.stdout ?? '{"status":"ok"}' }));
+  });
+}
+
+const adapterPath = require.resolve('../src/services/seefast/adapter');
+const realAdapter = require(adapterPath) as { JOB_OPS: unknown };
+require.cache[adapterPath]!.exports = { ...realAdapter, runOperation: mockRunOperation };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+async function main(): Promise<void> {
+  await initDatabase();
+  const { default: cyberlabRouter } = (await import('../src/routes/cyberlab')) as {
+    default: import('express').Router;
+  };
+  const { authenticate } = await import('../src/middleware/auth');
+
+  const app = express();
+  app.use('/api/cyberlab', authenticate, express.json({ limit: '40mb' }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use('/api/cyberlab', cyberlabRouter);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as { port: number }).port;
+  const base = `http://127.0.0.1:${port}/api/cyberlab`;
+
+  const sessionToken = (id: string, roleId: string, permissions: string[]): string => {
+    setRolePermissions(roleId, permissions);
+    return jwt.sign(
+      {
+        id,
+        email: `${id}@test.local`,
+        role_id: roleId,
+        role_name: 'user',
+        permissions,
+        sid: `${id}-sid-0000-0000-000000000000`.slice(0, 36),
+      },
+      JWT.ACCESS_SECRET,
+      { issuer: JWT.ISSUER, audience: JWT.AUDIENCE, expiresIn: '1h' }
+    );
+  };
+
+  const manageToken = sessionToken('user-manager', 'role-manager', ['cyberlab.manage', 'cyberlab.view']);
+  const viewToken = sessionToken('user-viewer', 'role-viewer', ['cyberlab.view']);
+  const noPermToken = sessionToken('user-none', 'role-none', ['devices.view']);
+
+  const auth = (token: string) => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' });
+  const postJob = (token: string, type: string, artifactId: string) =>
+    fetch(`${base}/jobs`, { method: 'POST', headers: auth(token), body: JSON.stringify({ type, artifactId }) });
+  const getJob = (token: string, id: string) => fetch(`${base}/jobs/${id}`, { headers: auth(token) });
+  const cancelRoute = (token: string, id: string) =>
+    fetch(`${base}/jobs/${id}/cancel`, { method: 'POST', headers: auth(token) });
+
+  let artifactSeq = 0;
+  const seedArtifact = (): string => {
+    const id = `10000000-0000-4000-8000-${String(++artifactSeq).padStart(12, '0')}`;
+    artifactsDb.set(id, { id, storage_path: path.join(storageDir, `${id}.js`) });
+    return id;
+  };
+
+  const jobInserts = () => sqlCalls.filter((c) => c.sql.includes('INSERT INTO cyberlab_jobs'));
+  const auditCount = (action: string) => audits.filter((a) => a.params[3] === action).length;
+  const resetCounts = (): void => {
+    audits.length = 0;
+    sqlCalls.length = 0;
+  };
+
+  const readJob = async (id: string): Promise<Record<string, unknown>> => {
+    const res = await getJob(manageToken, id);
+    assert.strictEqual(res.status, 200, `get job ${id} expected 200, got ${res.status}`);
+    const body = (await res.json()) as { data: { job: Record<string, unknown> } };
+    return body.data.job;
+  };
+
+  const waitFor = async (label: string, predicate: () => Promise<boolean>, timeoutMs = 3000): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (await predicate()) return;
+      if (Date.now() > deadline) throw new Error(`timeout waiting for ${label}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
+  const waitForStatus = async (id: string, ...statuses: string[]): Promise<Record<string, unknown>> => {
+    let job: Record<string, unknown> = {};
+    await waitFor(`job ${id} in ${statuses.join('|')}`, async () => {
+      job = await readJob(id);
+      return statuses.includes(String(job.status));
+    });
+    return job;
+  };
+
+  try {
+    // ---- RBAC: 403 on all four routes --------------------------------------
+    await checkAsync('test_jobs_routes_enforce_rbac_403', async () => {
+      const artifactId = seedArtifact();
+      const cases = [
+        await postJob(viewToken, 'js_analysis', artifactId),
+        await fetch(`${base}/jobs`, { headers: auth(noPermToken) }),
+        await fetch(`${base}/jobs/00000000-0000-4000-8000-000000000000`, { headers: auth(noPermToken) }),
+        await cancelRoute(viewToken, '00000000-0000-4000-8000-000000000000'),
+      ];
+      for (const res of cases) {
+        assert.strictEqual(res.status, 403, `expected 403, got ${res.status}`);
+        const body = (await res.json()) as { success: boolean; error: { code: string } };
+        assert.strictEqual(body.success, false);
+        assert.strictEqual(body.error.code, 'AUTH_PERMISSION_DENIED', JSON.stringify(body));
+      }
+    });
+
+    // ---- Provider gate (controller ruling 1): no job INSERT when unusable --
+    await checkAsync('test_post_job_without_provider_is_400_with_no_insert', async () => {
+      resetCounts();
+      delete process.env.SEEFAST_CLI;
+      const res = await postJob(manageToken, 'js_analysis', seedArtifact());
+      assert.strictEqual(res.status, 400, `expected 400, got ${res.status}`);
+      const body = (await res.json()) as { success: boolean; error: { code: string } };
+      assert.strictEqual(body.success, false, JSON.stringify(body));
+      assert.strictEqual(body.error.code, 'PROVIDER_NOT_CONFIGURED', JSON.stringify(body));
+      assert.strictEqual(jobInserts().length, 0, 'provider gate must never INSERT a job');
+    });
+
+    await checkAsync('test_post_job_with_failing_probe_is_400_with_no_insert', async () => {
+      resetCounts();
+      process.env.SEEFAST_CLI = 'C:\\engine\\seefast-cli.exe';
+      probeScript = { error: new Error('probe refused'), stdout: '', stderr: 'probe refused' };
+      const res = await postJob(manageToken, 'js_analysis', seedArtifact());
+      probeScript = { error: null, stdout: '{"version":"1.0.0"}', stderr: '' };
+      assert.strictEqual(res.status, 400, `expected 400, got ${res.status}`);
+      const body = (await res.json()) as { error: { code: string } };
+      assert.strictEqual(body.error.code, 'PROVIDER_NOT_CONFIGURED', JSON.stringify(body));
+      assert.strictEqual(jobInserts().length, 0, 'failed probe must never INSERT a job');
+    });
+
+    // ---- Type / artifact validation -----------------------------------------
+    await checkAsync('test_post_job_unsupported_type_is_400_with_no_insert', async () => {
+      resetCounts();
+      process.env.SEEFAST_CLI = 'C:\\engine\\seefast-cli.exe';
+      const res = await postJob(manageToken, 'shell_exec', seedArtifact());
+      assert.strictEqual(res.status, 400, `expected 400, got ${res.status}`);
+      const body = (await res.json()) as { error: { code: string } };
+      assert.strictEqual(body.error.code, 'UNSUPPORTED_OPERATION', JSON.stringify(body));
+      assert.strictEqual(jobInserts().length, 0, 'invalid type must never INSERT');
+    });
+
+    await checkAsync('test_post_job_missing_artifact_is_404_with_no_insert', async () => {
+      resetCounts();
+      const res = await postJob(manageToken, 'js_analysis', '99999999-9999-4999-8999-999999999999');
+      assert.strictEqual(res.status, 404, `expected 404, got ${res.status}`);
+      const body = (await res.json()) as { error: { code: string } };
+      assert.strictEqual(body.error.code, 'ARTIFACT_NOT_FOUND', JSON.stringify(body));
+      assert.strictEqual(jobInserts().length, 0, 'missing artifact must never INSERT');
+    });
+
+    // ---- Lifecycle: running → completed ------------------------------------
+    await checkAsync('test_job_starts_running_and_completes_with_raw_result', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'completed', stdout: '{"modules":3,"findings":[]}' });
+      const artifactId = seedArtifact();
+      const res = await postJob(manageToken, 'js_analysis', artifactId);
+      assert.strictEqual(res.status, 201, `expected 201, got ${res.status}`);
+      const body = (await res.json()) as {
+        success: boolean;
+        data: { job: Record<string, unknown>; started: boolean };
+      };
+      assert.strictEqual(body.success, true, JSON.stringify(body));
+      const { job, started } = body.data;
+      assert.strictEqual(started, true, 'first job with a free slot must start immediately');
+      assert.strictEqual(job.status, 'running');
+      assert.ok(UUID_RE.test(String(job.id)), `job id must be a uuid: ${job.id}`);
+      assert.strictEqual(job.artifact_id, artifactId, 'job must reference the uploaded artifact');
+      assert.ok(job.started_at, 'started_at must be set on the running insert');
+      assert.ok(!JSON.stringify(body.data).includes('storage_path'), 'storage_path must never leak');
+
+      const startedAudits = audits.filter((a) => a.params[3] === 'cyberlab.job_started');
+      assert.strictEqual(startedAudits.length, 1, 'exactly one cyberlab.job_started audit on start');
+      assert.strictEqual(startedAudits[0].params[5], job.id, 'audit target_id must be the job id');
+
+      const finished = await waitForStatus(String(job.id), 'completed');
+      assert.strictEqual(finished.status, 'completed');
+      assert.deepStrictEqual(finished.result, { modules: 3, findings: [] }, 'completed result must be the parsed stdout');
+      assert.strictEqual(finished.error, null, 'completed job carries no error');
+      assert.ok(finished.finished_at, 'finished_at must be set');
+    });
+
+    // ---- Concurrency 1 FIFO: 2nd queues, promotion on completion -----------
+    await checkAsync('test_concurrency_one_second_job_queues_and_promotes_fifo', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'manual' }, { kind: 'manual' });
+      const artifactId = seedArtifact();
+
+      const first = await postJob(manageToken, 'go_binary', artifactId);
+      const firstBody = (await first.json()) as { data: { job: Record<string, unknown>; started: boolean } };
+      assert.strictEqual(first.status, 201);
+      assert.strictEqual(firstBody.data.started, true);
+      assert.strictEqual(firstBody.data.job.status, 'running');
+
+      const second = await postJob(manageToken, 'rust_binary', artifactId);
+      const secondBody = (await second.json()) as { data: { job: Record<string, unknown>; started: boolean } };
+      assert.strictEqual(second.status, 201);
+      assert.strictEqual(secondBody.data.started, false, 'second job must not start while a slot is taken');
+      assert.strictEqual(secondBody.data.job.status, 'queued');
+
+      completeNextManual({ exitCode: 0, stdout: '{"first":true}' });
+      const firstDone = await waitForStatus(String(firstBody.data.job.id), 'completed');
+      assert.strictEqual(firstDone.status, 'completed');
+
+      const promoted = await waitForStatus(String(secondBody.data.job.id), 'running', 'completed');
+      assert.strictEqual(promoted.status, 'running', 'oldest queued job must be promoted to running on completion');
+      assert.ok(promoted.started_at, 'promoted job must carry started_at');
+
+      completeNextManual({ exitCode: 0, stdout: '{"second":true}' });
+      const secondDone = await waitForStatus(String(secondBody.data.job.id), 'completed');
+      assert.deepStrictEqual(secondDone.result, { second: true });
+      assert.strictEqual(auditCount('cyberlab.job_started'), 2, 'job_started audited for the start and the promotion');
+    });
+
+    // ---- Review Focus 2: truly simultaneous starts must still split 1+1 ---
+    await checkAsync('test_two_simultaneous_starts_yield_one_running_one_queued', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'manual' }, { kind: 'manual' });
+      const artifactId = seedArtifact();
+
+      const [resA, resB] = await Promise.all([
+        postJob(manageToken, 'js_analysis', artifactId),
+        postJob(manageToken, 'go_binary', artifactId),
+      ]);
+      assert.strictEqual(resA.status, 201, `expected 201, got ${resA.status}`);
+      assert.strictEqual(resB.status, 201, `expected 201, got ${resB.status}`);
+      const bodyA = (await resA.json()) as { data: { job: Record<string, unknown>; started: boolean } };
+      const bodyB = (await resB.json()) as { data: { job: Record<string, unknown>; started: boolean } };
+
+      const outcomes = [bodyA, bodyB].map((b) => ({ started: b.data.started, status: b.data.job.status }));
+      assert.ok(
+        outcomes.filter((o) => o.started && o.status === 'running').length === 1 &&
+          outcomes.filter((o) => !o.started && o.status === 'queued').length === 1,
+        `2 simultaneous starts must split 1 running + 1 queued, got ${JSON.stringify(outcomes)}`
+      );
+
+      const startedJob = bodyA.data.started ? bodyA.data.job : bodyB.data.job;
+      const queuedJob = bodyA.data.started ? bodyB.data.job : bodyA.data.job;
+
+      await waitFor('started job to reach runOperation', async () => pendingManual.length === 1);
+      completeNextManual({ exitCode: 0, stdout: '{"first":true}' });
+      const promoted = await waitForStatus(String(queuedJob.id), 'running', 'completed');
+      assert.notStrictEqual(promoted.status, 'queued', 'the queued twin must be promoted once the slot frees');
+      await waitFor('promoted job to reach runOperation', async () => pendingManual.length === 1);
+      completeNextManual({ exitCode: 0, stdout: '{"second":true}' });
+      await waitForStatus(String(startedJob.id), 'completed');
+      await waitForStatus(String(queuedJob.id), 'completed');
+      assert.strictEqual(auditCount('cyberlab.job_started'), 2, 'start + promotion both audited');
+    });
+
+    // ---- Cancel running: SIGTERM to the exact child, close decides ---------
+    await checkAsync('test_cancel_running_sigterms_child_and_finalises_cancelled', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'await_kill' });
+      const artifactId = seedArtifact();
+      const childrenBefore = fakeChildren.length;
+      const created = await postJob(manageToken, 'js_analysis', artifactId);
+      const createdBody = (await created.json()) as { data: { job: Record<string, unknown> } };
+      const jobId = String(createdBody.data.job.id);
+      await waitForStatus(jobId, 'running');
+      await waitFor('runOperation to spawn the child', async () => fakeChildren.length > childrenBefore);
+
+      const res = await cancelRoute(manageToken, jobId);
+      assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+      const body = (await res.json()) as { success: boolean; data: { status: string } };
+      assert.strictEqual(body.data.status, 'cancelled', JSON.stringify(body));
+
+      await waitFor('kill spy to record SIGTERM', async () =>
+        fakeChildren.slice(childrenBefore).some((c) => c.killCalls.length > 0));
+      const child = fakeChildren[fakeChildren.length - 1];
+      assert.deepStrictEqual(child.killCalls, ['SIGTERM'], 'cancel must SIGTERM the exact ChildProcess from the Map');
+
+      const cancelled = await waitForStatus(jobId, 'cancelled');
+      assert.strictEqual(cancelled.status, 'cancelled');
+      assert.strictEqual(cancelled.error, null);
+      assert.ok(cancelled.finished_at, 'cancelled job must be finished');
+      assert.strictEqual(auditCount('cyberlab.job_cancelled'), 1, 'exactly one cyberlab.job_cancelled audit on the transition');
+      assert.deepStrictEqual(fs.readdirSync(storageDir), [], 'cancel must leave no temp files behind (ruling 3)');
+    });
+
+    // ---- Cancel queued: direct transition, no kill -------------------------
+    await checkAsync('test_cancel_queued_cancels_directly_without_kill', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'manual' }, { kind: 'manual' });
+      const artifactId = seedArtifact();
+      const runningBody = (await (await postJob(manageToken, 'js_analysis', artifactId)).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const queuedBody = (await (await postJob(manageToken, 'js_analysis', artifactId)).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      assert.strictEqual(queuedBody.data.job.status, 'queued');
+      // Wait until the running job actually reached runOperation: only then is
+      // its child spawned, so any NEW child after this point would be the
+      // queued job executing — which it must never do.
+      await waitFor('running job to reach runOperation', async () => pendingManual.length === 1);
+      const childrenBefore = fakeChildren.length;
+
+      const res = await cancelRoute(manageToken, String(queuedBody.data.job.id));
+      assert.strictEqual(res.status, 200);
+      const body = (await res.json()) as { data: { status: string } };
+      assert.strictEqual(body.data.status, 'cancelled');
+
+      const cancelled = await readJob(String(queuedBody.data.job.id));
+      assert.strictEqual(cancelled.status, 'cancelled', 'queued job must cancel directly');
+      assert.ok(cancelled.finished_at);
+      assert.strictEqual(fakeChildren.length, childrenBefore, 'cancelling a queued job must not spawn/kill anything');
+      assert.strictEqual(auditCount('cyberlab.job_cancelled'), 1, 'one audit for the queued transition');
+      assert.strictEqual(pendingManual.length, 1, 'the queued job must never have started executing');
+      assert.strictEqual(runScripts.length, 1, 'the queued job must not have consumed its run script');
+      runScripts.pop(); // drop the cancelled job's unused script so later tests stay aligned
+
+      completeNextManual({ exitCode: 0, stdout: '{"ok":true}' });
+      await waitForStatus(String(runningBody.data.job.id), 'completed');
+    });
+
+    // ---- Cancel finished / unknown ------------------------------------------
+    await checkAsync('test_cancel_finished_job_is_409_and_unknown_is_404', async () => {
+      runScripts.push({ kind: 'completed' });
+      const artifactId = seedArtifact();
+      const body = (await (await postJob(manageToken, 'js_analysis', artifactId)).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const jobId = String(body.data.job.id);
+      await waitForStatus(jobId, 'completed');
+
+      const finished = await cancelRoute(manageToken, jobId);
+      assert.strictEqual(finished.status, 409, `expected 409, got ${finished.status}`);
+      const finishedBody = (await finished.json()) as { error: { code: string } };
+      assert.strictEqual(finishedBody.error.code, 'ALREADY_FINISHED', JSON.stringify(finishedBody));
+
+      const missing = await cancelRoute(manageToken, '99999999-9999-4999-8999-999999999999');
+      assert.strictEqual(missing.status, 404, `expected 404, got ${missing.status}`);
+      const missingBody = (await missing.json()) as { error: { code: string } };
+      assert.strictEqual(missingBody.error.code, 'JOB_NOT_FOUND', JSON.stringify(missingBody));
+    });
+
+    // ---- Timeout / truncated / failure sanitisation -------------------------
+    await checkAsync('test_timeout_marks_failed_with_timeout_error', async () => {
+      runScripts.push({ kind: 'timeout' });
+      const body = (await (await postJob(manageToken, 'js_analysis', seedArtifact())).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const job = await waitForStatus(String(body.data.job.id), 'failed');
+      assert.strictEqual(job.status, 'failed');
+      assert.strictEqual(job.error, 'TIMEOUT', `timeout must store error TIMEOUT, got ${JSON.stringify(job.error)}`);
+    });
+
+    await checkAsync('test_truncated_run_marks_partial', async () => {
+      runScripts.push({ kind: 'truncated' });
+      const body = (await (await postJob(manageToken, 'go_binary', seedArtifact())).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const job = await waitForStatus(String(body.data.job.id), 'partial');
+      assert.strictEqual(job.status, 'partial');
+      assert.deepStrictEqual(job.result, { truncated: true }, 'partial result must carry truncated=true');
+    });
+
+    await checkAsync('test_failed_run_error_is_sanitised_and_capped', async () => {
+      const cli = 'C:\\engine\\seefast-cli.exe';
+      process.env.SEEFAST_CLI = cli;
+      const artifactId = seedArtifact();
+      const storagePath = artifactsDb.get(artifactId)!.storage_path;
+      const leaky = `engine failed at ${cli} while reading ${storagePath}: ${'x'.repeat(700)}`;
+      runScripts.push({ kind: 'failed', stderr: leaky });
+      const body = (await (await postJob(manageToken, 'js_analysis', artifactId)).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const job = await waitForStatus(String(body.data.job.id), 'failed');
+      const error = String(job.error);
+      assert.ok(error.length <= 500, `error must be ≤500 chars, got ${error.length}`);
+      assert.ok(!error.includes(cli), `error must not leak the engine path: ${error.slice(0, 120)}`);
+      assert.ok(!error.includes(storagePath), `error must not leak the storage path: ${error.slice(0, 120)}`);
+      assert.ok(error.includes('SEEFAST_CLI'), 'engine path must be redacted to SEEFAST_CLI');
+    });
+
+    await checkAsync('test_adapter_not_configured_maps_to_failed_not_raw_throw', async () => {
+      runScripts.push({ kind: 'throw_cli' });
+      const body = (await (await postJob(manageToken, 'js_analysis', seedArtifact())).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const job = await waitForStatus(String(body.data.job.id), 'failed');
+      assert.strictEqual(job.status, 'failed');
+      assert.strictEqual(job.error, 'SEEFAST_CLI_NOT_CONFIGURED', 'defensive mapping must sanitise the adapter throw');
+    });
+
+    // ---- List route ---------------------------------------------------------
+    await checkAsync('test_job_list_filters_by_status_and_returns_total', async () => {
+      const all = await fetch(`${base}/jobs?limit=100`, { headers: auth(viewToken) });
+      assert.strictEqual(all.status, 200, `expected 200, got ${all.status}`);
+      const allBody = (await all.json()) as { data: { jobs: Record<string, unknown>[]; total: number } };
+      assert.ok(allBody.data.jobs.length >= 6, `expected the accumulated jobs, got ${allBody.data.jobs.length}`);
+      assert.strictEqual(allBody.data.total, allBody.data.jobs.length, 'total must match the unfiltered row count');
+
+      const failedOnly = await fetch(`${base}/jobs?status=failed&limit=100`, { headers: auth(viewToken) });
+      const failedBody = (await failedOnly.json()) as { data: { jobs: Record<string, unknown>[]; total: number } };
+      assert.ok(failedBody.data.jobs.length >= 2, 'there must be failed jobs from earlier tests');
+      assert.ok(
+        failedBody.data.jobs.every((j) => j.status === 'failed'),
+        'status filter must return only failed jobs'
+      );
+      assert.strictEqual(failedBody.data.total, failedBody.data.jobs.length);
+
+      const bad = await fetch(`${base}/jobs?status=exploded`, { headers: auth(viewToken) });
+      assert.strictEqual(bad.status, 400, `invalid status must be 400, got ${bad.status}`);
+    });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    fs.rmSync(storageDir, { recursive: true, force: true });
+    delete process.env.CYBERLAB_STORAGE_DIR;
+    delete process.env.SEEFAST_CLI;
+  }
+
+  if (failed > 0) {
+    console.error(`\n${failed} test(s) FAILED`);
+    process.exit(1);
+  }
+  console.log('\nALL PASS');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

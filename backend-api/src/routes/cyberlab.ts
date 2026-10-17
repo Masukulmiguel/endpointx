@@ -9,6 +9,8 @@ import { requirePermission } from '../middleware/rbac';
 import { validate, validateQuery } from '../middleware/validation';
 import { probeCapabilities, ProviderStatus } from '../services/seefast/capabilities';
 import { getLimits } from '../services/seefast/limits';
+import type { JobType } from '../services/seefast/adapter';
+import { cancelJob, createJob, JobsRunnerError } from '../services/seefast/jobsRunner';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -147,6 +149,150 @@ router.get('/artifacts', authenticate, requirePermission('cyberlab.view'), valid
         total: totalResult.rows[0]?.total ?? 0,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const JOB_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const JOB_COLUMNS = 'id, type, status, target_ref, progress, cancel_requested, error, result, created_at, started_at, finished_at';
+
+// Job payload: target_ref becomes artifact_id; internal columns never leave.
+function publicJob(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    artifact_id: row.target_ref ?? null,
+    progress: row.progress,
+    cancel_requested: row.cancel_requested,
+    error: row.error ?? null,
+    result: row.result ?? null,
+    created_at: row.created_at,
+    started_at: row.started_at ?? null,
+    finished_at: row.finished_at ?? null,
+  };
+}
+
+const JobCreateSchema = z.object({
+  type: z.string().min(1).max(50),
+  artifactId: z.string().min(1).max(100),
+});
+
+// POST /jobs — the provider gate runs first: a job must never be created in
+// a state that cannot run (not_configured and probe_failed alike → 400 with
+// no INSERT). The runner then decides running vs queued against the
+// concurrency limit.
+router.post('/jobs', authenticate, requirePermission('cyberlab.manage'), validate(JobCreateSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { type, artifactId } = req.body as z.infer<typeof JobCreateSchema>;
+    const provider: ProviderStatus = await probeCapabilities();
+    if (!provider.available) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: `Engine provider is not available (${provider.reason ?? 'unavailable'})`,
+          code: 'PROVIDER_NOT_CONFIGURED',
+        },
+      });
+      return;
+    }
+
+    const { job, started } = await createJob({ type: type as JobType, artifactId }, req.user?.id ?? null);
+    res.status(201).json({
+      success: true,
+      data: { job: publicJob(job as unknown as Record<string, unknown>), started },
+    });
+  } catch (error) {
+    if (error instanceof JobsRunnerError) {
+      res.status(error.status).json({
+        success: false,
+        error: { message: error.message, code: error.code },
+      });
+      return;
+    }
+    next(error);
+  }
+});
+
+const JobListQuerySchema = z.object({
+  status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'partial']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// GET /jobs — newest first, optional status filter.
+router.get('/jobs', authenticate, requirePermission('cyberlab.view'), validateQuery(JobListQuerySchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { status, limit, offset } = req.query as unknown as z.infer<typeof JobListQuerySchema>;
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (status) {
+      values.push(status);
+      conditions.push(`status = $${values.length}`);
+    }
+    const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const [rows, totalResult] = await Promise.all([
+      query(
+        `SELECT ${JOB_COLUMNS} FROM cyberlab_jobs${where} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, limit, offset]
+      ),
+      query(`SELECT COUNT(*)::int AS total FROM cyberlab_jobs${where}`, values),
+    ]);
+    res.json({
+      success: true,
+      data: {
+        jobs: rows.rows.map(publicJob),
+        total: totalResult.rows[0]?.total ?? 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /jobs/:id — a malformed uuid can never reach pg (and never 500s).
+router.get('/jobs/:id', authenticate, requirePermission('cyberlab.view'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    if (!JOB_ID_RE.test(id)) {
+      res.status(404).json({ success: false, error: { message: 'Job not found', code: 'JOB_NOT_FOUND' } });
+      return;
+    }
+    const result = await query(`SELECT ${JOB_COLUMNS} FROM cyberlab_jobs WHERE id = $1`, [id]);
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ success: false, error: { message: 'Job not found', code: 'JOB_NOT_FOUND' } });
+      return;
+    }
+    res.json({ success: true, data: { job: publicJob(row) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /jobs/:id/cancel — 200 { status } | 404 unknown | 409 already finished.
+router.post('/jobs/:id/cancel', authenticate, requirePermission('cyberlab.manage'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    if (!JOB_ID_RE.test(id)) {
+      res.status(404).json({ success: false, error: { message: 'Job not found', code: 'JOB_NOT_FOUND' } });
+      return;
+    }
+    const outcome = await cancelJob(id, req.user?.id ?? null);
+    if (outcome === 'not_found') {
+      res.status(404).json({ success: false, error: { message: 'Job not found', code: 'JOB_NOT_FOUND' } });
+      return;
+    }
+    if (outcome === 'already_finished') {
+      res.status(409).json({
+        success: false,
+        error: { message: 'Job already finished', code: 'ALREADY_FINISHED' },
+      });
+      return;
+    }
+    res.json({ success: true, data: { status: outcome } });
   } catch (error) {
     next(error);
   }
