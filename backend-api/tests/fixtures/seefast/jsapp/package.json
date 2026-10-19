@@ -1,0 +1,7 @@
+{
+  "name": "cyberlab-fixture-jsapp",
+  "version": "0.0.0",
+  "private": true,
+  "main": "main.js",
+  "description": "Author-written fixture mini-app for engine integration runs (static-analysis input, never executed)."
+}
