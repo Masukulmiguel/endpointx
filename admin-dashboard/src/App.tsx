@@ -31,6 +31,10 @@ import CyberLabOverview from './pages/cyberlab/CyberLabOverview';
 import CyberLabSoon from './pages/cyberlab/CyberLabSoon';
 import CyberLabReadonly from './pages/cyberlab/CyberLabReadonly';
 import CyberLabPlaceholder from './pages/cyberlab/CyberLabPlaceholder';
+import CyberLabJobs from './pages/cyberlab/CyberLabJobs';
+import CyberLabJobDetail from './pages/cyberlab/CyberLabJobDetail';
+import CyberLabFindings from './pages/cyberlab/CyberLabFindings';
+import CyberLabEvidence from './pages/cyberlab/CyberLabEvidence';
 import ContactosPage from './pages/ContactosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -349,11 +353,7 @@ export default function App() {
           path="cyberlab/findings"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.findings"
-                state="available"
-                bodyKey="cyberlab.placeholder.available"
-              />
+              <CyberLabFindings />
             </PermissionGate>
           }
         />
@@ -361,11 +361,7 @@ export default function App() {
           path="cyberlab/evidence"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.evidence"
-                state="experimental"
-                bodyKey="cyberlab.placeholder.experimental"
-              />
+              <CyberLabEvidence />
             </PermissionGate>
           }
         />
@@ -373,11 +369,15 @@ export default function App() {
           path="cyberlab/jobs"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.jobs"
-                state="available"
-                bodyKey="cyberlab.placeholder.available"
-              />
+              <CyberLabJobs />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/jobs/:id"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabJobDetail />
             </PermissionGate>
           }
         />
