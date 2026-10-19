@@ -8,7 +8,8 @@ import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { validate, validateQuery } from '../middleware/validation';
 import { probeCapabilities, ProviderStatus } from '../services/seefast/capabilities';
-import { getLimits } from '../services/seefast/limits';
+import { getLimits, invalidateLimitsCache } from '../services/seefast/limits';
+import { getSettingsMap, setSetting } from '../services/settings';
 import type { JobType } from '../services/seefast/adapter';
 import { cancelJob, createJob, JobsRunnerError } from '../services/seefast/jobsRunner';
 import logger from '../utils/logger';
@@ -364,6 +365,189 @@ router.post('/findings/:id/acknowledge', authenticate, requirePermission('cyberl
     }
     await audit('cyberlab.finding_acknowledged', req, 'cyberlab_finding', id, 'Finding acknowledged');
     res.json({ success: true, data: { status: 'acknowledged' } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const ExportQuerySchema = z.object({
+  format: z.enum(['json', 'csv']).default('json'),
+});
+
+const FINDING_EXPORT_COLUMNS = 'id, job_id, kind, title, severity, confidence, evidence, asset_ref, status';
+const FINDING_CSV_HEADERS = ['ID', 'Job ID', 'Kind', 'Title', 'Severity', 'Confidence', 'Status', 'Asset Ref', 'Evidence'];
+
+// GET /jobs/:id/export — JSON carries the complete object (job + findings);
+// CSV carries only the findings, quoted cell by cell exactly like reports.ts.
+// The gate is cyberlab.export, not view: an export is a data-egress action.
+router.get('/jobs/:id/export', authenticate, requirePermission('cyberlab.export'), validateQuery(ExportQuerySchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { format } = req.query as unknown as z.infer<typeof ExportQuerySchema>;
+    if (!JOB_ID_RE.test(id)) {
+      res.status(404).json({ success: false, error: { message: 'Job not found', code: 'JOB_NOT_FOUND' } });
+      return;
+    }
+    const jobResult = await query(`SELECT ${JOB_COLUMNS} FROM cyberlab_jobs WHERE id = $1`, [id]);
+    const jobRow = jobResult.rows[0];
+    if (!jobRow) {
+      res.status(404).json({ success: false, error: { message: 'Job not found', code: 'JOB_NOT_FOUND' } });
+      return;
+    }
+    const findingsResult = await query(
+      `SELECT ${FINDING_EXPORT_COLUMNS} FROM cyberlab_findings WHERE job_id = $1 ORDER BY id`,
+      [id]
+    );
+
+    // Exports are egress: they belong in the audit trail the /audit route serves.
+    await audit('cyberlab.exported', req, 'cyberlab_job', id, `Job exported as ${format.toUpperCase()}`);
+
+    if (format === 'csv') {
+      const rows = findingsResult.rows.map((finding: Record<string, unknown>) => [
+        finding.id,
+        finding.job_id,
+        finding.kind,
+        finding.title,
+        finding.severity ?? '',
+        finding.confidence ?? '',
+        finding.status,
+        finding.asset_ref ?? '',
+        finding.evidence ? JSON.stringify(finding.evidence) : '',
+      ]);
+      const csvContent = [FINDING_CSV_HEADERS, ...rows]
+        .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="cyberlab-job-${id}-findings.csv"`);
+      res.send(csvContent);
+      return;
+    }
+
+    res.json({ success: true, data: { job: publicJob(jobRow), findings: findingsResult.rows } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const AuditListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// GET /audit — the cyberlab slice of the global audit trail. The LIKE filter
+// is the whole contract: hermes_* and every other subsystem stay out.
+router.get('/audit', authenticate, requirePermission('cyberlab.view'), validateQuery(AuditListQuerySchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { limit, offset } = req.query as unknown as z.infer<typeof AuditListQuerySchema>;
+    const [entries, totalResult] = await Promise.all([
+      query(
+        `SELECT id, user_id, user_email, action, target_type, target_id, description, ip_address, created_at
+           FROM audit_logs
+          WHERE action LIKE 'cyberlab.%'
+          ORDER BY created_at DESC
+          LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      ),
+      query(`SELECT COUNT(*)::int AS total FROM audit_logs WHERE action LIKE 'cyberlab.%'`, []),
+    ]);
+    res.json({
+      success: true,
+      data: {
+        entries: entries.rows,
+        total: totalResult.rows[0]?.total ?? 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Settings keys and bounds for the operator-editable layer of getLimits().
+// Precedence stays env CYBERLAB_* > settings cyberlab_* > defaults: these
+// keys only ever move the settings layer.
+const CONFIG_SETTING_KEYS = {
+  maxArtifactMb: 'cyberlab_max_artifact_mb',
+  jobTimeoutS: 'cyberlab_job_timeout_s',
+  maxConcurrent: 'cyberlab_max_concurrent',
+} as const;
+
+const CONFIG_BOUNDS = {
+  maxArtifactMb: { min: 1, max: 50 },
+  jobTimeoutS: { min: 5, max: 600 },
+  maxConcurrent: { min: 1, max: 4 },
+} as const;
+
+// Effective limits plus the stored overrides: GET returns what runs today,
+// the overrides show what an operator last wrote (null = not set).
+async function configPayload(): Promise<Record<string, unknown>> {
+  const [limits, overrides] = await Promise.all([
+    getLimits(),
+    getSettingsMap(Object.values(CONFIG_SETTING_KEYS)),
+  ]);
+  return {
+    limits: {
+      max_artifact_mb: Math.floor(limits.maxArtifactBytes / (1024 * 1024)),
+      job_timeout_s: Math.round(limits.jobTimeoutMs / 1000),
+      max_concurrent: limits.maxConcurrentJobs,
+    },
+    overrides: {
+      cyberlab_max_artifact_mb: overrides[CONFIG_SETTING_KEYS.maxArtifactMb] ?? null,
+      cyberlab_job_timeout_s: overrides[CONFIG_SETTING_KEYS.jobTimeoutS] ?? null,
+      cyberlab_max_concurrent: overrides[CONFIG_SETTING_KEYS.maxConcurrent] ?? null,
+    },
+    bounds: {
+      max_artifact_mb: CONFIG_BOUNDS.maxArtifactMb,
+      job_timeout_s: CONFIG_BOUNDS.jobTimeoutS,
+      max_concurrent: CONFIG_BOUNDS.maxConcurrent,
+    },
+  };
+}
+
+// GET /config — effective limits (what getLimits resolves right now) plus the
+// settings overrides Task 11's UI edits.
+router.get('/config', authenticate, requirePermission('cyberlab.view'), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: await configPayload() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const ConfigUpdateSchema = z
+  .object({
+    maxArtifactMb: z.coerce.number().int().min(CONFIG_BOUNDS.maxArtifactMb.min).max(CONFIG_BOUNDS.maxArtifactMb.max).optional(),
+    jobTimeoutS: z.coerce.number().int().min(CONFIG_BOUNDS.jobTimeoutS.min).max(CONFIG_BOUNDS.jobTimeoutS.max).optional(),
+    maxConcurrent: z.coerce.number().int().min(CONFIG_BOUNDS.maxConcurrent.min).max(CONFIG_BOUNDS.maxConcurrent.max).optional(),
+  })
+  .refine((body) => body.maxArtifactMb !== undefined || body.jobTimeoutS !== undefined || body.maxConcurrent !== undefined, {
+    message: 'Provide at least one of maxArtifactMb, jobTimeoutS or maxConcurrent',
+  });
+
+// PUT /config — bounds live in the schema, so an out-of-range value is a 400
+// before any write. On success the settings layer moves, the getLimits() cache
+// is dropped and the next GET reflects immediately.
+router.put('/config', authenticate, requirePermission('cyberlab.manage'), validate(ConfigUpdateSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const body = req.body as z.infer<typeof ConfigUpdateSchema>;
+    const writes: Array<[string, string]> = [];
+    if (body.maxArtifactMb !== undefined) writes.push([CONFIG_SETTING_KEYS.maxArtifactMb, String(body.maxArtifactMb)]);
+    if (body.jobTimeoutS !== undefined) writes.push([CONFIG_SETTING_KEYS.jobTimeoutS, String(body.jobTimeoutS)]);
+    if (body.maxConcurrent !== undefined) writes.push([CONFIG_SETTING_KEYS.maxConcurrent, String(body.maxConcurrent)]);
+
+    for (const [key, value] of writes) {
+      await setSetting(key, value, 'Cyber Lab run limit override', req.user?.id);
+    }
+    invalidateLimitsCache();
+
+    await audit(
+      'cyberlab.config_updated',
+      req,
+      'setting',
+      writes.map(([key]) => key).join(','),
+      `Cyber Lab limits updated: ${writes.map(([key, value]) => `${key}=${value}`).join(', ')}`
+    );
+
+    res.json({ success: true, data: await configPayload() });
   } catch (error) {
     next(error);
   }
