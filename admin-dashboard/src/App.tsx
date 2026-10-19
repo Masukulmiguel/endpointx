@@ -27,6 +27,10 @@ import NotificationsPage from './pages/NotificationsPage';
 import HermesPage from './pages/HermesPage';
 import InvestigationPage from './pages/InvestigationPage';
 import OsintPage from './pages/OsintPage';
+import CyberLabOverview from './pages/cyberlab/CyberLabOverview';
+import CyberLabSoon from './pages/cyberlab/CyberLabSoon';
+import CyberLabReadonly from './pages/cyberlab/CyberLabReadonly';
+import CyberLabPlaceholder from './pages/cyberlab/CyberLabPlaceholder';
 import ContactosPage from './pages/ContactosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -262,6 +266,154 @@ export default function App() {
           element={
             <PermissionGate permission="osint.view">
               <OsintPage />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabOverview />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/analyst"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.analyst"
+                state="experimental"
+                bodyKey="cyberlab.placeholder.experimental"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/assets"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabReadonly titleKey="nav.cyberlab.assets" state="not_configured" />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/vulns"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabReadonly
+                titleKey="nav.cyberlab.vulns"
+                state="not_configured"
+                link={{ to: '/cyberlab/findings', labelKey: 'cyberlab.link.findings' }}
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/pentest"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabSoon titleKey="nav.cyberlab.pentest" explanationKey="cyberlab.soon.pentest" />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/re"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.re"
+                state="experimental"
+                bodyKey="cyberlab.placeholder.experimental"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/malware"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabSoon titleKey="nav.cyberlab.malware" explanationKey="cyberlab.soon.malware" />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/network"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabReadonly titleKey="nav.cyberlab.network" state="not_configured" />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/findings"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.findings"
+                state="available"
+                bodyKey="cyberlab.placeholder.available"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/evidence"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.evidence"
+                state="experimental"
+                bodyKey="cyberlab.placeholder.experimental"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/jobs"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.jobs"
+                state="available"
+                bodyKey="cyberlab.placeholder.available"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/integrations"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.integrations"
+                state="experimental"
+                bodyKey="cyberlab.placeholder.experimental"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/audit"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.audit"
+                state="available"
+                bodyKey="cyberlab.placeholder.available"
+              />
+            </PermissionGate>
+          }
+        />
+        <Route
+          path="cyberlab/settings"
+          element={
+            <PermissionGate permission="cyberlab.view">
+              <CyberLabPlaceholder
+                titleKey="nav.cyberlab.settings"
+                state="available"
+                bodyKey="cyberlab.placeholder.available"
+              />
             </PermissionGate>
           }
         />
