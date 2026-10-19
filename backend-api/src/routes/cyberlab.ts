@@ -10,7 +10,8 @@ import { validate, validateQuery } from '../middleware/validation';
 import { probeCapabilities, ProviderStatus } from '../services/seefast/capabilities';
 import { getLimits, invalidateLimitsCache } from '../services/seefast/limits';
 import { getSettingsMap, setSetting } from '../services/settings';
-import type { JobType } from '../services/seefast/adapter';
+import { aiComplete, isOpencodeConfigured } from '../services/opencode';
+import { JOB_OPS, type JobType } from '../services/seefast/adapter';
 import { cancelJob, createJob, JobsRunnerError } from '../services/seefast/jobsRunner';
 import logger from '../utils/logger';
 
@@ -548,6 +549,89 @@ router.put('/config', authenticate, requirePermission('cyberlab.manage'), valida
     );
 
     res.json({ success: true, data: await configPayload() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- AI console: structured analysis plan, never a job --------------------
+
+const PlanRequestSchema = z.object({
+  question: z.string().min(3).max(2000),
+});
+
+// Fixed system prompt (controller ruling): the model only *proposes* analysis
+// steps for the operator's question — it never executes anything, never writes
+// commands and never claims a step already happened — and answers in the
+// strict plan JSON below. Operations are referenced only through the op enum
+// words; nothing else about how they run is described here.
+const PLAN_SYSTEM_PROMPT = [
+  'You are the Cyber Lab analysis planner.',
+  'For the operator question you receive, ONLY propose the analysis steps that would answer it.',
+  'You propose, never execute: do not run anything, do not write commands, do not claim any step already happened.',
+  'Reply with raw JSON only — no markdown fences, no commentary — exactly this shape:',
+  '{"steps":[{"op":"js_analysis"|"go_binary"|"rust_binary","risk":"low"|"medium"|"high","needsApproval":true|false}]}',
+  'op is the analysis operation of the step, risk is how invasive it is (low|medium|high), needsApproval is true when the operator must approve the step before it may run.',
+  'Return the steps in the order they should be submitted.',
+].join('\n');
+
+// Strict output schema: op is constrained to the three JobTypes via the keys
+// of JOB_OPS (never re-declared), risk is the three-level enum, needsApproval
+// is a boolean — and any unknown/extra shape, in a step or in the envelope,
+// makes the whole plan invalid.
+const PlanStepSchema = z
+  .object({
+    op: z.enum(Object.keys(JOB_OPS) as [JobType, ...JobType[]]),
+    risk: z.enum(['low', 'medium', 'high']),
+    needsApproval: z.boolean(),
+  })
+  .strict();
+
+const PlanSchema = z.object({ steps: z.array(PlanStepSchema) }).strict();
+
+// Raw JSON only: fenced or chatty answers are not plans → invalid_plan.
+function parsePlan(text: string): z.infer<typeof PlanSchema> | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const parsed = PlanSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+// POST /ai/plan — propose-only console: no provider or a failed AI call →
+// state 'not_configured' (same not_configured path as routes/hermes.ts /ai),
+// unparseable or schema-invalid output → 'invalid_plan', a strict plan →
+// 'ok' with the normalized steps. The endpoint never writes cyberlab_jobs —
+// proposing is not creating: the client submits each step itself via POST /jobs.
+router.post('/ai/plan', authenticate, requirePermission('cyberlab.view'), validate(PlanRequestSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { question } = req.body as z.infer<typeof PlanRequestSchema>;
+
+    if (!isOpencodeConfigured()) {
+      res.json({ success: true, data: { state: 'not_configured' } });
+      return;
+    }
+
+    let answer: string;
+    try {
+      const result = await aiComplete(question, PLAN_SYSTEM_PROMPT);
+      answer = result.text;
+    } catch (aiError) {
+      logger.warn('CYBERLAB AI plan fell back to not_configured', { error: (aiError as Error).message });
+      res.json({ success: true, data: { state: 'not_configured' } });
+      return;
+    }
+
+    const plan = parsePlan(answer);
+    if (!plan) {
+      res.json({ success: true, data: { state: 'invalid_plan' } });
+      return;
+    }
+
+    res.json({ success: true, data: { state: 'ok', steps: plan.steps } });
   } catch (error) {
     next(error);
   }
