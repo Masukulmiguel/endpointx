@@ -589,6 +589,107 @@ const pt: Dict = {
   'cyberlab.evidence.exportNote':
     'Não existe export global de artefactos — abra um job para exportar os seus findings em JSON/CSV.',
   'cyberlab.evidence.viewJobs': 'Ver jobs',
+  'cyberlab.integrations.subtitle':
+    'Estado real do motor de análise no servidor, lido a cada consulta à API /providers.',
+  'cyberlab.integrations.failedLoad': 'Falha ao carregar o estado das integrações',
+  'cyberlab.integrations.availableBody':
+    'O motor respondeu à sonda e está pronto para executar jobs de análise.',
+  'cyberlab.integrations.versionLabel': 'Versão',
+  'cyberlab.integrations.notConfiguredBody':
+    'O servidor não tem o motor configurado — sem ele nenhum job de análise corre. Para configurar:',
+  'cyberlab.integrations.step1':
+    'Defina a variável de ambiente SEEFAST_CLI no servidor, apontando para o binário do motor de análise.',
+  'cyberlab.integrations.step2': 'Reinicie a API para que a variável tenha efeito.',
+  'cyberlab.integrations.step3':
+    'Volte a esta página e confirme que o estado passa a Disponível, com a versão do motor.',
+  'cyberlab.integrations.probeFailedBody':
+    'A sonda ao binário devolveu um erro. Detalhe devolvido pelo servidor:',
+  'cyberlab.integrations.noDetail': 'O servidor não devolveu detalhe adicional.',
+  'cyberlab.integrations.provenanceNote':
+    'O servidor expõe apenas o estado, a versão e o detalhe sanitizado da sonda — nunca a origem ou o nome próprio do motor.',
+  'cyberlab.settings.title': 'Definições do Cyber Lab',
+  'cyberlab.settings.subtitle':
+    'Limites de execução em vigor agora e as sobreposições guardadas na camada de definições.',
+  'cyberlab.settings.failedLoad': 'Falha ao carregar as definições do Cyber Lab',
+  'cyberlab.settings.effective': 'Limites efectivos',
+  'cyberlab.settings.effectiveHelp': 'Valores aplicados de facto aos jobs criados a partir de agora.',
+  'cyberlab.settings.overrides': 'Sobreposições guardadas',
+  'cyberlab.settings.overrideHelp':
+    'Último valor gravado por um operador (Nenhum = sem sobreposição).',
+  'cyberlab.settings.envPrecedence':
+    'Precedência: variáveis de ambiente CYBERLAB_* > estas definições > valores por omissão do servidor.',
+  'cyberlab.settings.envShadowed':
+    'O valor efectivo difere desta sobreposição — uma variável de ambiente CYBERLAB_* está provavelmente a ter precedência.',
+  'cyberlab.settings.editTitle': 'Alterar limites',
+  'cyberlab.settings.noPermission':
+    'A sua conta não tem a permissão cyberlab.manage — pode consultar os limites mas não os alterar.',
+  'cyberlab.settings.saved': 'Definições guardadas',
+  'cyberlab.settings.saving': 'A guardar…',
+  'cyberlab.settings.noChanges': 'Sem alterações para guardar',
+  'cyberlab.settings.outOfRange': 'Valor fora do intervalo permitido — corrija antes de guardar.',
+  'cyberlab.settings.range': 'Intervalo permitido',
+  'cyberlab.settings.field.maxArtifactMb': 'Tamanho máximo do artefacto',
+  'cyberlab.settings.field.jobTimeoutS': 'Timeout do job',
+  'cyberlab.settings.field.maxConcurrent': 'Jobs simultâneos',
+  'cyberlab.settings.unit.mb': 'MB',
+  'cyberlab.settings.unit.seconds': 's',
+  'cyberlab.settings.unit.jobs': 'job(s)',
+  'cyberlab.audit.title': 'Auditoria do Cyber Lab',
+  'cyberlab.audit.subtitle':
+    'Ações de gestão do Cyber Lab — artefactos, jobs, evidência e definições — da mais recente para a mais antiga.',
+  'cyberlab.audit.date': 'Data',
+  'cyberlab.audit.action': 'Acção',
+  'cyberlab.audit.user': 'Utilizador',
+  'cyberlab.audit.description': 'Descrição',
+  'cyberlab.audit.target': 'Alvo',
+  'cyberlab.audit.ip': 'IP',
+  'cyberlab.audit.system': 'Sistema',
+  'cyberlab.audit.empty': 'Sem registos de auditoria do Cyber Lab',
+  'cyberlab.audit.failedLoad': 'Falha ao carregar a auditoria do Cyber Lab',
+  'cyberlab.audit.total': 'Total de registos',
+  'cyberlab.audit.page': 'Página {page} de {pages}',
+  'cyberlab.audit.prev': 'Anterior',
+  'cyberlab.audit.next': 'Seguinte',
+  'cyberlab.analyst.subtitle':
+    'A IA apenas propõe um plano de análise — nada corre sem o seu comando explícito, passo a passo.',
+  'cyberlab.analyst.artifactTitle': 'Artefacto para os passos',
+  'cyberlab.analyst.artifactHelp':
+    'Os passos do plano analisam um artefacto já carregado. Carregue um ficheiro aqui ou use a secção de Evidência.',
+  'cyberlab.analyst.artifactReady': 'Artefacto pronto',
+  'cyberlab.analyst.upload': 'Carregar artefacto',
+  'cyberlab.analyst.uploading': 'A carregar…',
+  'cyberlab.analyst.uploadFailed': 'Falha ao carregar o artefacto',
+  'cyberlab.analyst.uploadFirst': 'Carregue primeiro um artefacto para poder executar este passo.',
+  'cyberlab.analyst.questionLabel': 'Pergunta do analista',
+  'cyberlab.analyst.proposeOnly':
+    'Modo proposta: o servidor devolve passos sugeridos e nunca executa nada por sua conta.',
+  'cyberlab.analyst.placeholder':
+    'Ex.: o que revelaria este binário sobre ofuscação e contactos de rede?',
+  'cyberlab.analyst.plan': 'Gerar plano',
+  'cyberlab.analyst.planning': 'A gerar plano…',
+  'cyberlab.analyst.tooShort': 'A pergunta deve ter pelo menos 3 caracteres.',
+  'cyberlab.analyst.notConfigured':
+    'O fornecedor de IA não está configurado no servidor — sem plano possível. Configure-o no backend e volte a tentar.',
+  'cyberlab.analyst.invalidPlan':
+    'A resposta da IA não foi um plano válido — reformule a pergunta e tente novamente.',
+  'cyberlab.analyst.planTitle': 'Plano proposto',
+  'cyberlab.analyst.stepCount': 'Passos',
+  'cyberlab.analyst.neverAuto':
+    'O plano nunca é executado automaticamente — cada passo corre apenas se clicar em Executar passo.',
+  'cyberlab.analyst.noSteps':
+    'O plano não contém passos — reformule a pergunta para obter um plano acionável.',
+  'cyberlab.analyst.approvalNote':
+    'Risco médio ou alto é normalmente marcado como Requer aprovação; nesta versão o fluxo de aprovação chega no F5 e esses passos ficam desactivados.',
+  'cyberlab.analyst.needsApproval': 'Requer aprovação',
+  'cyberlab.analyst.noApproval': 'Sem aprovação',
+  'cyberlab.analyst.approvalComingSoon':
+    'Aprovação de passos: Em Breve (F5) — por agora este passo não pode ser executado.',
+  'cyberlab.analyst.noPermission': 'Precisa da permissão cyberlab.manage para executar passos.',
+  'cyberlab.analyst.running': 'A executar…',
+  'cyberlab.analyst.run': 'Executar passo',
+  'cyberlab.analyst.risk': 'Risco',
+  'cyberlab.analyst.viewJob': 'Ver job',
+  'cyberlab.analyst.jobCreated': 'Job criado a partir do passo',
 };
 
 const en: Dict = {
@@ -1176,6 +1277,107 @@ const en: Dict = {
   'cyberlab.evidence.exportNote':
     'There is no global artifact export — open a job to export its findings as JSON/CSV.',
   'cyberlab.evidence.viewJobs': 'See jobs',
+  'cyberlab.integrations.subtitle':
+    'The analysis engine state as reported by the server, read from the /providers API on every load.',
+  'cyberlab.integrations.failedLoad': 'Failed to load the integration state',
+  'cyberlab.integrations.availableBody':
+    'The engine answered the probe and is ready to run analysis jobs.',
+  'cyberlab.integrations.versionLabel': 'Version',
+  'cyberlab.integrations.notConfiguredBody':
+    'The server has no engine configured — without it no analysis job can run. To configure it:',
+  'cyberlab.integrations.step1':
+    'Set the SEEFAST_CLI environment variable on the server, pointing at the analysis engine binary.',
+  'cyberlab.integrations.step2': 'Restart the API so the variable takes effect.',
+  'cyberlab.integrations.step3':
+    'Come back to this page and confirm the state becomes Available, with the engine version shown.',
+  'cyberlab.integrations.probeFailedBody':
+    'The probe of the binary returned an error. Detail returned by the server:',
+  'cyberlab.integrations.noDetail': 'The server returned no further detail.',
+  'cyberlab.integrations.provenanceNote':
+    'The server exposes only the state, the version and the sanitised probe detail — never the provenance or the original name of the engine.',
+  'cyberlab.settings.title': 'Cyber Lab Settings',
+  'cyberlab.settings.subtitle':
+    'The run limits in effect right now and the overrides stored in the settings layer.',
+  'cyberlab.settings.failedLoad': 'Failed to load the Cyber Lab settings',
+  'cyberlab.settings.effective': 'Effective limits',
+  'cyberlab.settings.effectiveHelp': 'The values actually applied to jobs created from now on.',
+  'cyberlab.settings.overrides': 'Stored overrides',
+  'cyberlab.settings.overrideHelp':
+    'The last value written by an operator (None = no override).',
+  'cyberlab.settings.envPrecedence':
+    'Precedence: CYBERLAB_* environment variables > these settings > server defaults.',
+  'cyberlab.settings.envShadowed':
+    'The effective value differs from this override — a CYBERLAB_* environment variable is probably taking precedence.',
+  'cyberlab.settings.editTitle': 'Edit limits',
+  'cyberlab.settings.noPermission':
+    'Your account lacks the cyberlab.manage permission — you can read the limits but not change them.',
+  'cyberlab.settings.saved': 'Settings saved',
+  'cyberlab.settings.saving': 'Saving…',
+  'cyberlab.settings.noChanges': 'No changes to save',
+  'cyberlab.settings.outOfRange': 'Value outside the allowed range — fix it before saving.',
+  'cyberlab.settings.range': 'Allowed range',
+  'cyberlab.settings.field.maxArtifactMb': 'Maximum artifact size',
+  'cyberlab.settings.field.jobTimeoutS': 'Job timeout',
+  'cyberlab.settings.field.maxConcurrent': 'Concurrent jobs',
+  'cyberlab.settings.unit.mb': 'MB',
+  'cyberlab.settings.unit.seconds': 's',
+  'cyberlab.settings.unit.jobs': 'job(s)',
+  'cyberlab.audit.title': 'Cyber Lab Audit',
+  'cyberlab.audit.subtitle':
+    'Cyber Lab management actions — artifacts, jobs, evidence and settings — newest first.',
+  'cyberlab.audit.date': 'Date',
+  'cyberlab.audit.action': 'Action',
+  'cyberlab.audit.user': 'User',
+  'cyberlab.audit.description': 'Description',
+  'cyberlab.audit.target': 'Target',
+  'cyberlab.audit.ip': 'IP',
+  'cyberlab.audit.system': 'System',
+  'cyberlab.audit.empty': 'No Cyber Lab audit records',
+  'cyberlab.audit.failedLoad': 'Failed to load the Cyber Lab audit trail',
+  'cyberlab.audit.total': 'Total records',
+  'cyberlab.audit.page': 'Page {page} of {pages}',
+  'cyberlab.audit.prev': 'Previous',
+  'cyberlab.audit.next': 'Next',
+  'cyberlab.analyst.subtitle':
+    'The AI only proposes an analysis plan — nothing runs without your explicit, step-by-step command.',
+  'cyberlab.analyst.artifactTitle': 'Artifact for the steps',
+  'cyberlab.analyst.artifactHelp':
+    'Plan steps analyse an already uploaded artifact. Upload a file here or use the Evidence section.',
+  'cyberlab.analyst.artifactReady': 'Artifact ready',
+  'cyberlab.analyst.upload': 'Upload artifact',
+  'cyberlab.analyst.uploading': 'Uploading…',
+  'cyberlab.analyst.uploadFailed': 'Failed to upload the artifact',
+  'cyberlab.analyst.uploadFirst': 'Upload an artifact first to be able to run this step.',
+  'cyberlab.analyst.questionLabel': 'Analyst question',
+  'cyberlab.analyst.proposeOnly':
+    'Proposal mode: the server returns suggested steps and never executes anything on its own.',
+  'cyberlab.analyst.placeholder':
+    'e.g. what would this binary reveal about obfuscation and network contacts?',
+  'cyberlab.analyst.plan': 'Generate plan',
+  'cyberlab.analyst.planning': 'Generating plan…',
+  'cyberlab.analyst.tooShort': 'The question must be at least 3 characters long.',
+  'cyberlab.analyst.notConfigured':
+    'The AI provider is not configured on the server — no plan is possible. Configure it on the backend and try again.',
+  'cyberlab.analyst.invalidPlan':
+    'The AI answer was not a valid plan — rephrase the question and try again.',
+  'cyberlab.analyst.planTitle': 'Proposed plan',
+  'cyberlab.analyst.stepCount': 'Steps',
+  'cyberlab.analyst.neverAuto':
+    'The plan is never executed automatically — each step only runs if you click Run step.',
+  'cyberlab.analyst.noSteps':
+    'The plan contained no steps — rephrase the question to get an actionable plan.',
+  'cyberlab.analyst.approvalNote':
+    'Medium or high risk is usually marked as needs approval; in this release the approval flow arrives in F5 and those steps stay disabled.',
+  'cyberlab.analyst.needsApproval': 'Needs approval',
+  'cyberlab.analyst.noApproval': 'No approval needed',
+  'cyberlab.analyst.approvalComingSoon':
+    'Step approval: Coming Soon (F5) — for now this step cannot be run.',
+  'cyberlab.analyst.noPermission': 'You need the cyberlab.manage permission to run steps.',
+  'cyberlab.analyst.running': 'Running…',
+  'cyberlab.analyst.run': 'Run step',
+  'cyberlab.analyst.risk': 'Risk',
+  'cyberlab.analyst.viewJob': 'View job',
+  'cyberlab.analyst.jobCreated': 'Job created from the step',
 };
 
 const dicts: Record<Locale, Dict> = { pt, en };

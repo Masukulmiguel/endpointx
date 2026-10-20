@@ -35,6 +35,10 @@ import CyberLabJobs from './pages/cyberlab/CyberLabJobs';
 import CyberLabJobDetail from './pages/cyberlab/CyberLabJobDetail';
 import CyberLabFindings from './pages/cyberlab/CyberLabFindings';
 import CyberLabEvidence from './pages/cyberlab/CyberLabEvidence';
+import CyberLabIntegrations from './pages/cyberlab/CyberLabIntegrations';
+import CyberLabSettings from './pages/cyberlab/CyberLabSettings';
+import CyberLabAudit from './pages/cyberlab/CyberLabAudit';
+import CyberLabAnalyst from './pages/cyberlab/CyberLabAnalyst';
 import ContactosPage from './pages/ContactosPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -285,11 +289,7 @@ export default function App() {
           path="cyberlab/analyst"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.analyst"
-                state="experimental"
-                bodyKey="cyberlab.placeholder.experimental"
-              />
+              <CyberLabAnalyst />
             </PermissionGate>
           }
         />
@@ -385,11 +385,7 @@ export default function App() {
           path="cyberlab/integrations"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.integrations"
-                state="experimental"
-                bodyKey="cyberlab.placeholder.experimental"
-              />
+              <CyberLabIntegrations />
             </PermissionGate>
           }
         />
@@ -397,11 +393,7 @@ export default function App() {
           path="cyberlab/audit"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.audit"
-                state="available"
-                bodyKey="cyberlab.placeholder.available"
-              />
+              <CyberLabAudit />
             </PermissionGate>
           }
         />
@@ -409,11 +401,7 @@ export default function App() {
           path="cyberlab/settings"
           element={
             <PermissionGate permission="cyberlab.view">
-              <CyberLabPlaceholder
-                titleKey="nav.cyberlab.settings"
-                state="available"
-                bodyKey="cyberlab.placeholder.available"
-              />
+              <CyberLabSettings />
             </PermissionGate>
           }
         />
