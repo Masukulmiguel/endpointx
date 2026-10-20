@@ -85,11 +85,14 @@ export default function CyberLabFindings() {
   const handleAcknowledge = async (id: string) => {
     setToast(null);
     ackMutation.reset();
+    // mutate() resolves to null on failure and stores the server message in
+    // hook state (not readable in this closure) — always surface a localized
+    // error on failure, then refetch to show the true state.
     const result = await ackMutation.mutate(`/cyberlab/findings/${id}/acknowledge`);
     if (result) {
       setToast({ type: 'success', message: t('cyberlab.findings.acknowledgedMsg') });
-    } else if (ackMutation.error) {
-      setToast({ type: 'error', message: ackMutation.error });
+    } else {
+      setToast({ type: 'error', message: t('cyberlab.findings.ackFailed') });
     }
     findings.refetch();
   };
@@ -97,7 +100,7 @@ export default function CyberLabFindings() {
   const columns = [
     {
       key: 'title',
-      label: t('cyberlab.findings.title'),
+      label: t('cyberlab.findings.findingTitle'),
       render: (row: Finding) => {
         const evidence = parseEvidence(row.evidence);
         const detailsText =

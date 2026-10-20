@@ -112,11 +112,14 @@ export default function CyberLabJobs() {
   const handleCancel = async (id: string) => {
     setToast(null);
     cancelMutation.reset();
+    // mutate() resolves to null on failure and stores the server message in
+    // hook state (not readable in this closure) — surface a localized error
+    // whenever the call did not succeed, then refetch to show the true state.
     const result = await cancelMutation.mutate(`/cyberlab/jobs/${id}/cancel`);
     if (result) {
       setToast({ type: 'success', message: t('cyberlab.jobDetail.cancelledMsg') });
-    } else if (cancelMutation.error) {
-      setToast({ type: 'error', message: cancelMutation.error });
+    } else {
+      setToast({ type: 'error', message: t('cyberlab.common.cancelFailed') });
     }
     jobs.refetch();
   };
@@ -214,7 +217,7 @@ export default function CyberLabJobs() {
       </div>
 
       {toast && <AlertBanner type={toast.type} message={toast.message} onClose={() => setToast(null)} />}
-      {createError && <AlertBanner type="error" message={createError} onClose={() => {}} />}
+      {createError && <AlertBanner type="error" message={createError} />}
 
       {canManage && (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-gray-700 p-4 shadow-sm shadow-slate-200/60">

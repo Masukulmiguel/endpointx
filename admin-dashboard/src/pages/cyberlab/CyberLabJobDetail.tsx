@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Download, Loader2, XCircle } from 'lucide-react';
 import { useApi, useApiMutation } from '../../hooks/useApi';
@@ -83,21 +83,38 @@ export default function CyberLabJobDetail() {
   }, [isActive]);
 
   // The findings API has no job filter — fetch the latest batch and filter here.
+  // Poll alongside the job while it is active so a job that finishes on-screen
+  // loads the findings it just produced (no false "no findings" claim).
   const findingsQuery = useApi<{ findings: Finding[]; total: number }>('/cyberlab/findings', {
     params: { limit: '100' },
+    refreshInterval: refreshInterval > 0 ? refreshInterval : undefined,
   });
   const jobFindings = (findingsQuery.data?.findings ?? []).filter((f) => f.job_id === id);
+
+  // Findings are written when the job finishes, possibly after the last
+  // active poll — refetch once on the active→terminal transition.
+  const wasActiveRef = useRef(isActive);
+  useEffect(() => {
+    if (wasActiveRef.current && !isActive) {
+      findingsQuery.refetch();
+    }
+    wasActiveRef.current = isActive;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
 
   const cancelMutation = useApiMutation('', 'POST');
 
   const handleCancel = async () => {
     setToast(null);
     cancelMutation.reset();
+    // mutate() resolves to null on failure and stores the server message in
+    // hook state (not readable in this closure) — surface a localized error
+    // whenever the call did not succeed, then refetch to show the true state.
     const result = await cancelMutation.mutate(`/cyberlab/jobs/${id}/cancel`);
     if (result) {
       setToast({ type: 'success', message: t('cyberlab.jobDetail.cancelledMsg') });
-    } else if (cancelMutation.error) {
-      setToast({ type: 'error', message: cancelMutation.error });
+    } else {
+      setToast({ type: 'error', message: t('cyberlab.common.cancelFailed') });
     }
     jobQuery.refetch();
   };
@@ -258,8 +275,14 @@ export default function CyberLabJobDetail() {
           <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg overflow-x-auto max-h-96">
             {JSON.stringify(job.result, null, 2)}
           </pre>
-        ) : (
+        ) : isActive ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">{t('cyberlab.jobDetail.noResult')}</p>
+        ) : job.status === 'failed' ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t('cyberlab.jobDetail.noResultFailed')}</p>
+        ) : job.status === 'cancelled' ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t('cyberlab.jobDetail.noResultCancelled')}</p>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t('cyberlab.jobDetail.noResultCompleted')}</p>
         )}
       </Card>
 
@@ -271,7 +294,9 @@ export default function CyberLabJobDetail() {
             {t('common.loading')}
           </div>
         ) : jobFindings.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('cyberlab.jobDetail.noFindings')}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {isActive ? t('cyberlab.jobDetail.findingsPending') : t('cyberlab.jobDetail.noFindings')}
+          </p>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {jobFindings.map((finding) => (
