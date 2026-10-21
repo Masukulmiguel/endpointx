@@ -56,9 +56,13 @@ Notes:
 - `SEEFAST_CLI` must point to an executable the API user can run. The probe and
   all jobs execute it directly.
 - The API's body parser for `/api/cyberlab` accepts requests up to **40 MB**.
-  If you raise `CYBERLAB_MAX_ARTIFACT_MB` above roughly 30, raise the body
-  parser limit in `src/index.ts` as well, or large uploads will be rejected
-  before Cyber Lab's own check runs.
+  The settings layer (`PUT /config`) therefore caps the artifact limit at
+  **28 MB** — base64 grows about 4/3 on the wire, so a larger decoded artifact
+  would be rejected by the parser before Cyber Lab's own check could answer
+  with its honest 413. The environment variable has no such cap: if you raise
+  `CYBERLAB_MAX_ARTIFACT_MB` above roughly 30, raise the body parser limit in
+  `src/index.ts` as well, or large uploads will be rejected before Cyber Lab's
+  own check runs.
 - `CYBERLAB_STORAGE_DIR` optionally overrides the artifact storage root
   (default: `backend-api/storage/cyberlab`). It must never live under a public
   directory.
@@ -70,7 +74,7 @@ these settings keys:
 
 | Settings key | Bounds (PUT /config) | Applies to |
 | --- | --- | --- |
-| `cyberlab_max_artifact_mb` | 1–50 | Artifact size limit (MB) |
+| `cyberlab_max_artifact_mb` | 1–28 | Artifact size limit (MB) |
 | `cyberlab_job_timeout_s` | 5–600 | Job timeout (seconds) |
 | `cyberlab_max_concurrent` | 1–4 | Concurrent running jobs |
 
@@ -149,9 +153,20 @@ route could answer with the honest 413.
 A process that dies mid-run leaves its job row at `running` with no child left
 to finalize it — and since slots are only freed by finalize, a single orphan
 would wedge the whole queue at concurrency 1. At boot the runner fails every
-orphaned `running` row with `interrupted by server restart`, audits each one,
-and then drains the queue. Nothing is resumed: the engine run died with the
-process, so resuming would mean reporting a result that was never observed.
+orphaned `running` row with `interrupted by server restart`, audits each one
+as `cyberlab.job_interrupted`, and then drains the queue (unconditionally: a
+crash can also leave `queued` jobs with no orphan, and skipping the drain
+there would let a later POST jump the FIFO queue). Nothing is resumed: the
+engine run died with the process, so resuming would mean reporting a result
+that was never observed.
+
+Job creation waits for the recovery to finish. The HTTP port is bound before
+the database is ready, so without that wait a job posted in that window would
+be seen by the recovery as an orphan and failed by our own restart handling.
+
+The runner is single-process by design (in-process slot lock, in-process
+ChildProcess map). Running two API instances against the same database would
+make the second one fail the first's legitimately running jobs.
 
 Effective values come from the precedence rules in [Settings Layer](#settings-layer).
 
@@ -182,7 +197,7 @@ requests receive **401**, and missing permissions receive **403**.
 | `POST /api/cyberlab/jobs/:id/cancel` | `cyberlab.manage` | See job lifecycle. |
 | `GET /api/cyberlab/findings` | `cyberlab.view` | Filter by `job_id`, kind, severity and status, paged. |
 | `POST /api/cyberlab/findings/:id/acknowledge` | `cyberlab.manage` | `open` → `acknowledged`, audited. |
-| `GET /api/cyberlab/jobs/:id/export?format=json\|csv` | `cyberlab.export` | JSON job + findings, or CSV in reports style. CSV cells are neutralised against formula injection (`=`, `+`, `-`, `@`, TAB, CR) — findings carry third-party content. |
+| `GET /api/cyberlab/jobs/:id/export?format=json\|csv` | `cyberlab.export` | JSON job + findings, or CSV in reports style. CSV cells go through the shared `src/utils/csv.ts` formatter, which neutralises formula injection (`=`, `+`, `-`, `@`, TAB, CR) — findings carry third-party content. |
 | `GET /api/cyberlab/audit` | `cyberlab.view` | Only `cyberlab.*` audit actions, paged. |
 | `GET` / `PUT /api/cyberlab/config` | `cyberlab.view` / `cyberlab.manage` | Effective limits + overrides; PUT within bounds, audited. |
 | `POST /api/cyberlab/ai/plan` | `cyberlab.view` | Propose-only planning assistant; never creates jobs. Falls back to `not_configured` when the AI provider is unavailable. |

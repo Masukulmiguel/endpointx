@@ -10,6 +10,7 @@ import { validate, validateQuery } from '../middleware/validation';
 import { probeCapabilities, ProviderStatus } from '../services/seefast/capabilities';
 import { getLimits, invalidateLimitsCache } from '../services/seefast/limits';
 import { getSettingsMap, setSetting } from '../services/settings';
+import { toCsv } from '../utils/csv';
 import { aiComplete, isOpencodeConfigured } from '../services/opencode';
 import { JOB_OPS, type JobType } from '../services/seefast/adapter';
 import { cancelJob, createJob, JobsRunnerError, promoteQueued } from '../services/seefast/jobsRunner';
@@ -387,19 +388,10 @@ const FINDING_CSV_HEADERS = ['ID', 'Job ID', 'Kind', 'Title', 'Severity', 'Confi
 // Findings carry third-party content (titles/evidence sampled from analysed
 // artifacts), so a cell can begin with =, +, -, @, TAB or CR. Excel/Sheets
 // evaluate such a cell as a formula, which is CSV injection: opening the
-// export can execute a crafted formula. Neutralise by wrapping the value in
-// quotes and prefixing a single quote, which spreadsheets treat as "literal
-// text" — the display keeps the original characters minus the leading quote.
-const DANGEROUS_CELL_PREFIX = /^[=+\-@\t\r]/;
-
-function csvCell(value: unknown): string {
-  let text = String(value ?? '');
-  if (DANGEROUS_CELL_PREFIX.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
+// export can execute a crafted formula. csvCell() neutralises that.
 // GET /jobs/:id/export — JSON carries the complete object (job + findings);
-// CSV carries only the findings, quoted cell by cell exactly like reports.ts.
+// CSV carries only the findings, quoted cell by cell and neutralised against
+// formula injection (findings carry third-party content).
 // The gate is cyberlab.export, not view: an export is a data-egress action.
 router.get('/jobs/:id/export', authenticate, requirePermission('cyberlab.export'), validateQuery(ExportQuerySchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -435,7 +427,7 @@ router.get('/jobs/:id/export', authenticate, requirePermission('cyberlab.export'
         finding.asset_ref ?? '',
         finding.evidence ? JSON.stringify(finding.evidence) : '',
       ]);
-      const csvContent = [FINDING_CSV_HEADERS, ...rows].map((cells) => cells.map(csvCell).join(',')).join('\n');
+      const csvContent = toCsv([FINDING_CSV_HEADERS, ...rows]);
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="cyberlab-job-${id}-findings.csv"`);
       res.send(csvContent);

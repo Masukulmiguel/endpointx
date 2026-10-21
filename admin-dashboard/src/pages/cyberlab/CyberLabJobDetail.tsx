@@ -90,7 +90,14 @@ export default function CyberLabJobDetail() {
     params: { job_id: id, limit: '100' },
     refreshInterval: refreshInterval > 0 ? refreshInterval : undefined,
   });
-  const jobFindings = findingsQuery.data?.findings ?? [];
+  // The client-side filter stays as a safety net: useApi keeps the previous
+  // data while a request with new params is in flight, so navigating between
+  // two job details would otherwise show the previous job's findings under
+  // this job's heading until the response lands.
+  const jobFindings = (findingsQuery.data?.findings ?? []).filter((f) => f.job_id === id);
+  // The count comes from the server (which counts the whole filtered set),
+  // not from the page size of the loaded batch.
+  const findingsTotal = findingsQuery.data?.total ?? jobFindings.length;
 
   // Findings are written when the job finishes, possibly after the last
   // active poll — refetch once on the active→terminal transition.
@@ -287,7 +294,7 @@ export default function CyberLabJobDetail() {
         )}
       </Card>
 
-      <Card title={`${t('cyberlab.jobDetail.findings')} (${jobFindings.length})`}>
+      <Card title={`${t('cyberlab.jobDetail.findings')} (${findingsTotal})`}>
         <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">{t('cyberlab.jobDetail.findingsNote')}</p>
         {findingsQuery.loading && !findingsQuery.data ? (
           <div className="flex items-center gap-2 text-sm text-gray-500">

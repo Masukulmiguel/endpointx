@@ -213,7 +213,8 @@ const respond = (sql: string, params: unknown[] = []) => {
     }
     return { rows: orphans.map((j) => ({ id: j.id })), rowCount: orphans.length };
   }
-  if (sql.includes("UPDATE cyberlab_jobs SET status = 'cancelled'")) {    const job = jobsDb.get(String(params[0]));
+  if (sql.includes("UPDATE cyberlab_jobs SET status = 'cancelled'")) {
+    const job = jobsDb.get(String(params[0]));
     if (!job || job.status !== 'queued') return { rows: [], rowCount: 0 };
     job.status = 'cancelled';
     job.finished_at = nowStamp();
@@ -345,6 +346,7 @@ type RunScript =
   | { kind: 'timeout' }
   | { kind: 'truncated'; stdout?: string }
   | { kind: 'await_kill' }
+  | { kind: 'killed' }
   | { kind: 'manual' }
   | { kind: 'throw_cli' };
 
@@ -368,6 +370,12 @@ async function mockRunOperation(type: JobType, artifactPath: string, _limits: Se
     const child = (cpModule.execFile as typeof fakeExecFile)(process.env.SEEFAST_CLI || 'cli', [type, artifactPath], {}, undefined);
     if (script.kind === 'await_kill') {
       child.once('close', (code: number | null, signal: NodeJS.Signals | null) => finish({ exitCode: code, signal }));
+      return;
+    }
+    if (script.kind === 'killed') {
+      // The engine died on its own (OOM kill, segfault, external kill) — no
+      // cancel_requested, so this must not be reported as a cancellation.
+      setImmediate(() => finish({ exitCode: null, signal: 'SIGKILL' }));
       return;
     }
     if (script.kind === 'manual') {
@@ -762,6 +770,24 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(job.result, { truncated: true }, 'partial result must carry truncated=true');
     });
 
+    // A signal with no cancel_requested is an unexpected death (OOM kill,
+    // segfault, external kill) — reporting it as `cancelled` would blame the
+    // operator for a crash they did not cause. A genuine cancel sets the flag
+    // first and still wins (covered by the cancel test above).
+    await checkAsync('test_unexpected_signal_marks_failed_not_cancelled', async () => {
+      runScripts.push({ kind: 'killed' });
+      const body = (await (await postJob(manageToken, 'js_analysis', seedArtifact())).json()) as {
+        data: { job: Record<string, unknown> };
+      };
+      const job = await waitForStatus(String(body.data.job.id), 'failed');
+      assert.strictEqual(job.status, 'failed', 'an unexpected signal must not be reported as cancelled');
+      assert.strictEqual(
+        job.error,
+        'engine terminated by signal SIGKILL',
+        `the error must name the signal, got ${JSON.stringify(job.error)}`
+      );
+    });
+
     await checkAsync('test_failed_run_error_is_sanitised_and_capped', async () => {
       const cli = 'C:\\engine\\seefast-cli.exe';
       process.env.SEEFAST_CLI = cli;
@@ -896,7 +922,7 @@ async function main(): Promise<void> {
         assert.ok(row.finished_at, 'a recovered job must be finished');
       }
       assert.ok(
-        audits.some((a) => a.sql.includes('INSERT INTO audit_logs') && String(a.params[3]) === 'cyberlab.job_failed'),
+        audits.some((a) => a.sql.includes('INSERT INTO audit_logs') && String(a.params[3]) === 'cyberlab.job_interrupted'),
         'recovery must be audited'
       );
 
@@ -904,6 +930,24 @@ async function main(): Promise<void> {
       await waitFor('queued job promoted and reached runOperation', async () => pendingManual.length === 1);
       assert.strictEqual((await readJob(waiting.id)).status, 'running', 'queued job must run once orphans release the slots');
       completeNextManual({ exitCode: 0, stdout: '{"after_restart":true}' });
+      await waitForStatus(waiting.id, 'completed');
+    });
+
+    // A crash can also leave `queued` jobs with NO orphan at all (the window
+    // between finalize's slot-freeing UPDATE and its promotion). The drain
+    // must happen anyway — otherwise a later POST would jump the FIFO queue.
+    await checkAsync('test_boot_recovery_drains_queue_even_without_orphans', async () => {
+      resetCounts();
+      const waiting = makeJob({ type: 'js_analysis', status: 'queued', target_ref: seedArtifact() });
+      jobsDb.set(waiting.id, waiting);
+      runScripts.push({ kind: 'manual' });
+
+      const recovered = await recoverInterruptedJobs();
+      assert.strictEqual(recovered, 0, 'there was no orphaned running row to recover');
+
+      await waitFor('queued job promoted without an orphan', async () => pendingManual.length === 1);
+      assert.strictEqual((await readJob(waiting.id)).status, 'running', 'the queue must be drained even with zero orphans');
+      completeNextManual({ exitCode: 0, stdout: '{"no_orphans":true}' });
       await waitForStatus(waiting.id, 'completed');
     });
 

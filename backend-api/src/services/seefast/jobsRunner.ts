@@ -285,6 +285,10 @@ export async function createJob(
   input: { type: JobType; artifactId: string },
   actorId: string | null
 ): Promise<{ job: JobRow; started: boolean }> {
+  // The port is bound before the database is ready, so a job can arrive while
+  // the boot recovery is still scanning for orphans. Waiting here keeps the
+  // recovery from failing a job that this very process just started.
+  await bootGate;
   const { type, artifactId } = input;
   if (!Object.prototype.hasOwnProperty.call(JOB_OPS, type)) {
     throw new JobsRunnerError(`Unsupported operation type: ${String(type).slice(0, 50)}`, 'UNSUPPORTED_OPERATION', 400);
@@ -401,7 +405,14 @@ async function promoteWhileLocked(): Promise<void> {
  * resume — the engine run died with the process and no stdout survived — so
  * the row is closed as failed and the queue is drained. The guarded UPDATE
  * (`status = 'running'`) means a row finalised between our read and our write
- * is left alone.
+ * is left alone. The drain is unconditional: a crash can also leave `queued`
+ * jobs with no orphan at all, and skipping the drain there would let a later
+ * POST jump the FIFO queue.
+ *
+ * Scope: single-process. The runner's slot lock, its ChildProcess map and
+ * this recovery are all in-process, so the deployment is one API instance
+ * against one database. Running two instances over the same database would
+ * make the second one fail the first's legitimately running jobs.
  */
 export async function recoverInterruptedJobs(): Promise<number> {
   try {
@@ -415,18 +426,39 @@ export async function recoverInterruptedJobs(): Promise<number> {
           RETURNING id`
       );
       for (const row of recovered.rows) {
-        await auditJob('cyberlab.job_failed', row.id, null, 'Job failed: interrupted by server restart');
+        // Distinct action: a restart-interrupted job is not the same event as a
+        // runtime failure, and the audit trail must not conflate them.
+        await auditJob('cyberlab.job_interrupted', row.id, null, 'Job failed: interrupted by server restart');
       }
       if (recovered.rowCount > 0) {
         logger.warn('cyberlab recovered interrupted jobs', { count: recovered.rowCount });
-        await promoteWhileLocked();
       }
+      // Unconditional: a crash can also leave `queued` jobs with no orphan
+      // (the window between finalize's slot-freeing UPDATE and its promotion).
+      // Skipping the drain in that case would let a later POST jump the FIFO
+      // queue instead of honouring it.
+      await promoteWhileLocked();
       return recovered.rowCount ?? 0;
     });
   } catch (error) {
     logger.error('cyberlab restart recovery failed', { error: (error as Error).message });
     return 0;
   }
+}
+
+/**
+ * Boot gate: the HTTP server binds its port before the database is ready, so a
+ * job can be created while the boot recovery is still scanning for orphans.
+ * Without a gate, that recovery would see the freshly started job as an
+ * orphan and fail it — a job killed by our own restart handling. Every job
+ * creation waits for the gate, so the recovery always sees the queue as it
+ * was left by the previous process.
+ */
+let bootGate: Promise<unknown> = Promise.resolve();
+
+/** Hold job creation until the boot recovery has finished. */
+export function setBootGate(promise: Promise<unknown>): void {
+  bootGate = promise.catch(() => undefined);
 }
 
 /**

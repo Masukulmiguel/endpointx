@@ -557,7 +557,7 @@ const pt: Dict = {
   'cyberlab.jobDetail.cancelledMsg': 'Cancelamento solicitado',
   'cyberlab.jobDetail.artifact': 'Artefacto',
   'cyberlab.jobDetail.findingsNote':
-    'A lista de findings é filtrada no cliente a partir dos 100 findings mais recentes.',
+    'A lista é filtrada no servidor pelo job — mostra até 100 findings deste job.',
   'cyberlab.findings.title': 'Findings',
   'cyberlab.findings.kind': 'Tipo',
   'cyberlab.findings.severity': 'Severidade',
@@ -1245,7 +1245,7 @@ const en: Dict = {
   'cyberlab.jobDetail.cancelledMsg': 'Cancellation requested',
   'cyberlab.jobDetail.artifact': 'Artifact',
   'cyberlab.jobDetail.findingsNote':
-    'Findings are filtered client-side from the 100 most recent.',
+    'The list is filtered server-side by job — it shows up to 100 findings of this job.',
   'cyberlab.findings.title': 'Findings',
   'cyberlab.findings.kind': 'Kind',
   'cyberlab.findings.severity': 'Severity',
