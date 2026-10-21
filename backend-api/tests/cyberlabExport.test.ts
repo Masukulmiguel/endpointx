@@ -434,6 +434,74 @@ async function main(): Promise<void> {
       assert.ok(text.includes('seefast:js_analysis'), 'evidence must be serialised into the CSV');
     });
 
+    // Findings titles/evidence come from analysed third-party artifacts, so a
+    // cell can start with =, +, -, @ — a spreadsheet would evaluate it as a
+    // formula on open (CSV injection). The cell must be neutralised, and the
+    // legitimate quoting/escaping above must survive untouched.
+    await checkAsync('test_export_csv_neutralises_formula_injection_without_breaking_quotes', async () => {
+      findingsDb.set('f0000000-0000-4000-8000-000000000003', {
+        id: 'f0000000-0000-4000-8000-000000000003',
+        job_id: JOB_ID,
+        kind: 'indicator',
+        title: '=HYPERLINK("http://evil.local","click")',
+        severity: 'low',
+        confidence: 'medium',
+        evidence: null,
+        asset_ref: null,
+        status: 'open',
+      });
+      findingsDb.set('f0000000-0000-4000-8000-000000000004', {
+        id: 'f0000000-0000-4000-8000-000000000004',
+        job_id: JOB_ID,
+        kind: 'indicator',
+        title: '+cmd|calc',
+        severity: 'low',
+        confidence: 'medium',
+        evidence: null,
+        asset_ref: null,
+        status: 'open',
+      });
+      try {
+        const res = await get(`/jobs/${JOB_ID}/export?format=csv`, exportToken);
+        assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+        const text = await res.text();
+        const lines = text.split('\n');
+        assert.strictEqual(lines.length, 5, `header + four findings, got ${lines.length} lines`);
+
+        const rowOf = (needle: string): string =>
+          lines.find((line) => line.includes(needle)) ?? '';
+        assert.ok(
+          rowOf('=HYPERLINK').includes(`"'=HYPERLINK(""http://evil.local"",""click"")"`),
+          `formula cell must be quote-prefixed and inner quotes doubled: ${rowOf('=HYPERLINK')}`
+        );
+        assert.ok(
+          rowOf('+cmd|calc').includes(`"'+cmd|calc"`),
+          `a leading + must be neutralised too: ${rowOf('+cmd|calc')}`
+        );
+
+        // No cell may begin a value with a bare formula character.
+        for (const line of lines.slice(1)) {
+          const cells = line.split('","');
+          for (const cell of cells) {
+            const value = cell.replace(/^"/, '');
+            assert.ok(
+              !/^[=+\-@]/.test(value),
+              `unneutralised formula-leading cell in CSV: ${value}`
+            );
+          }
+        }
+
+        // The pre-existing escaping must still be intact.
+        assert.ok(
+          text.includes('"Open port 8080, ""admin"" panel"'),
+          'commas/quotes in existing findings must still be escaped'
+        );
+      } finally {
+        findingsDb.delete('f0000000-0000-4000-8000-000000000003');
+        findingsDb.delete('f0000000-0000-4000-8000-000000000004');
+      }
+    });
+
     await checkAsync('test_export_rejects_invalid_format_with_400', async () => {
       const res = await get(`/jobs/${JOB_ID}/export?format=xml`, exportToken);
       assert.strictEqual(res.status, 400, `expected 400, got ${res.status}`);
@@ -483,27 +551,27 @@ async function main(): Promise<void> {
         { cyberlab_max_artifact_mb: null, cyberlab_job_timeout_s: null, cyberlab_max_concurrent: null },
         'no stored overrides yet'
       );
-      assert.deepStrictEqual(bounds.max_artifact_mb, { min: 1, max: 50 });
+      assert.deepStrictEqual(bounds.max_artifact_mb, { min: 1, max: 28 });
       assert.deepStrictEqual(bounds.job_timeout_s, { min: 5, max: 600 });
       assert.deepStrictEqual(bounds.max_concurrent, { min: 1, max: 4 });
     });
 
     await checkAsync('test_config_put_within_bounds_is_reflected_immediately_by_get', async () => {
-      const put = await putConfig(manageToken, { maxArtifactMb: 42, jobTimeoutS: 300, maxConcurrent: 3 });
+      const put = await putConfig(manageToken, { maxArtifactMb: 22, jobTimeoutS: 300, maxConcurrent: 3 });
       assert.strictEqual(put.status, 200, `expected 200, got ${put.status}`);
       const putBody = (await put.json()) as { success: boolean; data: { limits: Row; overrides: Row } };
       assert.strictEqual(putBody.success, true, JSON.stringify(putBody));
       assert.deepStrictEqual(
         putBody.data.limits,
-        { max_artifact_mb: 42, job_timeout_s: 300, max_concurrent: 3 },
+        { max_artifact_mb: 22, job_timeout_s: 300, max_concurrent: 3 },
         'PUT response must already carry the effective limits'
       );
       assert.deepStrictEqual(
         putBody.data.overrides,
-        { cyberlab_max_artifact_mb: '42', cyberlab_job_timeout_s: '300', cyberlab_max_concurrent: '3' }
+        { cyberlab_max_artifact_mb: '22', cyberlab_job_timeout_s: '300', cyberlab_max_concurrent: '3' }
       );
 
-      assert.strictEqual(settingsDb.get('cyberlab_max_artifact_mb'), '42', 'exact settings key');
+      assert.strictEqual(settingsDb.get('cyberlab_max_artifact_mb'), '22', 'exact settings key');
       assert.strictEqual(settingsDb.get('cyberlab_job_timeout_s'), '300', 'exact settings key');
       assert.strictEqual(settingsDb.get('cyberlab_max_concurrent'), '3', 'exact settings key');
 
@@ -512,11 +580,11 @@ async function main(): Promise<void> {
       const getBody = (await getRes.json()) as { data: { limits: Row; overrides: Row } };
       assert.deepStrictEqual(
         getBody.data.limits,
-        { max_artifact_mb: 42, job_timeout_s: 300, max_concurrent: 3 },
+        { max_artifact_mb: 22, job_timeout_s: 300, max_concurrent: 3 },
         'GET must reflect the PUT immediately (getLimits cache invalidated)'
       );
       assert.deepStrictEqual(getBody.data.overrides, {
-        cyberlab_max_artifact_mb: '42',
+        cyberlab_max_artifact_mb: '22',
         cyberlab_job_timeout_s: '300',
         cyberlab_max_concurrent: '3',
       });
@@ -524,7 +592,7 @@ async function main(): Promise<void> {
 
     await checkAsync('test_config_put_out_of_bounds_is_400_and_writes_nothing', async () => {
       const cases: Array<[string, Record<string, unknown>]> = [
-        ['artifact above 50MB', { maxArtifactMb: 51 }],
+        ['artifact above the 28MB parser ceiling', { maxArtifactMb: 29 }],
         ['timeout below 5s', { jobTimeoutS: 4 }],
         ['timeout above 600s', { jobTimeoutS: 601 }],
         ['concurrency above 4', { maxConcurrent: 5 }],
@@ -544,11 +612,11 @@ async function main(): Promise<void> {
       };
       assert.deepStrictEqual(
         after.data.limits,
-        { max_artifact_mb: 42, job_timeout_s: 300, max_concurrent: 3 },
+        { max_artifact_mb: 22, job_timeout_s: 300, max_concurrent: 3 },
         'a rejected PUT must not touch settings or the effective limits'
       );
       assert.deepStrictEqual(after.data.overrides, {
-        cyberlab_max_artifact_mb: '42',
+        cyberlab_max_artifact_mb: '22',
         cyberlab_job_timeout_s: '300',
         cyberlab_max_concurrent: '3',
       });
@@ -557,7 +625,7 @@ async function main(): Promise<void> {
     await checkAsync('test_config_env_takes_precedence_over_settings', async () => {
       process.env.CYBERLAB_MAX_ARTIFACT_MB = '10';
       try {
-        const put = await putConfig(manageToken, { maxArtifactMb: 44 });
+        const put = await putConfig(manageToken, { maxArtifactMb: 22 });
         assert.strictEqual(put.status, 200, `expected 200, got ${put.status}`);
         const res = await get('/config', viewToken);
         const body = (await res.json()) as { data: { limits: Row; overrides: Row } };
@@ -568,7 +636,7 @@ async function main(): Promise<void> {
         );
         assert.strictEqual(
           body.data.overrides.cyberlab_max_artifact_mb,
-          '44',
+          '22',
           'the stored override stays visible as the editable layer'
         );
       } finally {
@@ -613,3 +681,4 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+

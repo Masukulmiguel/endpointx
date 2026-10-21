@@ -123,8 +123,8 @@ queued → running → completed | failed | cancelled | partial
 | `queued` | Accepted, waiting for a free execution slot (FIFO — oldest queued job is promoted first). |
 | `running` | The engine child process is active; the exact `ChildProcess` is tracked for cancellation. |
 | `completed` | Exit code 0 and output normalized into findings (or an honest empty summary). |
-| `failed` | Non-zero exit, signal, spawn failure (including provider became unavailable), or timeout. The error is sanitized and capped before display. |
-| `cancelled` | `queued` → cancelled directly; `running` → `cancel_requested` + SIGTERM to the exact child. Cancelling a finished job returns 409; an unknown id returns 404. Finishing (completion/failure) and promoting the next queued job happen atomically under one lock, so a freed slot is never stolen by a newer job. |
+| `failed` | Non-zero exit, an unexpected signal (OOM kill, segfault, external kill — never a cancellation), spawn failure (including provider became unavailable), or timeout. The error is sanitized and capped before display. |
+| `cancelled` | Only on operator request: `queued` → cancelled directly; `running` → `cancel_requested` + SIGTERM to the exact child. The flag is set *before* the signal and wins in finalize, so a genuine cancel is never misread as a failure. Cancelling a finished job returns 409; an unknown id returns 404. Finishing (completion/failure) and promoting the next queued job happen atomically under one lock, so a freed slot is never stolen by a newer job. |
 | `partial` | Output exceeded the stdout cap or could not be normalized — the job is marked `partial` and any findings are honestly derived (zero findings rather than fabricated ones). |
 
 A job is never created when the provider is unavailable, and cancelled/failed
@@ -136,9 +136,22 @@ jobs never pass through normalization.
 | --- | --- | --- |
 | Artifact size (base64, decoded) | 25 MB | Rejected with **413** before any file or DB row is written; oversize is judged on the encoded payload length. |
 | Job timeout | 120 s | Child killed; job finalized as `failed` with a timeout error. |
-| Concurrency | 1 (FIFO) | Start-vs-queue and promote-vs-start are serialised; simultaneous submissions yield one `running` and one `queued`. |
+| Concurrency | 1 (FIFO) | Start-vs-queue and promote-vs-start are serialised; simultaneous submissions yield one `running` and one `queued`. Raising it via `PUT /config` drains the queue immediately. |
 | Stdout/stderr capture | 5 MB | Overflow truncates the run; the job is downgraded to `partial`. |
 | Body parser gate | 40 MB | Applied at the `/api/cyberlab` mount (route-level `express.json`). |
+
+The configurable artifact bound is capped at **28 MB**: base64 grows about 4/3 on
+the wire, so anything larger would be rejected by the 40 MB parser before the
+route could answer with the honest 413.
+
+### Restart recovery
+
+A process that dies mid-run leaves its job row at `running` with no child left
+to finalize it — and since slots are only freed by finalize, a single orphan
+would wedge the whole queue at concurrency 1. At boot the runner fails every
+orphaned `running` row with `interrupted by server restart`, audits each one,
+and then drains the queue. Nothing is resumed: the engine run died with the
+process, so resuming would mean reporting a result that was never observed.
 
 Effective values come from the precedence rules in [Settings Layer](#settings-layer).
 
@@ -167,9 +180,9 @@ requests receive **401**, and missing permissions receive **403**.
 | `POST /api/cyberlab/jobs` | `cyberlab.manage` | Body: type + artifact id. 400 on unsupported type or unavailable provider. |
 | `GET /api/cyberlab/jobs` / `GET /api/cyberlab/jobs/:id` | `cyberlab.view` | Filter by `status`, paged. |
 | `POST /api/cyberlab/jobs/:id/cancel` | `cyberlab.manage` | See job lifecycle. |
-| `GET /api/cyberlab/findings` | `cyberlab.view` | Filter by kind and job, paged. |
+| `GET /api/cyberlab/findings` | `cyberlab.view` | Filter by `job_id`, kind, severity and status, paged. |
 | `POST /api/cyberlab/findings/:id/acknowledge` | `cyberlab.manage` | `open` → `acknowledged`, audited. |
-| `GET /api/cyberlab/jobs/:id/export?format=json\|csv` | `cyberlab.export` | JSON job + findings, or CSV in reports style. |
+| `GET /api/cyberlab/jobs/:id/export?format=json\|csv` | `cyberlab.export` | JSON job + findings, or CSV in reports style. CSV cells are neutralised against formula injection (`=`, `+`, `-`, `@`, TAB, CR) — findings carry third-party content. |
 | `GET /api/cyberlab/audit` | `cyberlab.view` | Only `cyberlab.*` audit actions, paged. |
 | `GET` / `PUT /api/cyberlab/config` | `cyberlab.view` / `cyberlab.manage` | Effective limits + overrides; PUT within bounds, audited. |
 | `POST /api/cyberlab/ai/plan` | `cyberlab.view` | Propose-only planning assistant; never creates jobs. Falls back to `not_configured` when the AI provider is unavailable. |

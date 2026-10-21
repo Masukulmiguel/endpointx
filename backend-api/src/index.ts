@@ -22,6 +22,7 @@ import { renderPrometheusMetrics } from './services/prometheus';
 import { isAllowedOrigin, corsOriginCheck } from './utils/cors';
 import { setSetting } from './services/settings';
 import { securityHeadersMiddleware } from './config/securityHeaders';
+import { recoverInterruptedJobs } from './services/seefast/jobsRunner';
 import { canonicalHtmlRedirect } from './middleware/canonicalRedirects';
 import { authenticate } from './middleware/auth';
 
@@ -390,10 +391,13 @@ if (PORT !== 10000) {
 }
 
 initDatabase()
-  .then(() => {
+  .then(async () => {
     // All recurring work lives in src/jobs: offline sweep, threshold alerting,
     // heartbeat retention, metric rollups and the scheduled HERMES scan.
     startBackgroundJobs();
+    // A job left `running` by a crash would hold its slot forever (the queue
+    // only frees slots via finalize), wedging the whole Cyber Lab queue.
+    await recoverInterruptedJobs();
   })
   .catch((err) => {
     logger.error('Failed to initialize database', { error: err.message });

@@ -141,7 +141,11 @@ type FinalOutcome = { status: 'completed' | 'failed' | 'cancelled' | 'partial'; 
 
 function mapRunToOutcome(raw: RawRun, artifactPath: string): FinalOutcome {
   if (raw.timedOut) return { status: 'failed', error: 'TIMEOUT' };
-  if (raw.signal !== null) return { status: 'cancelled' };
+  // A signal with no cancel_requested is an unexpected death (OOM kill,
+  // segfault, external kill) — not something the operator asked for. Genuine
+  // cancels set cancel_requested first and win in finalize, so they still land
+  // on `cancelled` regardless of what is mapped here.
+  if (raw.signal !== null) return { status: 'failed', error: `engine terminated by signal ${raw.signal}` };
   if (raw.truncated) return { status: 'partial', result: { truncated: true } };
   if (raw.exitCode === 0) return { status: 'completed', result: parseStdout(raw.stdout), rawStdout: raw.stdout };
   const detail = raw.stderrTail && raw.stderrTail.trim() ? raw.stderrTail : `engine exited with code ${raw.exitCode}`;
@@ -386,6 +390,42 @@ async function promoteWhileLocked(): Promise<void> {
     setImmediate(() => {
       void executeJob(next.id, next.type as JobType);
     });
+  }
+}
+
+/**
+ * Boot recovery: a process that dies mid-run leaves its row at `running` with
+ * no ChildProcess left to finalise it. `promoteWhileLocked` only promotes from
+ * `queued` when a slot frees via finalize, so with the default concurrency of 1
+ * a single orphan wedges the whole queue forever. There is nothing honest to
+ * resume — the engine run died with the process and no stdout survived — so
+ * the row is closed as failed and the queue is drained. The guarded UPDATE
+ * (`status = 'running'`) means a row finalised between our read and our write
+ * is left alone.
+ */
+export async function recoverInterruptedJobs(): Promise<number> {
+  try {
+    return await withSlotLock(async () => {
+      const recovered = await query(
+        `UPDATE cyberlab_jobs
+            SET status = 'failed',
+                error = 'interrupted by server restart',
+                finished_at = NOW()
+          WHERE status = 'running'
+          RETURNING id`
+      );
+      for (const row of recovered.rows) {
+        await auditJob('cyberlab.job_failed', row.id, null, 'Job failed: interrupted by server restart');
+      }
+      if (recovered.rowCount > 0) {
+        logger.warn('cyberlab recovered interrupted jobs', { count: recovered.rowCount });
+        await promoteWhileLocked();
+      }
+      return recovered.rowCount ?? 0;
+    });
+  } catch (error) {
+    logger.error('cyberlab restart recovery failed', { error: (error as Error).message });
+    return 0;
   }
 }
 

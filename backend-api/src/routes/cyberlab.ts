@@ -12,7 +12,7 @@ import { getLimits, invalidateLimitsCache } from '../services/seefast/limits';
 import { getSettingsMap, setSetting } from '../services/settings';
 import { aiComplete, isOpencodeConfigured } from '../services/opencode';
 import { JOB_OPS, type JobType } from '../services/seefast/adapter';
-import { cancelJob, createJob, JobsRunnerError } from '../services/seefast/jobsRunner';
+import { cancelJob, createJob, JobsRunnerError, promoteQueued } from '../services/seefast/jobsRunner';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -305,6 +305,10 @@ const FINDING_SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'] as cons
 const FINDING_STATUSES = ['open', 'acknowledged'] as const;
 
 const FindingListQuerySchema = z.object({
+  // Optional so the global Findings page keeps working; JobDetail relies on it
+  // — without it the page fetches the newest N system-wide and filters in the
+  // client, which renders a false "no findings" for any older job.
+  job_id: z.string().regex(JOB_ID_RE, 'job_id must be a UUID').optional(),
   kind: z.enum(FINDING_KINDS).optional(),
   severity: z.enum(FINDING_SEVERITIES).optional(),
   status: z.enum(FINDING_STATUSES).optional(),
@@ -312,13 +316,15 @@ const FindingListQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-// GET /findings — newest job first, optional kind/severity/status filters.
+// GET /findings — optional job_id/kind/severity/status filters, stable order
+// (job, then id). Findings carry no timestamp column, so ordering within a
+// job is insertion-independent; pagination stays consistent across pages.
 router.get('/findings', authenticate, requirePermission('cyberlab.view'), validateQuery(FindingListQuerySchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { kind, severity, status, limit, offset } = req.query as unknown as z.infer<typeof FindingListQuerySchema>;
+    const { job_id, kind, severity, status, limit, offset } = req.query as unknown as z.infer<typeof FindingListQuerySchema>;
     const conditions: string[] = [];
     const values: unknown[] = [];
-    for (const [column, value] of [['kind', kind], ['severity', severity], ['status', status]] as const) {
+    for (const [column, value] of [['job_id', job_id], ['kind', kind], ['severity', severity], ['status', status]] as const) {
       if (value) {
         values.push(value);
         conditions.push(`${column} = $${values.length}`);
@@ -378,6 +384,20 @@ const ExportQuerySchema = z.object({
 const FINDING_EXPORT_COLUMNS = 'id, job_id, kind, title, severity, confidence, evidence, asset_ref, status';
 const FINDING_CSV_HEADERS = ['ID', 'Job ID', 'Kind', 'Title', 'Severity', 'Confidence', 'Status', 'Asset Ref', 'Evidence'];
 
+// Findings carry third-party content (titles/evidence sampled from analysed
+// artifacts), so a cell can begin with =, +, -, @, TAB or CR. Excel/Sheets
+// evaluate such a cell as a formula, which is CSV injection: opening the
+// export can execute a crafted formula. Neutralise by wrapping the value in
+// quotes and prefixing a single quote, which spreadsheets treat as "literal
+// text" — the display keeps the original characters minus the leading quote.
+const DANGEROUS_CELL_PREFIX = /^[=+\-@\t\r]/;
+
+function csvCell(value: unknown): string {
+  let text = String(value ?? '');
+  if (DANGEROUS_CELL_PREFIX.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
 // GET /jobs/:id/export — JSON carries the complete object (job + findings);
 // CSV carries only the findings, quoted cell by cell exactly like reports.ts.
 // The gate is cyberlab.export, not view: an export is a data-egress action.
@@ -415,9 +435,7 @@ router.get('/jobs/:id/export', authenticate, requirePermission('cyberlab.export'
         finding.asset_ref ?? '',
         finding.evidence ? JSON.stringify(finding.evidence) : '',
       ]);
-      const csvContent = [FINDING_CSV_HEADERS, ...rows]
-        .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+      const csvContent = [FINDING_CSV_HEADERS, ...rows].map((cells) => cells.map(csvCell).join(',')).join('\n');
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="cyberlab-job-${id}-findings.csv"`);
       res.send(csvContent);
@@ -472,8 +490,12 @@ const CONFIG_SETTING_KEYS = {
   maxConcurrent: 'cyberlab_max_concurrent',
 } as const;
 
+// The scoped upload parser in index.ts caps request bodies at 40mb, and a
+// base64 artifact grows ~4/3 on the wire — so a decoded artifact above ~28MB
+// would be rejected by the parser before this schema could answer with the
+// honest route-level 413. The bound stops below that ceiling.
 const CONFIG_BOUNDS = {
-  maxArtifactMb: { min: 1, max: 50 },
+  maxArtifactMb: { min: 1, max: 28 },
   jobTimeoutS: { min: 5, max: 600 },
   maxConcurrent: { min: 1, max: 4 },
 } as const;
@@ -526,7 +548,9 @@ const ConfigUpdateSchema = z
 
 // PUT /config — bounds live in the schema, so an out-of-range value is a 400
 // before any write. On success the settings layer moves, the getLimits() cache
-// is dropped and the next GET reflects immediately.
+// is dropped and the next GET reflects immediately. Promotion is then drained:
+// raising maxConcurrent frees slots that queued jobs are waiting on, and only
+// the runner's lock decides which one takes each slot.
 router.put('/config', authenticate, requirePermission('cyberlab.manage'), validate(ConfigUpdateSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body as z.infer<typeof ConfigUpdateSchema>;
@@ -547,6 +571,13 @@ router.put('/config', authenticate, requirePermission('cyberlab.manage'), valida
       writes.map(([key]) => key).join(','),
       `Cyber Lab limits updated: ${writes.map(([key, value]) => `${key}=${value}`).join(', ')}`
     );
+
+    // Awaited: promoteQueued already swallows and logs its own errors, so a
+    // promotion hiccup can never turn a successful config write into a 500 —
+    // but awaiting makes the response observe a queue that is already drained.
+    if (body.maxConcurrent !== undefined) {
+      await promoteQueued();
+    }
 
     res.json({ success: true, data: await configPayload() });
   } catch (error) {

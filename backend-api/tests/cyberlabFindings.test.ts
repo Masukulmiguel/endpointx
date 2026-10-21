@@ -196,11 +196,13 @@ const respond = (sql: string, params: unknown[] = []) => {
     return { rows: [{ id: finding.id }], rowCount: 1 };
   }
   if (sql.includes('AS total FROM cyberlab_findings')) {
+    const jobIdx = paramIndexFor(sql, 'job_id');
     const kindIdx = paramIndexFor(sql, 'kind');
     const severityIdx = paramIndexFor(sql, 'severity');
     const statusIdx = paramIndexFor(sql, 'status');
     const total = [...findingsDb.values()].filter(
       (f) =>
+        (jobIdx === null || f.job_id === params[jobIdx]) &&
         (kindIdx === null || f.kind === params[kindIdx]) &&
         (severityIdx === null || f.severity === params[severityIdx]) &&
         (statusIdx === null || f.status === params[statusIdx])
@@ -208,12 +210,14 @@ const respond = (sql: string, params: unknown[] = []) => {
     return { rows: [{ total }], rowCount: 1 };
   }
   if (sql.includes('FROM cyberlab_findings')) {
+    const jobIdx = paramIndexFor(sql, 'job_id');
     const kindIdx = paramIndexFor(sql, 'kind');
     const severityIdx = paramIndexFor(sql, 'severity');
     const statusIdx = paramIndexFor(sql, 'status');
     const rows = [...findingsDb.values()]
       .filter(
         (f) =>
+          (jobIdx === null || f.job_id === params[jobIdx]) &&
           (kindIdx === null || f.kind === params[kindIdx]) &&
           (severityIdx === null || f.severity === params[severityIdx]) &&
           (statusIdx === null || f.status === params[statusIdx])
@@ -598,6 +602,53 @@ async function main(): Promise<void> {
 
       const bad = await fetch(`${base}/findings?kind=exploded`, { headers: auth(viewToken) });
       assert.strictEqual(bad.status, 400, `invalid kind must be 400, got ${bad.status}`);
+    });
+
+    // ---- (d) job_id filter: the JobDetail page depends on it ---------------
+    await checkAsync('test_findings_list_filters_by_job_id_without_leaking_others', async () => {
+      // A second job holding its own finding: an unfiltered newest-N batch
+      // would have made the JobDetail page claim "no findings" for whichever
+      // job was pushed out of the page.
+      const otherJobId = '40000000-0000-4000-8000-000000000002';
+      findingsDb.set('40000000-0000-4000-8000-000000000003', {
+        id: '40000000-0000-4000-8000-000000000003',
+        job_id: otherJobId,
+        kind: 'indicator',
+        title: 'Indicator belonging to another job',
+        severity: 'low',
+        confidence: 'medium',
+        evidence: null,
+        asset_ref: null,
+        status: 'open',
+      });
+
+      const res = await fetch(`${base}/findings?job_id=${fixtureJobId}&limit=100`, { headers: auth(viewToken) });
+      assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+      const body = (await res.json()) as { success: boolean; data: { findings: Record<string, unknown>[]; total: number } };
+      assert.strictEqual(body.success, true, JSON.stringify(body));
+      assert.ok(body.data.findings.length >= 1, 'the fixture job must still return its findings');
+      assert.ok(
+        body.data.findings.every((f) => f.job_id === fixtureJobId),
+        "job_id filter must never return another job's findings"
+      );
+      assert.strictEqual(body.data.total, body.data.findings.length, 'total must count only the filtered job');
+      assert.ok(
+        body.data.findings.every((f) => f.job_id !== otherJobId),
+        "the other job's finding must not leak into this job's page"
+      );
+
+      // Combined with an existing filter — JobDetail and the global list share
+      // the same endpoint, so both dimensions must compose.
+      const combined = await fetch(`${base}/findings?job_id=${fixtureJobId}&kind=fact&limit=100`, { headers: auth(viewToken) });
+      const combinedBody = (await combined.json()) as { data: { findings: Record<string, unknown>[] } };
+      assert.strictEqual(combined.status, 200);
+      assert.ok(
+        combinedBody.data.findings.every((f) => f.job_id === fixtureJobId && f.kind === 'fact'),
+        'job_id and kind must compose'
+      );
+
+      const bad = await fetch(`${base}/findings?job_id=not-a-uuid`, { headers: auth(viewToken) });
+      assert.strictEqual(bad.status, 400, `malformed job_id must be 400, got ${bad.status}`);
     });
 
     // ---- (e) acknowledge 200 → 404, audit only on success ------------------

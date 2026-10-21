@@ -101,6 +101,10 @@ type JobRecord = {
 
 const jobsDb = new Map<string, JobRecord>();
 const artifactsDb = new Map<string, { id: string; storage_path: string }>();
+// Minimal app_settings store: PUT /config writes through setSetting and the
+// next getLimits() read must observe it, otherwise a promotion-on-config test
+// would be asserting against a store that never moves.
+const settingsDb = new Map<string, string>();
 const audits: Array<{ sql: string; params: unknown[] }> = [];
 const sqlCalls: Array<{ sql: string; params: unknown[] }> = [];
 let jobSeq = 0;
@@ -140,7 +144,15 @@ const respond = (sql: string, params: unknown[] = []) => {
     };
   }
   if (sql.includes('FROM app_settings WHERE key = ANY')) {
-    return { rows: [], rowCount: 0 }; // limits resolve to defaults (maxConcurrentJobs: 1)
+    // Store-backed so PUT /config actually moves the effective limits (a
+    // permanently empty map would make the config tests vacuous).
+    const keys = (params[0] as string[]) ?? [];
+    const rows = keys.filter((key) => settingsDb.has(key)).map((key) => ({ key, value: settingsDb.get(key) }));
+    return { rows, rowCount: rows.length };
+  }
+  if (sql.includes('INSERT INTO app_settings')) {
+    settingsDb.set(String(params[0]), String(params[1]));
+    return { rows: [], rowCount: 1 };
   }
   if (sql.includes('INSERT INTO audit_logs')) {
     audits.push({ sql, params });
@@ -190,8 +202,18 @@ const respond = (sql: string, params: unknown[] = []) => {
     job.cancel_requested = true;
     return { rows: [{ id: job.id }], rowCount: 1 };
   }
-  if (sql.includes("UPDATE cyberlab_jobs SET status = 'cancelled'")) {
-    const job = jobsDb.get(String(params[0]));
+  if (sql.includes("UPDATE cyberlab_jobs") && sql.includes("WHERE status = 'running'") && sql.includes('RETURNING id')) {
+    // Boot recovery: every row stuck at `running` (orphaned by a crash) closes
+    // as failed; the rows are returned so the audit loop can see them.
+    const orphans = [...jobsDb.values()].filter((j) => j.status === 'running');
+    for (const job of orphans) {
+      job.status = 'failed';
+      job.error = 'interrupted by server restart';
+      job.finished_at = nowStamp();
+    }
+    return { rows: orphans.map((j) => ({ id: j.id })), rowCount: orphans.length };
+  }
+  if (sql.includes("UPDATE cyberlab_jobs SET status = 'cancelled'")) {    const job = jobsDb.get(String(params[0]));
     if (!job || job.status !== 'queued') return { rows: [], rowCount: 0 };
     job.status = 'cancelled';
     job.finished_at = nowStamp();
@@ -380,6 +402,8 @@ async function main(): Promise<void> {
     default: import('express').Router;
   };
   const { authenticate } = await import('../src/middleware/auth');
+  const { recoverInterruptedJobs } = await import('../src/services/seefast/jobsRunner');
+  const { invalidateLimitsCache } = await import('../src/services/seefast/limits');
 
   const app = express();
   app.use('/api/cyberlab', authenticate, express.json({ limit: '40mb' }));
@@ -416,6 +440,8 @@ async function main(): Promise<void> {
   const getJob = (token: string, id: string) => fetch(`${base}/jobs/${id}`, { headers: auth(token) });
   const cancelRoute = (token: string, id: string) =>
     fetch(`${base}/jobs/${id}/cancel`, { method: 'POST', headers: auth(token) });
+  const putConfig = (token: string, body: Record<string, unknown>) =>
+    fetch(`${base}/config`, { method: 'PUT', headers: auth(token), body: JSON.stringify(body) });
 
   let artifactSeq = 0;
   const seedArtifact = (): string => {
@@ -846,6 +872,70 @@ async function main(): Promise<void> {
       } finally {
         gate.release(); // idempotent: never leave finalize (or later tests) hung
       }
+    });
+
+    await checkAsync('test_boot_recovery_fails_orphaned_running_and_promotes_queue', async () => {
+      resetCounts();
+      // Simulate a restart: two rows left at `running` with no ChildProcess
+      // behind them, plus one `queued` job waiting on the slot they held.
+      const orphanA = makeJob({ type: 'js_analysis', status: 'running', target_ref: seedArtifact(), started_at: nowStamp() });
+      const orphanB = makeJob({ type: 'js_analysis', status: 'running', target_ref: seedArtifact(), started_at: nowStamp() });
+      const waiting = makeJob({ type: 'js_analysis', status: 'queued', target_ref: seedArtifact() });
+      jobsDb.set(orphanA.id, orphanA);
+      jobsDb.set(orphanB.id, orphanB);
+      jobsDb.set(waiting.id, waiting);
+      runScripts.push({ kind: 'manual' });
+
+      const recovered = await recoverInterruptedJobs();
+      assert.strictEqual(recovered, 2, 'exactly the two orphaned running rows must be recovered');
+
+      for (const orphan of [orphanA, orphanB]) {
+        const row = await readJob(orphan.id);
+        assert.strictEqual(row.status, 'failed', 'an orphaned running row must close as failed');
+        assert.strictEqual(row.error, 'interrupted by server restart', 'honest operator-facing reason');
+        assert.ok(row.finished_at, 'a recovered job must be finished');
+      }
+      assert.ok(
+        audits.some((a) => a.sql.includes('INSERT INTO audit_logs') && String(a.params[3]) === 'cyberlab.job_failed'),
+        'recovery must be audited'
+      );
+
+      // The queue must not stay wedged: the waiting job takes the freed slot.
+      await waitFor('queued job promoted and reached runOperation', async () => pendingManual.length === 1);
+      assert.strictEqual((await readJob(waiting.id)).status, 'running', 'queued job must run once orphans release the slots');
+      completeNextManual({ exitCode: 0, stdout: '{"after_restart":true}' });
+      await waitForStatus(waiting.id, 'completed');
+    });
+
+    await checkAsync('test_put_config_raising_concurrency_promotes_the_queue', async () => {
+      resetCounts();
+      runScripts.push({ kind: 'manual' }, { kind: 'manual' });
+
+      const artifactId = seedArtifact();
+      const bodyOf = (res: Response) => res.json() as Promise<{ data: { job: { id: string; status: string }; started: boolean } }>;
+
+      const a = (await bodyOf(await postJob(manageToken, 'js_analysis', artifactId))).data;
+      const b = (await bodyOf(await postJob(manageToken, 'js_analysis', artifactId))).data;
+      assert.strictEqual(a.job.status, 'running', 'concurrency 1 must start the first job');
+      assert.strictEqual(b.job.status, 'queued', 'concurrency 1 must queue the second job');
+      await waitFor('job A to reach runOperation', async () => pendingManual.length === 1);
+
+      // Raising concurrency is the documented external event promoteQueued
+      // exists for: the queued job must start without waiting for A to finish.
+      const putRes = await putConfig(manageToken, { maxConcurrent: 2 });
+      assert.strictEqual(putRes.status, 200, `expected 200, got ${putRes.status}`);
+
+      await waitFor('queued job B to be promoted', async () => pendingManual.length === 2);
+      assert.strictEqual((await readJob(b.job.id)).status, 'running', 'raising concurrency must drain the queue immediately');
+
+      completeNextManual({ exitCode: 0, stdout: '{"a":true}' });
+      completeNextManual({ exitCode: 0, stdout: '{"b":true}' });
+      await waitForStatus(a.job.id, 'completed');
+      await waitForStatus(b.job.id, 'completed');
+
+      // The new concurrency must not leak into later suites' expectations.
+      settingsDb.delete('cyberlab_max_concurrent');
+      invalidateLimitsCache();
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

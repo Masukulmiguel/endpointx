@@ -39,7 +39,7 @@ type CyberLabFinding = {
   kind: string;
   title: string;
   severity: string;
-  confidence: number | null;
+  confidence: string | null;
   evidence: unknown;
   status: string;
 };

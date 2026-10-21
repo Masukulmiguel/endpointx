@@ -29,7 +29,7 @@ type Finding = {
   kind: string;
   title: string;
   severity: string;
-  confidence: number | null;
+  confidence: string | null;
   evidence: unknown;
   status: string;
 };
@@ -82,14 +82,15 @@ export default function CyberLabJobDetail() {
     setRefreshInterval(isActive ? 3000 : 0);
   }, [isActive]);
 
-  // The findings API has no job filter — fetch the latest batch and filter here.
+  // The findings API filters by job_id, so the page never has to guess from a
+  // newest-N global batch (which silently showed "no findings" for older jobs).
   // Poll alongside the job while it is active so a job that finishes on-screen
   // loads the findings it just produced (no false "no findings" claim).
   const findingsQuery = useApi<{ findings: Finding[]; total: number }>('/cyberlab/findings', {
-    params: { limit: '100' },
+    params: { job_id: id, limit: '100' },
     refreshInterval: refreshInterval > 0 ? refreshInterval : undefined,
   });
-  const jobFindings = (findingsQuery.data?.findings ?? []).filter((f) => f.job_id === id);
+  const jobFindings = findingsQuery.data?.findings ?? [];
 
   // Findings are written when the job finishes, possibly after the last
   // active poll — refetch once on the active→terminal transition.

@@ -16,7 +16,7 @@ type Finding = {
   kind: string;
   title: string;
   severity: string;
-  confidence: number | null;
+  confidence: string | null;
   evidence: unknown;
   asset_ref: string | null;
   status: string;
