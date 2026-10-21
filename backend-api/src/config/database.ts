@@ -1226,6 +1226,68 @@ const createInlineSchema = async (): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_download_events_created_at ON download_events(created_at);
+
+    -- -- Cyber Lab subsystem (jobs + artifacts + findings + scopes) --
+    CREATE TABLE IF NOT EXISTS cyberlab_jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      type VARCHAR(50) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'queued',
+      target_ref TEXT,
+      params JSONB,
+      plan JSONB,
+      result JSONB,
+      error TEXT,
+      progress INTEGER NOT NULL DEFAULT 0,
+      cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
+      started_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      approval_ref UUID,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      started_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_jobs_status ON cyberlab_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_jobs_created_at ON cyberlab_jobs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_jobs_started_by ON cyberlab_jobs(started_by);
+
+    CREATE TABLE IF NOT EXISTS cyberlab_artifacts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sha256 VARCHAR(64) NOT NULL,
+      original_name TEXT NOT NULL,
+      size_bytes BIGINT NOT NULL,
+      content_type VARCHAR(150),
+      storage_path TEXT NOT NULL,
+      uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      retained_until TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_artifacts_sha256 ON cyberlab_artifacts(sha256);
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_artifacts_uploaded_by ON cyberlab_artifacts(uploaded_by);
+
+    CREATE TABLE IF NOT EXISTS cyberlab_findings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      job_id UUID NOT NULL REFERENCES cyberlab_jobs(id) ON DELETE CASCADE,
+      kind VARCHAR(30) NOT NULL,
+      title TEXT NOT NULL,
+      severity VARCHAR(20),
+      confidence VARCHAR(10),
+      evidence JSONB,
+      asset_ref UUID,
+      status VARCHAR(20) NOT NULL DEFAULT 'open'
+    );
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_findings_job_id ON cyberlab_findings(job_id);
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_findings_kind ON cyberlab_findings(kind);
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_findings_severity ON cyberlab_findings(severity);
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_findings_status ON cyberlab_findings(status);
+
+    CREATE TABLE IF NOT EXISTS cyberlab_scopes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(150) NOT NULL,
+      targets TEXT[] NOT NULL DEFAULT '{}',
+      exclusions TEXT[] NOT NULL DEFAULT '{}',
+      allowed_methods JSONB,
+      active BOOLEAN NOT NULL DEFAULT TRUE
+    );
+    CREATE INDEX IF NOT EXISTS idx_cyberlab_scopes_active ON cyberlab_scopes(active);
   `;
 
   await pool.query(schema);
@@ -1270,45 +1332,51 @@ const ensureBootstrapAdmin = async (): Promise<void> => {
   );
 };
 
+// Full permission catalog (safe for existing DBs). Module-level so tests and
+// later subsystems can assert on the exact set of codes.
+export const allPerms: Array<[string, string, string, string]> = [
+  ['devices.view', 'View Devices', 'View device list and details', 'devices'],
+  ['devices.view_all', 'View Unassigned Devices', 'View and manage devices that are not assigned to any account (admin)', 'devices'],
+  ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
+  ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
+  ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
+  ['devices.commands', 'Execute Device Commands', 'Send commands to devices', 'devices'],
+  ['users.view', 'View Users', 'View user list and profiles', 'users'],
+  ['users.manage', 'Manage Users', 'Create, edit, and delete users', 'users'],
+  ['roles.view', 'View Roles', 'View roles and permissions', 'roles'],
+  ['roles.manage', 'Manage Roles', 'Create, edit, and delete roles', 'roles'],
+  ['security.view', 'View Security Events', 'View security events and alerts', 'security'],
+  ['security.manage', 'Manage Security', 'Dismiss alerts and manage security', 'security'],
+  ['logs.view', 'View Audit Logs', 'View audit logs', 'logs'],
+  ['logs.export', 'Export Audit Logs', 'Export audit logs', 'logs'],
+  ['settings.view', 'View Settings', 'View application settings', 'settings'],
+  ['settings.manage', 'Manage Settings', 'Change application settings', 'settings'],
+  ['agents.view', 'View Agents', 'View agent information', 'agents'],
+  ['agents.manage', 'Manage Agents', 'Manage agent configurations', 'agents'],
+  ['network.view', 'View Network', 'View network information', 'network'],
+  ['alerts.view', 'View Alerts', 'View alerts', 'alerts'],
+  ['alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
+  ['groups.view', 'View Groups', 'View device groups', 'groups'],
+  ['groups.manage', 'Manage Groups', 'Create, edit, and delete device groups', 'groups'],
+  ['policies.view', 'View Policies', 'View compliance policies', 'policies'],
+  ['policies.manage', 'Manage Policies', 'Create, edit, and delete compliance policies', 'policies'],
+  ['software.view', 'View Software', 'View software packages and deployments', 'software'],
+  ['software.manage', 'Manage Software', 'Create and manage software packages', 'software'],
+  ['software.deploy', 'Deploy Software', 'Deploy software to devices', 'software'],
+  ['compliance.view', 'View Compliance', 'View compliance results and status', 'compliance'],
+  ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
+  ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
+  ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
+  ['osint.view', 'View OSINT', 'View OSINT lookups and history', 'osint'],
+  ['osint.manage', 'Manage OSINT', 'Perform OSINT queries and manage API keys', 'osint'],
+  ['contacts.view', 'View Contact Messages', 'Read messages submitted from the public site contact form', 'contacts'],
+  ['cyberlab.view', 'View Cyber Lab', 'View Cyber Lab jobs, findings, artifacts, and scopes', 'cyberlab'],
+  ['cyberlab.manage', 'Manage Cyber Lab', 'Start, cancel, and manage Cyber Lab jobs', 'cyberlab'],
+  ['cyberlab.approve', 'Approve Cyber Lab Jobs', 'Approve Cyber Lab job execution (reserved)', 'cyberlab'],
+  ['cyberlab.export', 'Export Cyber Lab Reports', 'Export Cyber Lab findings and reports', 'cyberlab'],
+];
+
 const seedDefaults = async (): Promise<void> => {
-  // Full permission catalog (safe for existing DBs)
-  const allPerms: Array<[string, string, string, string]> = [
-    ['devices.view', 'View Devices', 'View device list and details', 'devices'],
-    ['devices.view_all', 'View Unassigned Devices', 'View and manage devices that are not assigned to any account (admin)', 'devices'],
-    ['devices.manage', 'Manage Devices', 'Edit device properties and settings', 'devices'],
-    ['devices.block', 'Block/Unblock Devices', 'Block or unblock devices', 'devices'],
-    ['devices.quarantine', 'Quarantine Devices', 'Place devices in quarantine', 'devices'],
-    ['devices.commands', 'Execute Device Commands', 'Send commands to devices', 'devices'],
-    ['users.view', 'View Users', 'View user list and profiles', 'users'],
-    ['users.manage', 'Manage Users', 'Create, edit, and delete users', 'users'],
-    ['roles.view', 'View Roles', 'View roles and permissions', 'roles'],
-    ['roles.manage', 'Manage Roles', 'Create, edit, and delete roles', 'roles'],
-    ['security.view', 'View Security Events', 'View security events and alerts', 'security'],
-    ['security.manage', 'Manage Security', 'Dismiss alerts and manage security', 'security'],
-    ['logs.view', 'View Audit Logs', 'View audit logs', 'logs'],
-    ['logs.export', 'Export Audit Logs', 'Export audit logs', 'logs'],
-    ['settings.view', 'View Settings', 'View application settings', 'settings'],
-    ['settings.manage', 'Manage Settings', 'Change application settings', 'settings'],
-    ['agents.view', 'View Agents', 'View agent information', 'agents'],
-    ['agents.manage', 'Manage Agents', 'Manage agent configurations', 'agents'],
-    ['network.view', 'View Network', 'View network information', 'network'],
-    ['alerts.view', 'View Alerts', 'View alerts', 'alerts'],
-    ['alerts.manage', 'Manage Alerts', 'Manage and dismiss alerts', 'alerts'],
-    ['groups.view', 'View Groups', 'View device groups', 'groups'],
-    ['groups.manage', 'Manage Groups', 'Create, edit, and delete device groups', 'groups'],
-    ['policies.view', 'View Policies', 'View compliance policies', 'policies'],
-    ['policies.manage', 'Manage Policies', 'Create, edit, and delete compliance policies', 'policies'],
-    ['software.view', 'View Software', 'View software packages and deployments', 'software'],
-    ['software.manage', 'Manage Software', 'Create and manage software packages', 'software'],
-    ['software.deploy', 'Deploy Software', 'Deploy software to devices', 'software'],
-    ['compliance.view', 'View Compliance', 'View compliance results and status', 'compliance'],
-    ['hermes.view', 'View HERMES', 'View HERMES security intelligence', 'hermes'],
-    ['hermes.manage', 'Manage HERMES', 'Start and stop HERMES scans', 'hermes'],
-    ['hermes.approve', 'Approve HERMES Actions', 'Approve or reject HERMES recommendations', 'hermes'],
-    ['osint.view', 'View OSINT', 'View OSINT lookups and history', 'osint'],
-    ['osint.manage', 'Manage OSINT', 'Perform OSINT queries and manage API keys', 'osint'],
-    ['contacts.view', 'View Contact Messages', 'Read messages submitted from the public site contact form', 'contacts'],
-  ];
   for (const [code, name, desc, category] of allPerms) {
     await pool.query(
       'INSERT INTO permissions (code, name, description, category) VALUES ($1, $2, $3, $4) ON CONFLICT (code) DO NOTHING',

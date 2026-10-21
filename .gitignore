@@ -11,3 +11,4 @@ admin-dashboard/.env
 endpoint-agent/endpointx-agent.log
 node_modules
 .superpowers/
+backend-api/storage/

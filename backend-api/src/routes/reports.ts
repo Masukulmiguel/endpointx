@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
 import { visibleDeviceRowsSql, visibleDevicesSql } from '../utils/tenant';
+import { csvLiteral, toCsv } from '../utils/csv';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -27,14 +28,14 @@ router.get('/devices/csv', authenticate, requirePermission('logs.view'), async (
       row.status || '',
       row.user_email || '',
       row.last_heartbeat ? new Date(row.last_heartbeat).toISOString() : '',
-      row.cpu_usage != null ? Number(row.cpu_usage).toFixed(1) : '',
-      row.ram_usage != null ? Number(row.ram_usage).toFixed(1) : '',
-      row.disk_usage != null ? Number(row.disk_usage).toFixed(1) : '',
+      // The percentage columns are metrics, not text: marked as literals so a
+      // negative value is not neutralised into a text cell.
+      row.cpu_usage != null ? csvLiteral(Number(row.cpu_usage).toFixed(1)) : '',
+      row.ram_usage != null ? csvLiteral(Number(row.ram_usage).toFixed(1)) : '',
+      row.disk_usage != null ? csvLiteral(Number(row.disk_usage).toFixed(1)) : '',
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    const csvContent = toCsv([headers, ...rows]);
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="devices-report.csv"');
@@ -227,9 +228,7 @@ router.get('/compliance/csv', authenticate, requirePermission('compliance.view')
       row.checked_at ? new Date(row.checked_at).toISOString() : '',
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    const csvContent = toCsv([headers, ...rows]);
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="compliance-report.csv"');
@@ -264,9 +263,7 @@ router.get('/alerts/csv', authenticate, requirePermission('logs.view'), async (r
       row.created_at ? new Date(row.created_at).toISOString() : '',
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    const csvContent = toCsv([headers, ...rows]);
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="alerts-report.csv"');
