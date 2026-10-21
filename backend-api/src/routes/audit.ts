@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/rbac';
+import { toCsv } from '../utils/csv';
 
 const router = Router();
 
@@ -30,9 +31,21 @@ router.get('/stats', authenticate, requirePermission('logs.view'), async (req: A
 router.get('/export', authenticate, requirePermission('logs.export'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const result = await query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1000', []);
-    const csv = 'ID,User,Action,Target,Description,IP,Date\n' + result.rows.map((r: any) =>
-      `"${r.id}","${r.user_email || ''}","${r.action}","${r.target_type || ''}","${r.description || ''}","${r.ip_address || ''}","${r.created_at}"`
-    ).join('\n');
+    // The shared formatter escapes quotes and commas and neutralises
+    // formula-leading text. The description and the user email carry
+    // operator- or agent-supplied text, so both quoting and formula
+    // injection matter here — an unescaped quote used to break the row.
+    const headers = ['ID', 'User', 'Action', 'Target', 'Description', 'IP', 'Date'];
+    const rows = result.rows.map((r: any) => [
+      r.id ?? '',
+      r.user_email ?? '',
+      r.action ?? '',
+      r.target_type ?? '',
+      r.description ?? '',
+      r.ip_address ?? '',
+      r.created_at ?? '',
+    ]);
+    const csv = toCsv([headers, ...rows]);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=audit-logs.csv');
     res.send(csv);

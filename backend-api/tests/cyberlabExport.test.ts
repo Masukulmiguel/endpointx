@@ -1,7 +1,7 @@
 /**
- * RED->GREEN gate for Task 6 — export (JSON/CSV) + audit filtrada + config.
+ * RED->GREEN gate for Task 6 â€” export (JSON/CSV) + audit filtrada + config.
  *
- * Design notes: same FakePool harness as tests/cyberlabFindings.test.ts —
+ * Design notes: same FakePool harness as tests/cyberlabFindings.test.ts â€”
  * stubbed pg.Pool in require.cache backed by in-memory jobs/findings stores,
  * an app_settings map for the three cyberlab_* limit keys, and an audit_logs
  * store that emulates `action LIKE 'cyberlab.%'` (the predicate is read from
@@ -162,7 +162,7 @@ const FACT_EVIDENCE = {
   source: 'seefast:js_analysis',
   method: 'static:js_analysis',
   observed_at: '2026-03-01T09:00:02.000Z',
-  limitations: ['análise estática; sem execução'],
+  limitations: ['anÃ¡lise estÃ¡tica; sem execuÃ§Ã£o'],
   details: { moduleCount: 3 },
 };
 
@@ -435,7 +435,7 @@ async function main(): Promise<void> {
     });
 
     // Findings titles/evidence come from analysed third-party artifacts, so a
-    // cell can start with =, +, -, @ — a spreadsheet would evaluate it as a
+    // cell can start with =, +, -, @ â€” a spreadsheet would evaluate it as a
     // formula on open (CSV injection). The cell must be neutralised, and the
     // legitimate quoting/escaping above must survive untouched.
     await checkAsync('test_export_csv_neutralises_formula_injection_without_breaking_quotes', async () => {
@@ -681,4 +681,3 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

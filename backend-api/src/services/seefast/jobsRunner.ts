@@ -467,6 +467,10 @@ export function setBootGate(promise: Promise<unknown>): void {
  */
 export async function promoteQueued(): Promise<void> {
   try {
+    // The boot gate applies here too: a config change can promote a job, and
+    // that job would otherwise be started — and then failed by our own boot
+    // recovery — inside the window between listen() and the end of recovery.
+    await bootGate;
     await withSlotLock(() => promoteWhileLocked());
   } catch (error) {
     logger.error('cyberlab promoteQueued failed', { error: (error as Error).message });

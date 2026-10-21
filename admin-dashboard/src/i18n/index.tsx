@@ -558,6 +558,8 @@ const pt: Dict = {
   'cyberlab.jobDetail.artifact': 'Artefacto',
   'cyberlab.jobDetail.findingsNote':
     'A lista é filtrada no servidor pelo job — mostra até 100 findings deste job.',
+  'cyberlab.jobDetail.findingsTruncated':
+    'A mostrar {shown} de {total} findings deste job.',
   'cyberlab.findings.title': 'Findings',
   'cyberlab.findings.kind': 'Tipo',
   'cyberlab.findings.severity': 'Severidade',
@@ -1246,6 +1248,8 @@ const en: Dict = {
   'cyberlab.jobDetail.artifact': 'Artifact',
   'cyberlab.jobDetail.findingsNote':
     'The list is filtered server-side by job — it shows up to 100 findings of this job.',
+  'cyberlab.jobDetail.findingsTruncated':
+    'Showing {shown} of {total} findings of this job.',
   'cyberlab.findings.title': 'Findings',
   'cyberlab.findings.kind': 'Kind',
   'cyberlab.findings.severity': 'Severity',

@@ -336,6 +336,37 @@ const requirePermission = (permission: string) => {
 
 ---
 
+## CSV Export Safety
+
+Every CSV export in the API goes through the shared formatter in
+`backend-api/src/utils/csv.ts`, which does two things per cell:
+
+| Concern | Behaviour |
+| --- | --- |
+| Quoting (RFC 4180) | Every cell is wrapped in double quotes and inner quotes are doubled, so commas, quotes and newlines survive. |
+| Formula injection | A cell whose text starts with `=`, `+`, `-`, `@`, TAB or CR is prefixed with a single quote, which spreadsheets treat as literal text. Without this, opening an export whose cell begins with `=` executes a formula in Excel/Sheets. |
+
+This matters because export rows carry operator- or agent-supplied content:
+device hostnames, alert titles, compliance policy names, and (in Cyber Lab)
+finding titles and evidence sampled from analysed artifacts. A crafted
+hostname of `=HYPERLINK("http://evil.local","click")` would otherwise run as
+a formula on the operator's machine when they opened the export.
+
+Values that cannot be a formula are exempt: a real number, and any value
+explicitly marked with `csvLiteral` (the pre-formatted percentage columns of
+the devices export, for instance). A negative metric stays a number instead of
+becoming text.
+
+Affected exports: `/api/reports/devices/csv`, `/api/reports/compliance/csv`,
+`/api/reports/alerts/csv`, `/api/cyberlab/jobs/:id/export?format=csv`, and
+`/api/audit/export`.
+
+> Consumers that are not spreadsheets (pandas, `csv` module) read the leading
+> `'` as part of the value. Strip it when the cell is known to have been
+> neutralised.
+
+---
+
 ## Audit Logging
 
 ### What Gets Logged

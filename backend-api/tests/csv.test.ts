@@ -12,7 +12,7 @@
  */
 import './testEnv';
 import assert from 'assert';
-import { csvCell, toCsv } from '../src/utils/csv';
+import { csvCell, csvLiteral, toCsv } from '../src/utils/csv';
 
 let failed = 0;
 const check = (label: string, fn: () => void): void => {
@@ -38,7 +38,7 @@ check('csvCell doubles inner quotes', () => {
 });
 
 check('csvCell renders null and undefined as empty strings', () => {
-  assert.strictEqual(csvCell(null), '""');
+  assert.strictEqual(csvCell(null), '""', 'null must be an empty cell, never the text "null"');
   assert.strictEqual(csvCell(undefined), '""');
 });
 
@@ -75,6 +75,21 @@ check('csvCell leaves a safe value untouched', () => {
   assert.strictEqual(csvCell('hostname.example.local'), '"hostname.example.local"');
   assert.strictEqual(csvCell('a-b-c'), '"a-b-c"', 'a dash inside the value is harmless');
   assert.strictEqual(csvCell('total=10'), '"total=10"', 'an equals sign inside the value is harmless');
+});
+
+// ---- Values that cannot be formulas ---------------------------------------
+check('csvCell does not neutralise a real number', () => {
+  assert.strictEqual(csvCell(-3.25), '"-3.25"', 'a negative metric must stay a number, not text');
+  assert.strictEqual(csvCell(42), '"42"');
+});
+
+check('csvCell does not neutralise a value marked as a literal', () => {
+  assert.strictEqual(csvLiteral(-3.25) && csvCell(csvLiteral(-3.25)), '"-3.25"');
+  assert.strictEqual(csvCell(csvLiteral('-3.25')), '"-3.25"');
+});
+
+check('csvCell still quotes a literal that contains a comma', () => {
+  assert.strictEqual(csvCell(csvLiteral('1,234')), '"1,234"');
 });
 
 // ---- Document assembly -----------------------------------------------------

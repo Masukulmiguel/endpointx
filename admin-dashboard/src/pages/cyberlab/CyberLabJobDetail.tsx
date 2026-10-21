@@ -96,8 +96,12 @@ export default function CyberLabJobDetail() {
   // this job's heading until the response lands.
   const jobFindings = (findingsQuery.data?.findings ?? []).filter((f) => f.job_id === id);
   // The count comes from the server (which counts the whole filtered set),
-  // not from the page size of the loaded batch.
-  const findingsTotal = findingsQuery.data?.total ?? jobFindings.length;
+  // not from the page size of the loaded batch. It is only trustworthy when
+  // the response we hold actually belongs to this job — otherwise the total
+  // describes the previous job's query and would contradict the empty list.
+  const serverTotal = findingsQuery.data?.total ?? 0;
+  const findingsTotal =
+    jobFindings.length > 0 || serverTotal === 0 ? serverTotal : jobFindings.length;
 
   // Findings are written when the job finishes, possibly after the last
   // active poll — refetch once on the active→terminal transition.
@@ -295,7 +299,13 @@ export default function CyberLabJobDetail() {
       </Card>
 
       <Card title={`${t('cyberlab.jobDetail.findings')} (${findingsTotal})`}>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">{t('cyberlab.jobDetail.findingsNote')}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+          {findingsTotal > jobFindings.length
+            ? t('cyberlab.jobDetail.findingsTruncated')
+                .replace('{shown}', String(jobFindings.length))
+                .replace('{total}', String(findingsTotal))
+            : t('cyberlab.jobDetail.findingsNote')}
+        </p>
         {findingsQuery.loading && !findingsQuery.data ? (
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <LoadingSpinner size="sm" />

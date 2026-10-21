@@ -63,6 +63,19 @@ export function useApi<T = unknown>(
 
   const refetch = useCallback(() => fetchData(false), [fetchData]);
 
+  // A response belongs to the params that produced it. When those params
+  // change — another job detail, another page of a paged list — the previous
+  // data must not be shown under the new heading: it is a different set, and
+  // its total describes a different query. Clear it while the new request is
+  // in flight, so the page shows a loading state instead of stale rows.
+  const lastParamsKeyRef = useRef(paramsKey);
+  useEffect(() => {
+    if (lastParamsKeyRef.current !== paramsKey) {
+      lastParamsKeyRef.current = paramsKey;
+      setData(null);
+    }
+  }, [paramsKey]);
+
   useEffect(() => {
     mountedRef.current = true;
     if (immediate) {

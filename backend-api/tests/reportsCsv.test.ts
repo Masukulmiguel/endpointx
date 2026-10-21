@@ -63,6 +63,18 @@ const deviceRows = [
     ram_usage: 2,
     disk_usage: 3,
   },
+  {
+    // A negative metric must stay a number: the injection guard must not
+    // turn a value that cannot be a formula into text.
+    hostname: 'pc-02',
+    os_type: 'Ubuntu 24.04',
+    status: 'online',
+    user_email: 'user@test.local',
+    last_heartbeat: '2026-03-01T08:00:00.000Z',
+    cpu_usage: -3.25,
+    ram_usage: 2,
+    disk_usage: 3,
+  },
 ];
 
 const respond = (sql: string, params: unknown[] = []) => {
@@ -158,7 +170,7 @@ async function main(): Promise<void> {
 
       const text = await res.text();
       const lines = text.split('\n');
-      assert.strictEqual(lines.length, 3, `header + two devices, got ${lines.length} lines`);
+      assert.strictEqual(lines.length, 4, `header + three devices, got ${lines.length} lines`);
       assert.strictEqual(lines[0], '"Hostname","OS","Status","User","Last Heartbeat","CPU%","RAM%","Disk%"');
 
       // The dangerous hostname must be neutralised.
@@ -168,10 +180,13 @@ async function main(): Promise<void> {
         `the hostname cell must be quote-prefixed, got ${hostnameCell}`
       );
 
-      // No cell in the document may lead with a formula character.
+      // No TEXT cell in the document may lead with a formula character. A
+      // numeric cell is exempt: a real number cannot be a formula (the
+      // negative CPU metric below is the case in point).
       for (const line of lines.slice(1)) {
         for (const cell of line.split('","')) {
           const value = cell.replace(/^"/, '');
+          if (/^-?\d+(\.\d+)?$/.test(value)) continue; // a plain number
           assert.ok(!/^[=+\-@\t\r]/.test(value), `unneutralised formula-leading cell: ${value}`);
         }
       }
@@ -187,6 +202,22 @@ async function main(): Promise<void> {
       );
       // Falsy-but-meaningful numbers must not become empty.
       assert.ok(text.includes('"1.0"'), `cpu 1 must render as 1.0, got: ${text.split('\n')[2]}`);
+    });
+
+    await checkAsync('test_devices_csv_keeps_negative_metrics_as_numbers', async () => {
+      const res = await getCsv('/devices/csv');
+      const text = await res.text();
+      // The negative CPU must render as the number -3.3 (toFixed(1)), not as
+      // text with a leading quote — the injection guard must not fire on a
+      // value that cannot be a formula.
+      assert.ok(
+        text.includes('"-3.3"'),
+        `a negative metric must stay a number, got: ${text.split('\n').slice(1).join(' | ')}`
+      );
+      assert.ok(
+        !text.includes("'-3.3"),
+        'a negative metric must not be neutralised into text'
+      );
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
