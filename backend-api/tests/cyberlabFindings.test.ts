@@ -402,7 +402,13 @@ async function main(): Promise<void> {
   const port = (server.address() as { port: number }).port;
   const base = `http://127.0.0.1:${port}/api/cyberlab`;
 
-  process.env.SEEFAST_CLI = 'C:\\engine\\seefast-cli.exe';
+  // The provider probe refuses to spawn when the configured path holds
+  // nothing runnable — a missing engine is "not configured", not a failed
+  // probe — so the tests need a real file at the configured path.
+  const engineDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberlab-engine-'));
+  const ENGINE_CLI = path.join(engineDir, 'seefast-cli.exe');
+  fs.writeFileSync(ENGINE_CLI, '#!/bin/sh\necho engine\n', { mode: 0o755 });
+  process.env.SEEFAST_CLI = ENGINE_CLI;
 
   const sessionToken = (id: string, roleId: string, permissions: string[]): string => {
     setRolePermissions(roleId, permissions);

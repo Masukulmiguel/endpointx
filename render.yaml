@@ -65,6 +65,9 @@ services:
       # checksum are operator-supplied and live in the Render dashboard —
       # their values never enter the repository. With them unset the boot
       # hook installs nothing and the subsystem reports "not configured".
+      # With the package set but the checksum missing, the hook still
+      # installs (the log says the bytes were not verified) — set the
+      # checksum whenever the package is not served over HTTPS.
       - key: SEEFAST_ENGINE_PKG
         sync: false
       - key: SEEFAST_ENGINE_PKG_SHA256

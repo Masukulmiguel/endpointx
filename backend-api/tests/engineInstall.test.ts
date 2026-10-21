@@ -216,7 +216,7 @@ async function main(): Promise<void> {
 
   // ---- (j) the boot hook with nothing configured is silent and harmless -
   await checkAsync('test_boot_hook_with_nothing_configured_exits_zero', async () => {
-    const output = execFileSync(process.execPath, [HOOK], {
+    const result = spawnSync(process.execPath, [HOOK], {
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -225,7 +225,248 @@ async function main(): Promise<void> {
         SEEFAST_ENGINE_PKG_SHA256: '',
       },
     });
-    assert.strictEqual(output.trim(), '', 'with nothing configured the hook must say nothing');
+    assert.strictEqual(result.status, 0, 'the boot hook must exit 0');
+    assert.strictEqual(
+      `${result.stdout}${result.stderr}`.trim(),
+      '',
+      'with nothing configured the hook must say nothing on either stream'
+    );
+  });
+
+  // ---- (k) the write is atomic: the target is never a partial file -------
+  await checkAsync('test_target_is_never_partially_written', async () => {
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'k', 'engine');
+    try {
+      await installEngine({ pkg: server.url, cli: target });
+      // Whatever is at the target must be the complete package — never a
+      // truncated or empty file.
+      const written = fs.readFileSync(target);
+      assert.deepStrictEqual(written, payload, 'the target must hold the complete package');
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (k2) a target that is not usable is replaced wholesale ------------
+  await checkAsync('test_unusable_target_is_replaced_wholesale', async () => {
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'k2', 'engine');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    // An empty file at the target is not a usable engine.
+    fs.writeFileSync(target, '');
+    try {
+      const result = await installEngine({ pkg: server.url, cli: target });
+      assert.strictEqual(result.installed, true, 'an empty target must be replaced');
+      assert.deepStrictEqual(
+        fs.readFileSync(target),
+        payload,
+        'the target must be replaced wholesale, never appended to'
+      );
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (k3) a target that exists but is not executable is replaced -------
+  await checkAsync('test_non_executable_target_is_replaced', async () => {
+    if (process.platform === 'win32') return; // no execute bit on Windows
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'k3', 'engine');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, payload, { mode: 0o644 });
+    fs.chmodSync(target, 0o644);
+    try {
+      const result = await installEngine({ pkg: server.url, cli: target });
+      assert.strictEqual(result.installed, true, 'a non-executable target must be replaced');
+      const mode = fs.statSync(target).mode & 0o777;
+      assert.strictEqual(mode, 0o755, `the replacement must be executable, got ${mode.toString(8)}`);
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (l) a failed install leaves no temporary file behind --------------
+  await checkAsync('test_failed_install_leaves_no_temporary_file', async () => {
+    const server = await startServer(payload, 500);
+    const dir = path.join(tmpRoot, 'l');
+    const target = path.join(dir, 'engine');
+    try {
+      await installEngine({ pkg: server.url, cli: target }).catch(() => undefined);
+      const leftovers = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      assert.deepStrictEqual(
+        leftovers,
+        [],
+        `no temporary file may survive a failed install, found: ${leftovers.join(', ')}`
+      );
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (m) the installed file is executable even under a strict umask ----
+  await checkAsync('test_installed_file_is_executable_under_a_strict_umask', async () => {
+    if (process.platform === 'win32') {
+      // Windows has no execute bit; the CI job (ubuntu) covers this.
+      return;
+    }
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'm', 'engine');
+    const previous = process.umask(0o077);
+    try {
+      await installEngine({ pkg: server.url, cli: target });
+      const mode = fs.statSync(target).mode & 0o777;
+      assert.strictEqual(mode, 0o755, `the file must be 0755, got ${mode.toString(8)}`);
+    } finally {
+      process.umask(previous);
+      server.close();
+    }
+  });
+
+  // ---- (n) the checksum comparison is case-insensitive -------------------
+  await checkAsync('test_checksum_is_compared_case_insensitively', async () => {
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'n', 'engine');
+    try {
+      const result = await installEngine({
+        pkg: server.url,
+        cli: target,
+        sha256: sha256(payload).toUpperCase(),
+      });
+      assert.strictEqual(result.installed, true, 'an uppercase digest must still match');
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (o) the hook never executes the package ---------------------------
+  await checkAsync('test_hook_never_executes_the_package', async () => {
+    const source = fs.readFileSync(HOOK, 'utf8');
+    // The hook writes the package; the API runs it later, under its own
+    // allowlist. Anything that spawns a process here would break that
+    // separation — and would be a remote-code-execution path.
+    assert.ok(
+      !/require\(['"]child_process['"]\)/.test(source),
+      'the hook must not load child_process'
+    );
+    assert.ok(!/\bexecFileSync\b|\bspawnSync\b|\bexecSync\b/.test(source),
+      'the hook must not spawn any process');
+    assert.ok(!/\beval\s*\(/.test(source), 'the hook must not eval');
+  });
+
+  // ---- (p) the Dockerfile still starts the API after the hook ------------
+  await checkAsync('test_dockerfile_runs_the_hook_and_then_the_api', async () => {
+    const dockerfile = fs.readFileSync(
+      path.join(__dirname, '..', 'Dockerfile'),
+      'utf8'
+    );
+    const entrypoint = dockerfile.match(/^ENTRYPOINT\s+(.+)$/m);
+    const cmd = dockerfile.match(/^CMD\s+(.+)$/m);
+    assert.ok(entrypoint, 'the image must declare an ENTRYPOINT');
+    assert.ok(cmd, 'the image must declare a CMD');
+
+    // The shell escapes in the exec form arrive here as \" — compare
+    // against the unescaped text.
+    const entry = entrypoint[1].replace(/\\/g, '');
+
+    // A plain ENTRYPOINT makes Docker APPEND the CMD's arguments to it, so
+    // the hook would run instead of the API and the container would exit
+    // before serving anything. The CMD must therefore be consumed by the
+    // entrypoint.
+    assert.ok(
+      /exec\s+"\$@"/.test(entry),
+      `the ENTRYPOINT must exec the CMD, got: ${entrypoint[1]}`
+    );
+    assert.ok(
+      /install-engine\.cjs/.test(entry),
+      `the ENTRYPOINT must run the provisioning hook, got: ${entrypoint[1]}`
+    );
+    // The API must start even when the hook fails, so the separator is ";"
+    // and not "&&".
+    assert.ok(
+      /;\s*exec/.test(entry),
+      `the API must start regardless of the hook outcome, got: ${entrypoint[1]}`
+    );
+  });
+
+  // ---- (q) a remote package over plain http needs a checksum ------------
+  await checkAsync('test_plain_http_package_requires_a_checksum', async () => {
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'q', 'engine');
+    try {
+      // A non-loopback plain http URL: the refusal must happen before any
+      // request is made, so the host does not even have to resolve.
+      let threw = false;
+      try {
+        await installEngine({ pkg: 'http://cdn.example.com/engine.bin', cli: target });
+      } catch {
+        threw = true;
+      }
+      assert.ok(threw, 'a plain http package without a checksum must be refused');
+      assert.strictEqual(fs.existsSync(target), false, 'nothing may be written');
+
+      // With a checksum the same package installs — here served from
+      // loopback, which is on the host and not on the network.
+      const ok = await installEngine({
+        pkg: server.url,
+        cli: target,
+        sha256: sha256(payload),
+      });
+      assert.strictEqual(ok.installed, true, 'with a checksum the same package must install');
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (r) a package served by the host itself needs no pinning ---------
+  await checkAsync('test_loopback_package_needs_no_checksum', async () => {
+    const server = await startServer(payload);
+    const target = path.join(tmpRoot, 'r2', 'engine');
+    try {
+      const result = await installEngine({ pkg: server.url, cli: target });
+      assert.strictEqual(result.installed, true, 'a loopback package must install without a checksum');
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (r) a relative target path is refused ----------------------------
+  await checkAsync('test_relative_target_path_is_refused', async () => {
+    const server = await startServer(payload);
+    try {
+      let threw = false;
+      try {
+        await installEngine({ pkg: server.url, cli: 'relative/engine' });
+      } catch {
+        threw = true;
+      }
+      assert.ok(threw, 'a relative target path must be refused');
+    } finally {
+      server.close();
+    }
+  });
+
+  // ---- (s) the failure reason never carries the package specification ---
+  await checkAsync('test_failure_log_does_not_leak_the_package_spec', async () => {
+    const secret = 'tok_ABCDEF0123456789';
+    const result = spawnSync(process.execPath, [HOOK], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        SEEFAST_ENGINE_PKG: `s3://bucket/engine.bin?token=${secret}`,
+        SEEFAST_CLI: path.join(tmpRoot, 's', 'engine'),
+        SEEFAST_ENGINE_PKG_SHA256: '',
+      },
+    });
+    const output = `${result.stdout}${result.stderr}`;
+    assert.ok(
+      !output.includes(secret),
+      `the package specification must never reach the boot log: ${JSON.stringify(output)}`
+    );
+    assert.ok(
+      /engine-provision/.test(output),
+      `the failure must still be reported: ${JSON.stringify(output)}`
+    );
   });
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
