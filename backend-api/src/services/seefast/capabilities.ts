@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import fs from 'fs';
 
 /**
  * Capability probe for the external engine (operator-supplied binary via the
@@ -35,10 +36,35 @@ function extractVersion(stdout: string): string | null {
   return null;
 }
 
+/**
+ * Whether the configured path can actually be run.
+ *
+ * A path that does not exist, is not a file, or carries no execute bit is
+ * not a broken engine — it is an engine that was never put there. Reporting
+ * that as a probe failure would blame the engine for a missing file, and
+ * would send the operator looking in the wrong place. It also spares the
+ * probe a pointless spawn.
+ */
+function isRunnablePath(cli: string): boolean {
+  try {
+    const stats = fs.statSync(cli);
+    if (!stats.isFile()) return false;
+    if (process.platform === 'win32') return true; // no execute bit on Windows
+    return (stats.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Probe the engine's capabilities. Never spawns when SEEFAST_CLI is unset. */
 export async function probeCapabilities(): Promise<ProviderStatus> {
   const cli = (process.env.SEEFAST_CLI || '').trim();
   if (!cli) return { available: false, reason: 'not_configured', version: null, detail: null };
+  // A configured path with nothing at it is "not configured", not a failed
+  // probe: nothing ran, so nothing failed.
+  if (!isRunnablePath(cli)) {
+    return { available: false, reason: 'not_configured', version: null, detail: null };
+  }
 
   return new Promise<ProviderStatus>((resolve) => {
     const fail = (error: Error, stderr: string): void => {

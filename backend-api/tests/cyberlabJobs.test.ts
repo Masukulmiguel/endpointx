@@ -353,6 +353,13 @@ type RunScript =
 const runScripts: RunScript[] = [];
 const pendingManual: Array<(raw: Partial<RawRun>) => void> = [];
 
+// The provider probe refuses to spawn when the configured path holds nothing
+// runnable — a missing engine is "not configured", not a failed probe — so
+// the tests need a real file at the configured path.
+const engineDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberlab-engine-'));
+const ENGINE_CLI = path.join(engineDir, 'seefast-cli.exe');
+fs.writeFileSync(ENGINE_CLI, '#!/bin/sh\necho engine\n', { mode: 0o755 });
+
 const completeNextManual = (raw: Partial<RawRun>): void => {
   const resolveRun = pendingManual.shift();
   assert.ok(resolveRun, 'no pending manual run to complete');
@@ -524,7 +531,7 @@ async function main(): Promise<void> {
 
     await checkAsync('test_post_job_with_failing_probe_is_400_with_no_insert', async () => {
       resetCounts();
-      process.env.SEEFAST_CLI = 'C:\\engine\\seefast-cli.exe';
+      process.env.SEEFAST_CLI = ENGINE_CLI;
       probeScript = { error: new Error('probe refused'), stdout: '', stderr: 'probe refused' };
       const res = await postJob(manageToken, 'js_analysis', seedArtifact());
       probeScript = { error: null, stdout: '{"version":"1.0.0"}', stderr: '' };
@@ -537,7 +544,7 @@ async function main(): Promise<void> {
     // ---- Type / artifact validation -----------------------------------------
     await checkAsync('test_post_job_unsupported_type_is_400_with_no_insert', async () => {
       resetCounts();
-      process.env.SEEFAST_CLI = 'C:\\engine\\seefast-cli.exe';
+      process.env.SEEFAST_CLI = ENGINE_CLI;
       const res = await postJob(manageToken, 'shell_exec', seedArtifact());
       assert.strictEqual(res.status, 400, `expected 400, got ${res.status}`);
       const body = (await res.json()) as { error: { code: string } };
@@ -789,7 +796,7 @@ async function main(): Promise<void> {
     });
 
     await checkAsync('test_failed_run_error_is_sanitised_and_capped', async () => {
-      const cli = 'C:\\engine\\seefast-cli.exe';
+      const cli = ENGINE_CLI;
       process.env.SEEFAST_CLI = cli;
       const artifactId = seedArtifact();
       const storagePath = artifactsDb.get(artifactId)!.storage_path;

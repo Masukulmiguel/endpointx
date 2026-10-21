@@ -46,6 +46,8 @@ upload artifact → POST /api/cyberlab/jobs → queued / running → engine bina
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SEEFAST_CLI` | *(unset)* | Absolute path to the external engine binary. When unset, Cyber Lab reports **Not Configured** and never spawns a process. |
+| `SEEFAST_ENGINE_PKG` | *(unset)* | Package the boot hook provisions the engine from — an HTTP(S) URL or a path already on the host. Operator-supplied; the value lives in the deployment dashboard, never in the repository. Unset → nothing is installed. |
+| `SEEFAST_ENGINE_PKG_SHA256` | *(unset)* | Expected SHA-256 of the package, in hex. A mismatch installs nothing. |
 | `CYBERLAB_MAX_ARTIFACT_MB` | `25` | Maximum artifact size in megabytes (decoded bytes). |
 | `CYBERLAB_JOB_TIMEOUT_S` | `120` | Hard per-job timeout in seconds; the child process is killed and the job fails with a timeout error. |
 | `CYBERLAB_MAX_CONCURRENT` | `1` | Maximum jobs running simultaneously; extra jobs queue FIFO. |
@@ -54,7 +56,30 @@ upload artifact → POST /api/cyberlab/jobs → queued / running → engine bina
 Notes:
 
 - `SEEFAST_CLI` must point to an executable the API user can run. The probe and
-  all jobs execute it directly.
+  all jobs execute it directly. A path that holds nothing runnable is reported
+  as **Not Configured** — nothing ran, so nothing failed — and the probe does
+  not even spawn.
+- **Provisioning on a fresh host.** The container image ships a generic boot
+  hook (`backend-api/docker/install-engine.cjs`) that runs before the API
+  starts. When `SEEFAST_ENGINE_PKG` and `SEEFAST_CLI` are both set, it fetches
+  the package and places it at `SEEFAST_CLI`; with either unset it does
+  nothing at all, and the service boots exactly as it did before. The hook:
+  - never executes the package — the API runs it later, under its own
+    operation allowlist;
+  - writes atomically (exclusive temporary file + `rename`), so an
+    interrupted boot cannot leave a partial binary at the target path;
+  - leaves an existing usable engine alone (idempotent), and replaces one
+    that is empty or not executable;
+  - installs nothing when the bytes do not match
+    `SEEFAST_ENGINE_PKG_SHA256`, and says so in the log when no checksum is
+    configured;
+  - refuses a remote package served over plain HTTP unless the bytes are
+    pinned by a checksum (a package served by the host itself is exempt);
+  - never blocks the boot — a provisioning failure is logged (without the
+    package specification, which may embed a signed token) and the API comes
+    up with the subsystem reporting **Not Configured**.
+  - `SEEFAST_CLI` must be an absolute path, and it must not live under a
+    directory the API serves publicly.
 - The API's body parser for `/api/cyberlab` accepts requests up to **40 MB**.
   The settings layer (`PUT /config`) therefore caps the artifact limit at
   **28 MB** — base64 grows about 4/3 on the wire, so a larger decoded artifact

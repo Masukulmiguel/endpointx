@@ -12,6 +12,9 @@
  */
 import './testEnv';
 import assert from 'assert';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { SeefastLimits } from '../src/services/seefast/limits';
 import type { JobType } from '../src/services/seefast/adapter';
 
@@ -131,7 +134,14 @@ function loadModule(name: string, loader: () => unknown): unknown {
   }
 }
 
-const CLI = 'C:\\engine\\seefast-cli.exe';
+// The probe refuses to spawn when the configured path holds nothing
+// runnable — a missing engine is "not configured", not a failed probe — so
+// the tests need a real file at the configured path.
+const CLI_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberlab-engine-'));
+const CLI = path.join(CLI_DIR, 'seefast-cli.exe');
+fs.writeFileSync(CLI, '#!/bin/sh\necho engine\n', { mode: 0o755 });
+/** A path that is configured but holds nothing. */
+const CLI_MISSING = path.join(CLI_DIR, 'not-installed.exe');
 const ARTIFACT = 'C:\\cyberlab\\artifacts\\demo.js';
 const DEFAULT_LIMITS: SeefastLimits = {
   maxArtifactBytes: 25 * 1024 * 1024,
@@ -264,6 +274,22 @@ async function main(): Promise<void> {
       `unexpected status: ${JSON.stringify(status)}`
     );
     assert.strictEqual(execCalls.length, 0, 'probe must never spawn without SEEFAST_CLI');
+  });
+
+  // A configured path with nothing at it is "not configured", not a failed
+  // probe: nothing ran, so nothing failed — and the probe must not spawn.
+  await checkAsync('test_probe_with_missing_binary_is_not_configured_and_never_spawns', async () => {
+    const { probeCapabilities } = capsMod as CapabilitiesModule;
+    process.env.SEEFAST_CLI = CLI_MISSING;
+    execCalls.length = 0;
+    const status = await probeCapabilities();
+    assert.deepStrictEqual(
+      status,
+      { available: false, reason: 'not_configured', version: null, detail: null },
+      `unexpected status: ${JSON.stringify(status)}`
+    );
+    assert.strictEqual(execCalls.length, 0, 'the probe must not spawn when the binary is not there');
+    delete process.env.SEEFAST_CLI;
   });
 
   // probe success → available + version parsed from --json output
