@@ -83,7 +83,7 @@ const respond = (sql: string, params: unknown[] = []) => {
   if (sql.includes('FROM app_settings WHERE key = ANY')) {
     return { rows: [], rowCount: 0 }; // limits resolve to defaults
   }
-  if (sql.includes('COUNT(*)') && sql.includes('FROM cyberlab_artifacts')) {
+  if (sql.includes('SELECT COUNT(*)::int AS total FROM cyberlab_artifacts')) {
     return { rows: [{ total: listTotal }], rowCount: 1 };
   }
   if (sql.includes('FROM cyberlab_artifacts')) {
@@ -402,6 +402,45 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(body.data.artifacts, listRows, 'artifacts must be the stored rows');
       assert.strictEqual(body.data.total, 7, 'total must reflect the full count');
       assert.ok(!JSON.stringify(body.data).includes('storage_path'), 'list payload must not carry storage_path');
+      listRows = [];
+      listTotal = 0;
+    });
+
+    // ---- List: the job count comes from the database, not from the client --
+    // The Evidence page used to map artifacts to jobs from a client-side
+    // window of the newest 100 jobs and state "no known jobs" for everything
+    // outside it — a statement the page could not support. The count is now
+    // the database's answer, per artifact, in the list query itself.
+    await checkAsync('test_artifact_list_carries_the_job_count_from_the_database', async () => {
+      listRows = [
+        {
+          id: '4b2c8f60-1111-4222-8333-444455556666',
+          sha256: 'a'.repeat(64),
+          original_name: 'demo.js',
+          size_bytes: 11,
+          created_at: '2026-10-17T12:00:00.000Z',
+          job_count: 3,
+        },
+      ];
+      listTotal = 1;
+      const { result: res, calls } = await captureDuring(() =>
+        fetch(`${base}/artifacts?limit=5&offset=0`, {
+          headers: { Authorization: `Bearer ${viewToken}` },
+        })
+      );
+      assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+      const body = (await res.json()) as {
+        success: boolean;
+        data: { artifacts: Record<string, unknown>[] };
+      };
+      assert.strictEqual(body.data.artifacts[0].job_count, 3, JSON.stringify(body));
+
+      const listSql = calls.map((call) => call.sql).find((sql) => sql.includes('FROM cyberlab_artifacts a'));
+      assert.ok(listSql, `the list query must select from the artifacts table: ${JSON.stringify(calls.map((c) => c.sql))}`);
+      assert.ok(
+        listSql.includes('FROM cyberlab_jobs j') && listSql.includes('j.target_ref = a.id'),
+        `the list query must count the jobs per artifact: ${listSql}`
+      );
       listRows = [];
       listTotal = 0;
     });

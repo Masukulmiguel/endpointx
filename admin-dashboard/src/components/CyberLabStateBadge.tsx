@@ -1,7 +1,12 @@
 import React from 'react';
 import { useI18n } from '../i18n';
 
-export type CyberLabState = 'available' | 'experimental' | 'not_configured' | 'coming_soon';
+export type CyberLabState =
+  | 'available'
+  | 'experimental'
+  | 'not_configured'
+  | 'coming_soon'
+  | 'unavailable';
 
 interface CyberLabStateBadgeProps {
   state: CyberLabState;
@@ -39,6 +44,17 @@ const stateConfig: Record<
     dot: 'bg-blue-500',
     pulse: false,
     labelKey: 'cyberlab.state.comingSoon',
+  },
+  // The probe ran and failed, or never ran at all. This is NOT the same as
+  // "not configured": the engine may be configured perfectly and still be
+  // unreachable, and telling the operator otherwise sends them to configure
+  // something that is already configured.
+  unavailable: {
+    bg: 'bg-red-50 dark:bg-red-900/20',
+    text: 'text-red-700 dark:text-red-400',
+    dot: 'bg-red-500',
+    pulse: false,
+    labelKey: 'cyberlab.state.unavailable',
   },
 };
 

@@ -45,13 +45,20 @@ export function useApi<T = unknown>(
       if (mountedRef.current) {
         blockedUntilRef.current = 0;
         setData(response?.success !== undefined && response?.data !== undefined ? response.data : response);
+        setError(null);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
         blockedUntilRef.current =
           Date.now() + Math.max(err.retryAfter, 15) * 1000;
       }
-      if (!background && mountedRef.current) {
+      // A failing background poll is a fact about the screen, not a detail to
+      // swallow. The page tells the operator it is refreshing itself, and if
+      // the refresh is broken they are looking at a frozen picture with a
+      // promise of movement behind it. The data already on screen stays — it
+      // is the last truth — but the failure is recorded so the page can say
+      // what went wrong instead of claiming it is up to date.
+      if (mountedRef.current) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       }
     } finally {

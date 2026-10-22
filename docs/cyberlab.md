@@ -223,7 +223,7 @@ receive **401**, and missing permissions receive **403**.
 | --- | --- | --- |
 | `GET /api/cyberlab/providers` | `cyberlab.view` | Capability probe result (state, reason, version, detail). |
 | `POST /api/cyberlab/artifacts` | `cyberlab.manage` | Base64 upload; stores file + SHA-256 + audit row. |
-| `GET /api/cyberlab/artifacts` | `cyberlab.view` | Paged list (never exposes storage paths). |
+| `GET /api/cyberlab/artifacts` | `cyberlab.view` | Paged list (never exposes storage paths). Each row carries `job_count`: the exact number of jobs that reference the artifact, counted by the database. |
 | `POST /api/cyberlab/jobs` | `cyberlab.manage` | Body: type + artifact id. 400 on unsupported type or unavailable provider. |
 | `GET /api/cyberlab/jobs` / `GET /api/cyberlab/jobs/:id` | `cyberlab.view` | Filter by `status`, paged. |
 | `POST /api/cyberlab/jobs/:id/cancel` | `cyberlab.manage` | See job lifecycle. |
@@ -232,7 +232,33 @@ receive **401**, and missing permissions receive **403**.
 | `GET /api/cyberlab/jobs/:id/export?format=json\|csv` | `cyberlab.export` | JSON job + findings, or CSV in reports style. CSV cells go through the shared `src/utils/csv.ts` formatter, which neutralises formula injection (`=`, `+`, `-`, `@`, TAB, CR) — findings carry third-party content. |
 | `GET /api/cyberlab/audit` | `cyberlab.view` | Only `cyberlab.*` audit actions, paged. |
 | `GET` / `PUT /api/cyberlab/config` | `cyberlab.view` / `cyberlab.manage` | Effective limits + overrides; PUT within bounds, audited. |
-| `POST /api/cyberlab/ai/plan` | `cyberlab.view` | Propose-only planning assistant; never creates jobs. Falls back to `not_configured` when the AI provider is unavailable. |
+| `POST /api/cyberlab/ai/plan` | `cyberlab.view` | Propose-only planning assistant; never creates jobs. `not_configured` when no AI provider is set; `error` with the provider's own (sanitised) reason when a configured provider fails — the two are never conflated. |
+
+## What the API never claims
+
+The subsystem reports only what it can back with a fact. These rules are
+enforced by tests, not by convention:
+
+- **`progress` is `null` when it was not measured.** The column's default is
+  `0` and nothing has ever written it, so a stored `0` is the schema's value,
+  not a measurement. Reporting it as "0%" would claim the engine measured
+  nothing — a different claim from "the engine never reported anything". A
+  writer that records a real percentage must write `1..100` and leave `0`
+  alone.
+- **A failed probe is not "not configured".** A probe that failed, or a
+  request that never reached the server, is reported as *unavailable*: the
+  engine may be configured perfectly and still be unreachable, and saying
+  otherwise sends the operator to configure something that is already
+  configured.
+- **A failed provider call is not "not configured" either.** The AI console
+  distinguishes the two: `not_configured` means nothing is set, `error`
+  carries the provider's own reason with the endpoint and the credential
+  stripped out.
+- **Counts over a window are labelled as such.** The Overview's status and
+  severity chips are computed over the 100 most recent rows and say so; they
+  are not presented as system totals.
+- **A failed background poll is visible.** The pages say what failed instead
+  of keeping the "refreshing" claim while showing a frozen picture.
 
 ## Troubleshooting
 

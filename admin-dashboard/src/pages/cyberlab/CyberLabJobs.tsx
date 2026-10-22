@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Clock, Eye, FileUp, Loader2, XCircle } from 'lucide-react';
 import { useApi, useApiMutation } from '../../hooks/useApi';
@@ -8,6 +8,7 @@ import DataTable from '../../components/DataTable';
 import AlertBanner from '../../components/AlertBanner';
 import ErrorState from '../../components/ErrorState';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import Pagination from '../../components/Pagination';
 
 type Job = {
   id: string;
@@ -36,6 +37,8 @@ const jobStatusChip: Record<string, string> = {
 
 const ACTIVE_STATUSES = ['queued', 'running'];
 
+const PAGE_SIZE = 20;
+
 function readFileBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -59,12 +62,22 @@ export default function CyberLabJobs() {
 
   // Poll jobs at 3s only while something is queued/running; idle lab = no polling.
   const [pollJobs, setPollJobs] = useState(false);
+  // The list is paged like every other list in the module: 60 jobs that only
+  // the newest 50 of are reachable is a silent loss of history, and the
+  // backend has always supported limit/offset.
+  const [page, setPage] = useState(1);
+  const jobParams = useMemo(
+    () => ({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) }),
+    [page]
+  );
   const jobs = useApi<{ jobs: Job[]; total: number }>('/cyberlab/jobs', {
-    params: { limit: '50' },
+    params: jobParams,
     refreshInterval: pollJobs ? 3000 : undefined,
   });
 
   const jobList = jobs.data?.jobs ?? [];
+  const total = jobs.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasActiveJob = jobList.some((j) => ACTIVE_STATUSES.includes(j.status));
 
   useEffect(() => {
@@ -112,14 +125,14 @@ export default function CyberLabJobs() {
   const handleCancel = async (id: string) => {
     setToast(null);
     cancelMutation.reset();
-    // mutate() resolves to null on failure and stores the server message in
-    // hook state (not readable in this closure) — surface a localized error
-    // whenever the call did not succeed, then refetch to show the true state.
+    // The server's own message is the one the operator needs — "already
+    // finished", "no permission", "the artifact is gone". A generic "failed
+    // to cancel" hides the difference between a race and a permission
+    // problem, so the failure is rendered from the mutation's own error
+    // below instead of being flattened into one message.
     const result = await cancelMutation.mutate(`/cyberlab/jobs/${id}/cancel`);
     if (result) {
       setToast({ type: 'success', message: t('cyberlab.jobDetail.cancelledMsg') });
-    } else {
-      setToast({ type: 'error', message: t('cyberlab.common.cancelFailed') });
     }
     jobs.refetch();
   };
@@ -208,7 +221,7 @@ export default function CyberLabJobs() {
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
           {t('cyberlab.jobs.title')}
         </h1>
-        {hasActiveJob && (
+        {hasActiveJob && !jobs.error && (
           <p className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
             <Clock className="w-4 h-4" />
             {t('cyberlab.jobs.activeRefresh')}
@@ -218,6 +231,12 @@ export default function CyberLabJobs() {
 
       {toast && <AlertBanner type={toast.type} message={toast.message} onClose={() => setToast(null)} />}
       {createError && <AlertBanner type="error" message={createError} />}
+      {cancelMutation.error && (
+        <AlertBanner type="error" message={cancelMutation.error} onClose={cancelMutation.reset} />
+      )}
+      {jobs.error && jobs.data && (
+        <AlertBanner type="error" message={jobs.error} onClose={jobs.refetch} />
+      )}
 
       {canManage && (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-gray-700 p-4 shadow-sm shadow-slate-200/60">
@@ -287,12 +306,15 @@ export default function CyberLabJobs() {
           {t('common.loading')}
         </div>
       ) : (
-        <DataTable
-          columns={columns}
-          data={jobList}
-          emptyMessage={t('cyberlab.jobs.empty')}
-          onRowClick={(row) => navigate(`/cyberlab/jobs/${row.id}`)}
-        />
+        <>
+          <DataTable
+            columns={columns}
+            data={jobList}
+            emptyMessage={t('cyberlab.jobs.empty')}
+            onRowClick={(row) => navigate(`/cyberlab/jobs/${row.id}`)}
+          />
+          <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+        </>
       )}
     </div>
   );

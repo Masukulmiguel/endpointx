@@ -16,6 +16,7 @@ type PlanStep = {
 type PlanResponse =
   | { state: 'not_configured' }
   | { state: 'invalid_plan' }
+  | { state: 'error'; message: string }
   | { state: 'ok'; steps: PlanStep[] };
 
 type Job = { id: string; type: string; status: string; error: string | null };
@@ -252,6 +253,15 @@ export default function CyberLabAnalyst() {
       {plan && plan.state === 'invalid_plan' && (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-gray-700 p-4 shadow-sm shadow-slate-200/60">
           <p className="text-sm text-gray-700 dark:text-gray-300">{t('cyberlab.analyst.invalidPlan')}</p>
+        </div>
+      )}
+
+      {plan && plan.state === 'error' && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-900/50 p-4 shadow-sm">
+          <p className="text-sm text-red-700 dark:text-red-300">{t('cyberlab.analyst.providerFailed')}</p>
+          <p className="mt-1 text-xs font-mono text-red-600 dark:text-red-400 break-words">
+            {plan.message}
+          </p>
         </div>
       )}
 

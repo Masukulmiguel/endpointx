@@ -466,6 +466,7 @@ const pt: Dict = {
   'cyberlab.state.experimental': 'Experimental',
   'cyberlab.state.notConfigured': 'Não Configurado',
   'cyberlab.state.comingSoon': 'Em Breve',
+  'cyberlab.state.unavailable': 'Indisponível',
   'cyberlab.overview.title': 'Cyber Lab',
   'cyberlab.overview.heroSubtitle': 'Análise estática de artefactos, binários e tráfego — com evidência e limitações declaradas.',
   'cyberlab.overview.engine': 'Motor de Análise',
@@ -476,6 +477,8 @@ const pt: Dict = {
   'cyberlab.overview.noArtifacts': 'Sem artefactos carregados',
   'cyberlab.overview.activeRefresh': 'Job activo — actualização automática a cada 5s',
   'cyberlab.overview.failedLoad': 'Falha ao carregar o Cyber Lab',
+  'cyberlab.overview.sampleNote':
+    'Contagens calculadas sobre os 100 registos mais recentes — não são o total do sistema.',
   'cyberlab.reason.notConfigured': 'Motor não configurado no servidor',
   'cyberlab.reason.probeFailed': 'Falha na sonda do motor',
   'cyberlab.job.queued': 'Em fila',
@@ -675,6 +678,8 @@ const pt: Dict = {
     'O fornecedor de IA não está configurado no servidor — sem plano possível. Configure-o no backend e volte a tentar.',
   'cyberlab.analyst.invalidPlan':
     'A resposta da IA não foi um plano válido — reformule a pergunta e tente novamente.',
+  'cyberlab.analyst.providerFailed':
+    'O fornecedor de IA está configurado mas a chamada falhou. Arazão abaixo.',
   'cyberlab.analyst.planTitle': 'Plano proposto',
   'cyberlab.analyst.stepCount': 'Passos',
   'cyberlab.analyst.neverAuto':
@@ -1157,6 +1162,7 @@ const en: Dict = {
   'cyberlab.state.experimental': 'Experimental',
   'cyberlab.state.notConfigured': 'Not Configured',
   'cyberlab.state.comingSoon': 'Coming Soon',
+  'cyberlab.state.unavailable': 'Unavailable',
   'cyberlab.overview.title': 'Cyber Lab',
   'cyberlab.overview.heroSubtitle': 'Static analysis of artifacts, binaries and traffic — with evidence and declared limitations.',
   'cyberlab.overview.engine': 'Analysis Engine',
@@ -1167,6 +1173,8 @@ const en: Dict = {
   'cyberlab.overview.noArtifacts': 'No artifacts uploaded',
   'cyberlab.overview.activeRefresh': 'Active job — refreshing every 5s',
   'cyberlab.overview.failedLoad': 'Failed to load Cyber Lab',
+  'cyberlab.overview.sampleNote':
+    'Counts are computed over the 100 most recent records — they are not the system total.',
   'cyberlab.reason.notConfigured': 'Engine not configured on the server',
   'cyberlab.reason.probeFailed': 'Engine probe failed',
   'cyberlab.job.queued': 'Queued',
@@ -1366,6 +1374,8 @@ const en: Dict = {
     'The AI provider is not configured on the server — no plan is possible. Configure it on the backend and try again.',
   'cyberlab.analyst.invalidPlan':
     'The AI answer was not a valid plan — rephrase the question and try again.',
+  'cyberlab.analyst.providerFailed':
+    'The AI provider is configured but the call failed. The reason is below.',
   'cyberlab.analyst.planTitle': 'Proposed plan',
   'cyberlab.analyst.stepCount': 'Steps',
   'cyberlab.analyst.neverAuto':

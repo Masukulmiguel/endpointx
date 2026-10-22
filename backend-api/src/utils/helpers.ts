@@ -136,6 +136,26 @@ export const sanitizeString = (str: string): string => {
   return str.replace(/[<>"'`;]/g, '').trim();
 };
 
+/**
+ * Strip credentials and endpoints out of a message that came from a third
+ * party, before it is shown to an operator or written to the audit trail.
+ *
+ * The operator needs to know *why* a call failed — a timeout, a rejected key,
+ * a malformed response. They never need the URL it called or the key it
+ * called it with, and both routinely appear in the provider's own error text:
+ * "POST https://api.example.com/v1?key=sk-live-... failed" says the request
+ * failed and nothing else that matters.
+ */
+export const redactSensitiveText = (raw: string, maxChars = 200): string => {
+  const oneLine = raw.replace(/\s+/g, ' ').trim();
+  const redacted = oneLine
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<redacted-endpoint>')
+    .replace(/\b\S*\?\S*/g, '')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>')
+    .replace(/\b(?:sk|pk|api|key|token|secret)[-_][A-Za-z0-9_-]{5,}\b/gi, '<redacted-credential>');
+  return redacted.length > maxChars ? redacted.slice(0, maxChars) : redacted;
+};
+
 export const calculateTimeDifference = (
   start: Date | string,
   end: Date | string

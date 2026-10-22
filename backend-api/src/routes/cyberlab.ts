@@ -11,6 +11,7 @@ import { probeCapabilities, ProviderStatus } from '../services/seefast/capabilit
 import { getLimits, invalidateLimitsCache } from '../services/seefast/limits';
 import { getSettingsMap, setSetting } from '../services/settings';
 import { toCsv } from '../utils/csv';
+import { redactSensitiveText } from '../utils/helpers';
 import { aiComplete, isOpencodeConfigured } from '../services/opencode';
 import { JOB_OPS, type JobType } from '../services/seefast/adapter';
 import { cancelJob, createJob, JobsRunnerError, promoteQueued } from '../services/seefast/jobsRunner';
@@ -140,7 +141,10 @@ router.get('/artifacts', authenticate, requirePermission('cyberlab.view'), valid
     const { limit, offset } = req.query as unknown as z.infer<typeof ArtifactListQuerySchema>;
     const [rows, totalResult] = await Promise.all([
       query(
-        'SELECT id, sha256, original_name, size_bytes, created_at FROM cyberlab_artifacts ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+        `SELECT a.id, a.sha256, a.original_name, a.size_bytes, a.created_at,
+                (SELECT COUNT(*)::int FROM cyberlab_jobs j WHERE j.target_ref = a.id) AS job_count
+         FROM cyberlab_artifacts a
+         ORDER BY a.created_at DESC LIMIT $1 OFFSET $2`,
         [limit, offset]
       ),
       query('SELECT COUNT(*)::int AS total FROM cyberlab_artifacts'),
@@ -163,12 +167,21 @@ const JOB_COLUMNS = 'id, type, status, target_ref, progress, cancel_requested, e
 
 // Job payload: target_ref becomes artifact_id; internal columns never leave.
 function publicJob(row: Record<string, unknown>): Record<string, unknown> {
+  // The `progress` column stores a percentage in 1..100, and 0 is reserved
+  // for "not measured". Nothing has ever written it: the column's default is
+  // 0, so a stored 0 is the schema's value and not a measurement. Reporting
+  // it as "0%" would tell the operator the engine measured nothing, which is
+  // a different claim from "the engine never reported anything". A writer
+  // that records a real percentage replaces this rule; it must then write
+  // 1..100 and leave 0 alone.
+  const stored = row.progress;
+  const measured = typeof stored === 'number' && stored > 0 ? stored : null;
   return {
     id: row.id,
     type: row.type,
     status: row.status,
     artifact_id: row.target_ref ?? null,
-    progress: row.progress,
+    progress: measured,
     cancel_requested: row.cancel_requested,
     error: row.error ?? null,
     result: row.result ?? null,
@@ -643,8 +656,16 @@ router.post('/ai/plan', authenticate, requirePermission('cyberlab.view'), valida
       const result = await aiComplete(question, PLAN_SYSTEM_PROMPT);
       answer = result.text;
     } catch (aiError) {
-      logger.warn('CYBERLAB AI plan fell back to not_configured', { error: (aiError as Error).message });
-      res.json({ success: true, data: { state: 'not_configured' } });
+      // A configured provider that failed is not the same as no provider at
+      // all. Reporting the crash as "not configured" sends the operator to add
+      // configuration that is already there, while the real fault — a timeout,
+      // a 500, a rejected key — stays invisible. The reason is returned, with
+      // the endpoint and the credential taken out of it.
+      const message = redactSensitiveText(
+        (aiError as Error).message || 'AI provider failed'
+      );
+      logger.warn('CYBERLAB AI plan failed', { error: message });
+      res.json({ success: true, data: { state: 'error', message } });
       return;
     }
 

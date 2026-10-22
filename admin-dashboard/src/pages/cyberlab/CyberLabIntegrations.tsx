@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plug, RefreshCw, Terminal, Info } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
-import CyberLabStateBadge from '../../components/CyberLabStateBadge';
+import CyberLabStateBadge, { CyberLabState } from '../../components/CyberLabStateBadge';
 import ErrorState from '../../components/ErrorState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useI18n } from '../../i18n';
@@ -18,9 +18,16 @@ export default function CyberLabIntegrations() {
   const providers = useApi<ProviderStatus>('/cyberlab/providers');
   const provider = providers.data;
 
-  // The API reports three honest states; probe_failed is still "not available"
-  // for the badge, so the badge only ever flips between those two values.
-  const badgeState = provider?.available ? 'available' : 'not_configured';
+  // The API reports three honest states, and a request that never reached the
+  // server is a fourth. A failed probe is not "not configured": the engine
+  // may be configured and unreachable, and the operator must be told which.
+  const badgeState: CyberLabState = providers.error
+    ? 'unavailable'
+    : provider?.available
+      ? 'available'
+      : provider?.reason === 'probe_failed'
+        ? 'unavailable'
+        : 'not_configured';
 
   if (providers.error && !provider) {
     return (

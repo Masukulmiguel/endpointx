@@ -225,14 +225,42 @@ async function main(): Promise<void> {
       assert.strictEqual(aiCalls.length, before, 'no AI call may happen when no provider is configured');
     });
 
-    await checkAsync('test_ai_plan_ai_failure_returns_not_configured', async () => {
+    // A configured provider that fails is NOT the same as no provider at all.
+    // Reporting a crash as "not configured" sends the operator to look in the
+    // wrong place: they will add configuration that is already there, while
+    // the real fault — a timeout, a 500, a rejected key — stays invisible.
+    await checkAsync('test_ai_plan_ai_failure_returns_error_state_not_not_configured', async () => {
       aiConfigured = true;
       queueAi({ kind: 'throw', message: 'provider exploded' });
       const res = await postPlan(viewToken, { question: 'Which modules look obfuscated in this build?' });
       assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
       const body = await readPlan(res);
       assert.strictEqual(body.success, true, JSON.stringify(body));
-      assert.deepStrictEqual(body.data, { state: 'not_configured' }, JSON.stringify(body));
+      assert.strictEqual(
+        body.data.state,
+        'error',
+        `an AI failure must not be reported as not_configured: ${JSON.stringify(body)}`
+      );
+      assert.strictEqual(body.data.message, 'provider exploded', JSON.stringify(body));
+    });
+
+    // The provider's own error text can carry the endpoint it called and the
+    // key it called it with. The operator needs the reason; they do not need
+    // the credential.
+    await checkAsync('test_ai_plan_ai_failure_message_does_not_leak_the_url_or_key', async () => {
+      aiConfigured = true;
+      queueAi({ kind: 'throw', message: 'POST https://api.example.com/v1?key=sk-secret-value failed' });
+      const res = await postPlan(viewToken, { question: 'Analisa este artefacto' });
+      const body = await readPlan(res);
+      assert.strictEqual(body.data.state, 'error', JSON.stringify(body));
+      assert.ok(
+        !String(body.data.message).includes('sk-secret-value'),
+        `the message must not carry the credential: ${body.data.message}`
+      );
+      assert.ok(
+        !String(body.data.message).includes('https://'),
+        `the message must not carry the URL: ${body.data.message}`
+      );
     });
 
     // ---- State: ok ----------------------------------------------------------
@@ -323,9 +351,12 @@ async function main(): Promise<void> {
       assert.ok(successBodies.length >= 6, `expected the successful plan responses, got ${successBodies.length}`);
       for (const body of successBodies) {
         assert.ok(!('job' in body.data), `a plan response must not carry a job: ${JSON.stringify(body)}`);
+        // An error state carries the reason and nothing else; every other
+        // state carries the plan and nothing else.
+        const allowed = body.data.state === 'error' ? ['state', 'message'] : ['state', 'steps'];
         for (const key of Object.keys(body.data)) {
           assert.ok(
-            key === 'state' || key === 'steps',
+            allowed.includes(key),
             `unexpected key '${key}' in plan response: ${JSON.stringify(body)}`
           );
         }

@@ -844,6 +844,38 @@ async function main(): Promise<void> {
       assert.strictEqual(bad.status, 400, `invalid status must be 400, got ${bad.status}`);
     });
 
+    // ---- Progress: 0 means "not measured", and is reported as unknown ------
+    // The column's default is 0 and nothing has ever written it, so a stored
+    // 0 is the schema's value and not a measurement. Reporting it as "0%"
+    // claimed the engine had measured nothing — a different claim from "the
+    // engine never reported anything".
+    await checkAsync('test_job_progress_zero_is_reported_as_unknown', async () => {
+      const res = await fetch(`${base}/jobs?limit=100`, { headers: auth(viewToken) });
+      const body = (await res.json()) as { data: { jobs: Array<{ progress: unknown }> } };
+      const values = body.data.jobs.map((job) => job.progress);
+      assert.ok(
+        !values.includes(0),
+        `no job may report a 0% progress: ${JSON.stringify(values)}`
+      );
+      assert.ok(
+        values.includes(null),
+        `an unmeasured job must report progress as null: ${JSON.stringify(values)}`
+      );
+    });
+
+    await checkAsync('test_job_progress_reports_a_measured_value_verbatim', async () => {
+      const id = [...jobsDb.keys()][0];
+      const job = jobsDb.get(id);
+      assert.ok(job, 'expected at least one job in the store');
+      job!.progress = 42;
+      const res = await fetch(`${base}/jobs?limit=100`, { headers: auth(viewToken) });
+      const body = (await res.json()) as { data: { jobs: Array<{ id: string; progress: unknown }> } };
+      const found = body.data.jobs.find((entry) => entry.id === id);
+      assert.ok(found, `the job ${id} must be in the list`);
+      assert.strictEqual(found!.progress, 42, 'a measured progress must be reported verbatim');
+      job!.progress = 0;
+    });
+
     // ---- Regression: queue-steal race between finalize and promotion -------
     // The fake holds finalize's slot-freeing UPDATE *response* (store already
     // flipped) — the exact window where a count-based POST could take the

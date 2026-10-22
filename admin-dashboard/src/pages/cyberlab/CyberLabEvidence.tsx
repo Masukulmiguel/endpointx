@@ -5,6 +5,7 @@ import { useApi } from '../../hooks/useApi';
 import { useI18n } from '../../i18n';
 import DataTable from '../../components/DataTable';
 import Pagination from '../../components/Pagination';
+import AlertBanner from '../../components/AlertBanner';
 import ErrorState from '../../components/ErrorState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -14,6 +15,9 @@ type Artifact = {
   original_name: string;
   size_bytes: number;
   created_at: string;
+  // The exact number of jobs that reference this artifact, counted by the
+  // database. It is not a client-side guess over a window of recent jobs.
+  job_count: number;
 };
 
 type Job = {
@@ -41,8 +45,9 @@ export default function CyberLabEvidence() {
   );
   const artifacts = useApi<{ artifacts: Artifact[]; total: number }>('/cyberlab/artifacts', { params });
 
-  // Jobs are the only link from an artifact to its analysis — there is no
-  // artifact→jobs endpoint, so map client-side from the latest jobs.
+  // Jobs are the only link from an artifact to its analysis. The count comes
+  // from the database (job_count on the artifact row); this list only adds
+  // the deep links for the jobs that fall inside the loaded window.
   const jobs = useApi<{ jobs: Job[]; total: number }>('/cyberlab/jobs', { params: { limit: '100' } });
 
   const jobsByArtifact = useMemo(() => {
@@ -107,12 +112,19 @@ export default function CyberLabEvidence() {
       key: 'jobs',
       label: t('cyberlab.evidence.jobs'),
       render: (row: Artifact) => {
-        const linked = jobsByArtifact.get(row.id) ?? [];
-        if (linked.length === 0) {
+        // The count is the database's answer: exact and complete. The links
+        // below are only the jobs inside the loaded window, so they are a
+        // subset of that count — the page used to derive the count from the
+        // same window and then state "no known jobs" for everything outside
+        // it, which is a claim the page could not support.
+        const count = row.job_count ?? 0;
+        if (count === 0) {
           return <span className="text-xs text-gray-400 dark:text-gray-500">{t('cyberlab.evidence.noJobs')}</span>;
         }
+        const linked = jobsByArtifact.get(row.id) ?? [];
         return (
           <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{count}</span>
             {linked.map((job) => (
               <Link
                 key={job.id}
@@ -161,6 +173,10 @@ export default function CyberLabEvidence() {
           </Link>
         </p>
       </div>
+
+      {jobs.error && (
+        <AlertBanner type="error" message={jobs.error} onClose={jobs.refetch} />
+      )}
 
       {artifacts.loading && !artifacts.data ? (
         <div className="flex items-center gap-2 text-sm text-gray-500">

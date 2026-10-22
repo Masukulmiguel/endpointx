@@ -9,7 +9,7 @@ import {
 import { useApi } from '../../hooks/useApi';
 import ErrorState from '../../components/ErrorState';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import CyberLabStateBadge from '../../components/CyberLabStateBadge';
+import CyberLabStateBadge, { CyberLabState } from '../../components/CyberLabStateBadge';
 import { useI18n } from '../../i18n';
 
 type ProviderStatus = {
@@ -155,7 +155,17 @@ export default function CyberLabOverview() {
   const artifactList = artifacts.data?.artifacts ?? [];
 
   const provider = providers.data;
-  const providerState: 'available' | 'not_configured' = provider?.available ? 'available' : 'not_configured';
+  // A probe that failed, or a request that never reached the server, is NOT
+  // the same as "the engine is not configured". The engine may be configured
+  // perfectly and still be unreachable, and claiming otherwise sends the
+  // operator to configure something that is already configured.
+  const providerState: CyberLabState = providers.error
+    ? 'unavailable'
+    : provider?.available
+      ? 'available'
+      : provider?.reason === 'probe_failed'
+        ? 'unavailable'
+        : 'not_configured';
   const providerReasonKey =
     provider?.reason === 'probe_failed' ? 'cyberlab.reason.probeFailed' : 'cyberlab.reason.notConfigured';
 
@@ -200,7 +210,7 @@ export default function CyberLabOverview() {
           <p className="max-w-[34rem] text-sm text-slate-300 sm:text-base">
             {t('cyberlab.overview.heroSubtitle')}
           </p>
-          {hasActiveJob && (
+          {hasActiveJob && !jobs.error && (
             <p className="flex items-center gap-1.5 text-sm text-slate-400">
               <Clock className="w-4 h-4" />
               {t('cyberlab.overview.activeRefresh')}
@@ -232,7 +242,9 @@ export default function CyberLabOverview() {
               )}
             </div>
           ) : (
-            <p className="text-sm text-gray-500">{t('common.error')}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              {providers.error || t('common.error')}
+            </p>
           )}
         </Card>
 
@@ -243,18 +255,23 @@ export default function CyberLabOverview() {
           ) : jobs.error && !jobs.data ? (
             <p className="text-sm text-red-500">{jobs.error}</p>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {JOB_STATUSES.map((status) => (
-                <span
-                  key={status}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                    jobStatusChip[status] || jobStatusChip.queued
-                  }`}
-                >
-                  {t(`cyberlab.job.${status}`)}
-                  <strong className="font-bold">{jobCounts[status] ?? 0}</strong>
-                </span>
-              ))}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {JOB_STATUSES.map((status) => (
+                  <span
+                    key={status}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                      jobStatusChip[status] || jobStatusChip.queued
+                    }`}
+                  >
+                    {t(`cyberlab.job.${status}`)}
+                    <strong className="font-bold">{jobCounts[status] ?? 0}</strong>
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('cyberlab.overview.sampleNote')}
+              </p>
             </div>
           )}
         </Card>
@@ -266,18 +283,23 @@ export default function CyberLabOverview() {
           ) : findings.error && !findings.data ? (
             <p className="text-sm text-red-500">{findings.error}</p>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {SEVERITIES.map((severity) => (
-                <span
-                  key={severity}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                    severityChip[severity] || severityChip.info
-                  }`}
-                >
-                  {t(`cyberlab.severity.${severity}`)}
-                  <strong className="font-bold">{severityCounts[severity] ?? 0}</strong>
-                </span>
-              ))}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {SEVERITIES.map((severity) => (
+                  <span
+                    key={severity}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                      severityChip[severity] || severityChip.info
+                    }`}
+                  >
+                    {t(`cyberlab.severity.${severity}`)}
+                    <strong className="font-bold">{severityCounts[severity] ?? 0}</strong>
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('cyberlab.overview.sampleNote')}
+              </p>
             </div>
           )}
         </Card>
