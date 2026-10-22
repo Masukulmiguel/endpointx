@@ -206,9 +206,16 @@ Four permissions (category `cyberlab`) gate the subsystem:
 | `cyberlab.approve` | Reserved for step approval (not yet enforced by any route). |
 | `cyberlab.export` | Export a job's findings as JSON or CSV. |
 
-No default role receives these permissions — grant them explicitly in the role
-editor. All `/api/cyberlab` routes require authentication; unauthenticated
-requests receive **401**, and missing permissions receive **403**.
+The **admin** role receives them automatically: the boot grants the whole
+permission catalog to the role named `admin`, so a fresh deploy already has
+them. The other seeded roles (`supervisor`, `technician`, `user`) never receive
+them — grant them explicitly in the role editor (Admin → Access & security →
+Roles → edit the role → tick the Cyber Lab permissions). A role that does not
+hold `cyberlab.view` does not see the Cyber Lab section in the panel at all:
+the rail only renders the sections the account is allowed to reach.
+
+All `/api/cyberlab` routes require authentication; unauthenticated requests
+receive **401**, and missing permissions receive **403**.
 
 ## API Surface
 
@@ -228,6 +235,15 @@ requests receive **401**, and missing permissions receive **403**.
 | `POST /api/cyberlab/ai/plan` | `cyberlab.view` | Propose-only planning assistant; never creates jobs. Falls back to `not_configured` when the AI provider is unavailable. |
 
 ## Troubleshooting
+
+**The Cyber Lab section is not in the sidebar** → the rail only renders the
+sections the account may reach, so a missing section means the account's role
+does not hold `cyberlab.view`. Check the role (Admin → Access & security →
+Users → the account → its role), and grant the Cyber Lab permissions in the
+role editor. The section itself lives under a collapsible **Cyber Lab** group
+in the rail: open it to reach the 14 sections. A section that is present but
+empty usually means the engine is not configured yet — see *Not Configured*
+below.
 
 **State is "Not Configured" / `POST /jobs` returns 400 `PROVIDER_NOT_CONFIGURED`**
 → Set `SEEFAST_CLI` to the absolute path of the engine binary and restart the

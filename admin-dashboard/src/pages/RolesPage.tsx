@@ -8,6 +8,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import api from '../services/api';
 import Modal from '../components/Modal';
 import AlertBanner from '../components/AlertBanner';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -54,9 +55,11 @@ export default function RolesPage() {
   }, [permissions]);
 
   const handleSaveRole = useCallback(async () => {
+    // The route reads `permission_ids`; sending it under another key makes the
+    // save a silent no-op and the role keeps the permissions it had.
     const payload = {
       ...roleForm,
-      permissions: roleForm.permission_ids,
+      permission_ids: roleForm.permission_ids,
     };
     if (editRole) {
       const result = await updateRole(`/roles/${editRole.id}`, payload);
@@ -88,16 +91,38 @@ export default function RolesPage() {
     [deleteRole, refetchRoles]
   );
 
-  const openEditModal = (role: Role) => {
+  const openEditModal = useCallback(async (role: Role) => {
+    // The roles list does not carry the role's permission set — it only
+    // carries the count. The set must be fetched: opening the editor with an
+    // empty selection and saving it would strip the role of every permission
+    // it holds.
+    let permissionIds: string[] = [];
+    try {
+      const response = await api.request<{ data: { role: { permissions?: Permission[] } } }>(
+        `/roles/${role.id}`
+      );
+      const granted = response?.data?.role?.permissions;
+      if (!Array.isArray(granted)) throw new Error('malformed role payload');
+      permissionIds = granted.map((p) => p.id);
+    } catch {
+      // Refuse to open an editor whose current state is unknown: saving it
+      // would be a blind write.
+      setToast({
+        type: 'error',
+        message: 'Could not load this role\'s permissions. Nothing was changed.',
+      });
+      return;
+    }
+
     setEditRole(role);
     setRoleForm({
       name: role.name,
       display_name: role.display_name,
       description: role.description || '',
-      permission_ids: (role.permissions || []).map((p) => p.id),
+      permission_ids: permissionIds,
     });
     setShowRoleModal(true);
-  };
+  }, []);
 
   const openCreateModal = () => {
     setEditRole(null);
@@ -177,15 +202,18 @@ export default function RolesPage() {
                   {role.permission_count ?? (role.permissions || []).length} permission
                   {(role.permission_count ?? (role.permissions || []).length) !== 1 ? 's' : ''}
                 </span>
-                {!role.is_system && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditModal(role)}
-                      className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                      title="Edit"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                <div className="flex items-center gap-1">
+                  {/* A system role cannot be deleted or renamed, but its
+                      permission set is the operator's to change — that is how
+                      the Cyber Lab codes reach a role. */}
+                  <button
+                    onClick={() => openEditModal(role)}
+                    className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  {!role.is_system && (
                     <button
                       onClick={() => handleDeleteRole(role)}
                       disabled={deleting}
@@ -194,8 +222,8 @@ export default function RolesPage() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           ))}

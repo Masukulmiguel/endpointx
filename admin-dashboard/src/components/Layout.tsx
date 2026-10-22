@@ -191,6 +191,13 @@ export default function Layout() {
   const { locale, setLocale, t } = useI18n();
   const { user, hasPermission, logout } = useAuth();
 
+  // The rail carries 36 links across 6 groups — 1319px of content in a
+  // viewport that shows 595-955px of it. With every group open, the last
+  // groups (Cyber Lab, Sistema) sit below the fold and read as "missing".
+  // Groups therefore collapse: only the one holding the current route is open
+  // by default, and the operator opens the rest on demand.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
   const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission));
 
   const pageTitle = t(routeTitleKeys[location.pathname] || 'page.title.default');
@@ -265,6 +272,21 @@ export default function Layout() {
     return location.pathname.startsWith(path);
   };
 
+  // The group that owns the current route. It is always open: navigating to a
+  // section must never leave its own group folded away.
+  const activeGroupKey = navGroups.find((group) =>
+    group.paths.some((path) => isActive(path))
+  )?.key;
+
+  const isGroupOpen = (key: string) => openGroups[key] ?? key === activeGroupKey;
+
+  const toggleGroup = (key: string) => {
+    setOpenGroups((previous) => ({
+      ...previous,
+      [key]: !(previous[key] ?? key === activeGroupKey),
+    }));
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -298,34 +320,51 @@ export default function Layout() {
           {navGroups.map((group) => {
             const items = visibleNavItems.filter((item) => group.paths.includes(item.path));
             if (items.length === 0) return null;
+            const open = isGroupOpen(group.key);
             return (
               <div key={group.key}>
-                <p className="sidebar-group">{group.label[locale]}</p>
-                <ul className="space-y-0.5">
-                  {items.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActive(item.path);
-                    return (
-                      <li key={item.path}>
-                        <Link
-                          to={item.path}
-                          className={`flex items-center gap-2.5 px-3 py-1 rounded-lg text-sm font-medium border transition-all duration-200 ${
-                            active
-                              ? 'bg-primary-500 text-white border-primary-500 shadow-lg shadow-primary-500/30'
-                              : 'text-slate-400 border-transparent hover:text-white hover:bg-white/5'
-                          }`}
-                        >
-                          <Icon
-                            className={`w-[18px] h-[18px] flex-shrink-0 ${
-                              active ? 'text-white' : 'text-slate-500'
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.key)}
+                  aria-expanded={open}
+                  aria-controls={`nav-group-${group.key}`}
+                  title={group.label[locale]}
+                  className="sidebar-group w-full flex items-center justify-between gap-2 bg-transparent text-left hover:text-slate-300 transition-colors"
+                >
+                  <span>{group.label[locale]}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${
+                      open ? '' : '-rotate-90'
+                    }`}
+                  />
+                </button>
+                {open && (
+                  <ul id={`nav-group-${group.key}`} className="space-y-0.5">
+                    {items.map((item) => {
+                      const Icon = item.icon;
+                      const active = isActive(item.path);
+                      return (
+                        <li key={item.path}>
+                          <Link
+                            to={item.path}
+                            className={`flex items-center gap-2.5 px-3 py-1 rounded-lg text-sm font-medium border transition-all duration-200 ${
+                              active
+                                ? 'bg-primary-500 text-white border-primary-500 shadow-lg shadow-primary-500/30'
+                                : 'text-slate-400 border-transparent hover:text-white hover:bg-white/5'
                             }`}
-                          />
-                          {t(item.key)}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
+                          >
+                            <Icon
+                              className={`w-[18px] h-[18px] flex-shrink-0 ${
+                                active ? 'text-white' : 'text-slate-500'
+                              }`}
+                            />
+                            {t(item.key)}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             );
           })}
