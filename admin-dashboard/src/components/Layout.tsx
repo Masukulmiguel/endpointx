@@ -130,7 +130,19 @@ const routeTitleKeys: Record<string, string> = {
 // The model groups the rail under small muted headings. Membership is by exact
 // path so /security and /security/mfa never land in the same bucket by prefix
 // accident; items the user cannot see are dropped with their group.
-const navGroups: { key: string; label: Record<Locale, string>; paths: string[] }[] = [
+//
+// `home` makes the group's heading a link to its landing page instead of a bare
+// toggle. Only Cyber Lab sets it: its heading is the module's entry point and
+// must open the module, while the chevron alone keeps the fold. The other
+// headings are pure disclosure controls and stay buttons — they have no single
+// landing route and turning them into links would change navigation the module
+// never asked for.
+const navGroups: {
+  key: string;
+  label: Record<Locale, string>;
+  paths: string[];
+  home?: string;
+}[] = [
   {
     key: 'overview',
     label: { pt: 'Visão geral', en: 'Overview' },
@@ -154,6 +166,7 @@ const navGroups: { key: string; label: Record<Locale, string>; paths: string[] }
   {
     key: 'cyberlab',
     label: { pt: 'Cyber Lab', en: 'Cyber Lab' },
+    home: '/cyberlab',
     paths: [
       '/cyberlab',
       '/cyberlab/analyst',
@@ -200,7 +213,19 @@ export default function Layout() {
 
   const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission));
 
-  const pageTitle = t(routeTitleKeys[location.pathname] || 'page.title.default');
+  // A route can sit under more than one nav path: /cyberlab/findings is under
+  // /cyberlab as well as under /cyberlab/findings. The comparison is on path
+  // segments, so /cyberlab never claims /cyberlablab, and the most specific
+  // path wins — otherwise two entries would light up for a single route.
+  const currentPath = location.pathname === '/' ? '/dashboard' : location.pathname;
+  const matchesRoute = (path: string) =>
+    currentPath === path || currentPath.startsWith(`${path}/`);
+
+  const mostSpecific = (paths: string[]) =>
+    paths.filter((path) => matchesRoute(path)).sort((a, b) => b.length - a.length)[0];
+
+  const titlePath = mostSpecific(Object.keys(routeTitleKeys));
+  const pageTitle = t((titlePath ? routeTitleKeys[titlePath] : undefined) || 'page.title.default');
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -267,16 +292,16 @@ export default function Layout() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, []);
 
-  const isActive = (path: string) => {
-    if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
-    return location.pathname.startsWith(path);
-  };
-
   // The group that owns the current route. It is always open: navigating to a
   // section must never leave its own group folded away.
   const activeGroupKey = navGroups.find((group) =>
-    group.paths.some((path) => isActive(path))
+    group.paths.some((path) => matchesRoute(path))
   )?.key;
+
+  // Exactly one rail entry is active: the most specific one that covers the
+  // current route. On /cyberlab/findings that is "Findings", never the
+  // "Visão Geral" entry whose path is a prefix of it.
+  const activeItemPath = mostSpecific(visibleNavItems.map((item) => item.path));
 
   const isGroupOpen = (key: string) => openGroups[key] ?? key === activeGroupKey;
 
@@ -321,28 +346,54 @@ export default function Layout() {
             const items = visibleNavItems.filter((item) => group.paths.includes(item.path));
             if (items.length === 0) return null;
             const open = isGroupOpen(group.key);
+            const chevronClass = `w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${
+              open ? '' : '-rotate-90'
+            }`;
             return (
               <div key={group.key}>
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.key)}
-                  aria-expanded={open}
-                  aria-controls={`nav-group-${group.key}`}
-                  title={group.label[locale]}
-                  className="sidebar-group w-full flex items-center justify-between gap-2 bg-transparent text-left hover:text-slate-300 transition-colors"
-                >
-                  <span>{group.label[locale]}</span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${
-                      open ? '' : '-rotate-90'
-                    }`}
-                  />
-                </button>
+                {group.home ? (
+                  // The heading is the module's entry point, so it navigates; the
+                  // fold stays on the chevron. It carries no active styling — the
+                  // current section is the submenu item below it, and lighting up
+                  // both would say the route is in two places at once.
+                  <div className="flex items-center justify-between gap-2">
+                    <Link
+                      to={group.home}
+                      title={group.label[locale]}
+                      className="sidebar-group flex-1 min-w-0 truncate text-left hover:text-slate-300 transition-colors"
+                    >
+                      {group.label[locale]}
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.key)}
+                      aria-expanded={open}
+                      aria-controls={`nav-group-${group.key}`}
+                      aria-label={group.label[locale]}
+                      title={group.label[locale]}
+                      className="p-1 -m-1 rounded hover:bg-white/5 hover:text-slate-300 transition-colors"
+                    >
+                      <ChevronDown className={chevronClass} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={open}
+                    aria-controls={`nav-group-${group.key}`}
+                    title={group.label[locale]}
+                    className="sidebar-group w-full flex items-center justify-between gap-2 bg-transparent text-left hover:text-slate-300 transition-colors"
+                  >
+                    <span>{group.label[locale]}</span>
+                    <ChevronDown className={chevronClass} />
+                  </button>
+                )}
                 {open && (
                   <ul id={`nav-group-${group.key}`} className="space-y-0.5">
                     {items.map((item) => {
                       const Icon = item.icon;
-                      const active = isActive(item.path);
+                      const active = item.path === activeItemPath;
                       return (
                         <li key={item.path}>
                           <Link

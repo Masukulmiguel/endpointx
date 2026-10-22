@@ -78,9 +78,20 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Card({
+  children,
+  className = '',
+  style,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 p-4 shadow-sm shadow-slate-200/60 ${className}`}>
+    <div
+      className={`bg-white rounded-xl border border-slate-200 p-4 shadow-sm shadow-slate-200/60 ${className}`}
+      style={style}
+    >
       {children}
     </div>
   );
@@ -160,23 +171,46 @@ export default function CyberLabOverview() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-            {t('cyberlab.overview.title')}
-          </h1>
-          <CyberLabStateBadge state={providerState} />
-        </div>
-        {hasActiveJob && (
-          <p className="flex items-center gap-1.5 text-sm text-gray-500">
-            <Clock className="w-4 h-4" />
-            {t('cyberlab.overview.activeRefresh')}
+      <section
+        aria-labelledby="cyberlab-hero-title"
+        className="enter-rise relative overflow-hidden rounded-2xl bg-[#050B14] ring-1 ring-black/5"
+      >
+        {/* The source frame is 1200x630 with its left half deliberately empty and
+            near-black: the title lives there. `object-right` keeps the analyst
+            and the monitors in frame when the strip is cropped, and the
+            left-to-right gradient guarantees the text contrast even if the
+            image ever fails to load. */}
+        <img
+          src="/cyberlab-hero.png"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover object-right"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#050B14] via-[#050B14]/85 to-transparent" />
+        <div className="relative flex min-h-[190px] max-w-[46rem] flex-col justify-center gap-3 p-6 sm:p-8">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1
+              id="cyberlab-hero-title"
+              className="text-2xl font-bold tracking-tight text-white sm:text-3xl"
+            >
+              {t('cyberlab.overview.title')}
+            </h1>
+            <CyberLabStateBadge state={providerState} />
+          </div>
+          <p className="max-w-[34rem] text-sm text-slate-300 sm:text-base">
+            {t('cyberlab.overview.heroSubtitle')}
           </p>
-        )}
-      </div>
+          {hasActiveJob && (
+            <p className="flex items-center gap-1.5 text-sm text-slate-400">
+              <Clock className="w-4 h-4" />
+              {t('cyberlab.overview.activeRefresh')}
+            </p>
+          )}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
+        <Card className="enter-rise-fast" style={{ animationDelay: '0ms' }}>
           <CardHeader icon={FlaskConical} title={t('cyberlab.overview.engine')} />
           {providers.loading ? (
             <InlineLoading />
@@ -202,7 +236,7 @@ export default function CyberLabOverview() {
           )}
         </Card>
 
-        <Card>
+        <Card className="enter-rise-fast" style={{ animationDelay: '40ms' }}>
           <CardHeader icon={ListChecks} title={t('cyberlab.overview.jobs')} />
           {jobs.loading && !jobs.data ? (
             <InlineLoading />
@@ -225,7 +259,7 @@ export default function CyberLabOverview() {
           )}
         </Card>
 
-        <Card>
+        <Card className="enter-rise-fast" style={{ animationDelay: '80ms' }}>
           <CardHeader icon={ShieldAlert} title={t('cyberlab.overview.findings')} />
           {findings.loading && !findings.data ? (
             <InlineLoading />
@@ -248,7 +282,7 @@ export default function CyberLabOverview() {
           )}
         </Card>
 
-        <Card>
+        <Card className="enter-rise-fast" style={{ animationDelay: '120ms' }}>
           <CardHeader icon={Archive} title={t('cyberlab.overview.recentArtifacts')} />
           {artifacts.loading && !artifacts.data ? (
             <InlineLoading />
